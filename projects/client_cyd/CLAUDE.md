@@ -63,7 +63,7 @@ Widgets to implement:
 
 ## LVGL Rules
 
-- LVGL version: **8.x** — verify exact version in `platformio.ini` before using any API
+- LVGL version: **9.5.0** — verify exact version in `platformio.ini` before using any API
 - `lv_init()` must be called once in `CYDScreenController::begin()` before any widget creation
 - All widget creation and updates must happen from the same FreeRTOS task — LVGL is not thread-safe
 - `lv_timer_handler()` must be called at least every 5 ms from `CYDScreenController::tick()`

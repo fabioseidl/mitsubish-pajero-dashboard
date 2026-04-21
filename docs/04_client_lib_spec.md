@@ -358,7 +358,7 @@ private:
 
 ## LVGL Integration Notes
 
-- LVGL version: **8.x** (verify exact version in `platformio.ini` before coding)
+- LVGL version: **9.5.0** (verify exact version in `platformio.ini` before coding)
 - `lv_init()` must be called before any widget creation
 - Display driver: `lv_disp_drv_t` with ILI9341 SPI flush callback
 - Input driver: `lv_indev_drv_t` with XPT2046 read callback

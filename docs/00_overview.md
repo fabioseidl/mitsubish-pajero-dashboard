@@ -35,7 +35,7 @@ A server emulator project replicates the server broadcast behavior without CAN h
 - MCU: ESP32 (Cheap Yellow Display board)
 - Display: ILI9341, 2.4 inch, 320x240px, SPI
 - Touch: XPT2046 resistive touch controller
-- UI framework: LVGL v8.x
+- UI framework: LVGL v9.5.0
 
 ---
 
@@ -61,7 +61,7 @@ A server emulator project replicates the server broadcast behavior without CAN h
 | 4 | Hand-maintained `pid_map.h` | Removes codegen dependency; simpler build pipeline |
 | 5 | Server computes derived values | Clients are pure renderers; keeps client firmware minimal |
 | 6 | PID 0x5E for fuel rate | Vehicle is diesel; MAF-based stoichiometric formula unreliable for diesel |
-| 7 | LVGL v8.x for client UI | Mature embedded graphics library; stable ESP-IDF + PlatformIO support |
+| 7 | LVGL v9.5.0 for client UI | Mature embedded graphics library; stable ESP-IDF + PlatformIO support |
 | 8 | Unity on host | Faster iteration; hardware-dependent code abstracted behind interfaces |
 | 9 | Separate `platformio.ini` per sub-project | Different targets, deps, and flash configs; a single root file becomes brittle |
 | 10 | Server emulator project | Enables client development without vehicle or CAN hardware |

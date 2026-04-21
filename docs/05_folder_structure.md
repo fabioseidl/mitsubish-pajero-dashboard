@@ -130,7 +130,7 @@ board     = esp32dev
 framework = espidf
 
 lib_deps =
-    lvgl/lvgl @ ^8.3.0
+    lvgl/lvgl @ ^9.5.0
 
 lib_extra_dirs = ../../lib
 
