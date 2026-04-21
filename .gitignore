@@ -5,3 +5,6 @@ lib/core/include/security_config.h
 .pio/
 .obsidian/
 .DS_Store
+
+# VSCode settings
+.vscode/
