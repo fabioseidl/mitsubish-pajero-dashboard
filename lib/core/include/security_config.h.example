@@ -1,0 +1,11 @@
+#pragma once
+#include <stdint.h>
+
+// Copy this file to security_config.h and set a real 16-byte PMK.
+// security_config.h is gitignored — never commit it.
+static const uint8_t PMK_KEY[16] = {
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00
+};

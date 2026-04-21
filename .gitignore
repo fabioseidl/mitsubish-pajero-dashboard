@@ -1,2 +1,7 @@
+# Security keys — never commit
+lib/core/include/security_config.h
+
+# PlatformIO build artifacts
+.pio/
+.obsidian/
 .DS_Store
-.obsidian
