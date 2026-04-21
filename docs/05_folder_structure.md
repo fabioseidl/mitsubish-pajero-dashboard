@@ -17,6 +17,7 @@ car-dashboard/
 |       |   |-- espnow_broadcaster.h
 |       |   |-- espnow_receiver.h
 |       |   |-- i_screen_controller.h
+|       |   |-- server_connection_monitor.h
 |       |   |-- security_config.h         # GITIGNORED — copy from .example
 |       |   |-- security_config.h.example # Committed template
 |       |-- src/
@@ -24,6 +25,7 @@ car-dashboard/
 |           |-- brightness_controller.cpp
 |           |-- espnow_broadcaster.cpp
 |           |-- espnow_receiver.cpp
+|           |-- server_connection_monitor.cpp
 |
 |-- projects/
 |   |
@@ -76,6 +78,7 @@ car-dashboard/
 |   |   |-- lib/
 |   |   |   |-- test_brightness_controller.cpp
 |   |   |   |-- test_espnow_receiver.cpp
+|   |   |   |-- test_server_connection_monitor.cpp
 |   |   |-- mocks/
 |   |       |-- mock_can_driver.h
 |   |       |-- mock_display.h

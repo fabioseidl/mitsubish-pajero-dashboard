@@ -60,6 +60,7 @@
 | ESP-NOW abstraction | `ESPNowBroadcaster` and `ESPNowReceiver` base classes |
 | Display abstraction | `IDisplay` interface decoupling LVGL from hardware |
 | Brightness control | Touch event → 4-level brightness cycle logic |
+| Connection monitoring | `ServerConnectionMonitor` — timeout-based online/offline detection for clients |
 
 ### Client (`projects/client_cyd`)
 
@@ -68,6 +69,7 @@
 | ESP-NOW receive | Uses `ESPNowReceiver` from `lib/core` |
 | Screen rendering | Builds LVGL widgets; updates on each received `Payload` |
 | Brightness | Registers touch callback via `BrightnessController` |
+| Connection monitoring | Tracks last payload timestamp via `ServerConnectionMonitor`; triggers UI update on online/offline transition |
 
 ---
 
@@ -151,13 +153,23 @@ The PMK is defined in `lib/core/include/security_config.h`. This file is listed 
         v (validated)
   PayloadCallback invoked with deserialized Payload
         |
-        v
-  IScreenController::onPayloadReceived(payload)
-        |
-        v
-  LVGL widget updates
+        +-------------------------------------------+
+        |                                           |
+        v                                           v
+  ServerConnectionMonitor::onPayloadReceived(now_ms)   IScreenController::onPayloadReceived(payload)
+                                                    |
+                                                    v
+                                             LVGL widget updates
 
 [main loop]
+  ServerConnectionMonitor::tick(now_ms)
+        |
+        v (on transition)
+  IScreenController::onServerStatusChanged(online)
+        |
+        v
+  server_status_label_ updated (ONLINE / OFFLINE)
+
   IScreenController::tick()
         |
         v

@@ -41,7 +41,7 @@ A server emulator project replicates the server broadcast behavior without CAN h
 
 ## Development Environment
 
-- Framework: ESP-IDF (via PlatformIO)
+- Framework: Arduino (via PlatformIO)
 - IDE: VSCode + PlatformIO extension
 - Build system: PlatformIO (monorepo, separate `platformio.ini` per sub-project)
 - Testing methodology: Test-Driven Development (TDD)
@@ -61,13 +61,14 @@ A server emulator project replicates the server broadcast behavior without CAN h
 | 4 | Hand-maintained `pid_map.h` | Removes codegen dependency; simpler build pipeline |
 | 5 | Server computes derived values | Clients are pure renderers; keeps client firmware minimal |
 | 6 | PID 0x5E for fuel rate | Vehicle is diesel; MAF-based stoichiometric formula unreliable for diesel |
-| 7 | LVGL v9.5.0 for client UI | Mature embedded graphics library; stable ESP-IDF + PlatformIO support |
+| 7 | LVGL v9.5.0 for client UI | Mature embedded graphics library; stable Arduino + PlatformIO support |
 | 8 | Unity on host | Faster iteration; hardware-dependent code abstracted behind interfaces |
 | 9 | Separate `platformio.ini` per sub-project | Different targets, deps, and flash configs; a single root file becomes brittle |
 | 10 | Server emulator project | Enables client development without vehicle or CAN hardware |
 | 11 | `SessionAccumulator` on server | Distance and avg consumption require time-integrated state; belongs server-side |
 | 12 | `0x01` bitmask split server-side | Raw bitmask irrelevant to display; extract `mil_on` + `dtc_count` only |
 | 13 | `0x1C` excluded entirely | OBD standard enum has no display value for this use case |
+| 14 | `ServerConnectionMonitor` on client | Client detects server online/offline by tracking payload arrival timestamps; no protocol change required on server side |
 
 ---
 

@@ -214,6 +214,79 @@ private:
 
 ---
 
+### `ServerConnectionMonitor`
+
+Tracks whether the server is online by measuring the elapsed time since the last valid `Payload` was received. Intended to be called from the ESP-NOW receive callback and from the main loop tick.
+
+The server is considered **offline** if no payload arrives within `timeout_ms` milliseconds. The default timeout of 2000 ms corresponds to 20 missed consecutive broadcasts at 10 Hz. A `StatusChangeCallback` is fired once per transition (offline → online, online → offline).
+
+`ServerConnectionMonitor` does not call `esp_timer_get_time()` internally. The caller is responsible for passing the current timestamp to avoid coupling this class to ESP-IDF headers in host tests.
+
+```cpp
+// lib/core/include/server_connection_monitor.h
+
+class ServerConnectionMonitor {
+public:
+    static constexpr uint32_t DEFAULT_TIMEOUT_MS = 2000;
+
+    using StatusChangeCallback = void (*)(bool online);
+
+    /**
+     * @param timeout_ms Milliseconds without a payload before the server
+     *                   is considered offline. Default: 2000 ms (20 missed
+     *                   broadcasts at 10 Hz).
+     */
+    explicit ServerConnectionMonitor(uint32_t timeout_ms = DEFAULT_TIMEOUT_MS);
+
+    /**
+     * Records the arrival time of a valid payload.
+     * Must be called from the ESPNowReceiver PayloadCallback on each received Payload.
+     * Safe to call from ISR-adjacent context.
+     *
+     * @param now_ms Current time in milliseconds.
+     */
+    void onPayloadReceived(uint32_t now_ms);
+
+    /**
+     * Evaluates the timeout and fires StatusChangeCallback on transitions.
+     * Must be called from the main loop on every iteration.
+     *
+     * Transitions fired:
+     *   - offline → online: when first payload arrives after startup or timeout
+     *   - online → offline: when now_ms - last_received_ms > timeout_ms
+     *
+     * @param now_ms Current time in milliseconds.
+     */
+    void tick(uint32_t now_ms);
+
+    /**
+     * Returns the current server connection status.
+     *
+     * @return true  A payload was received within timeout_ms.
+     * @return false No payload received since startup, or timeout has elapsed.
+     */
+    bool isOnline() const;
+
+    /**
+     * Registers a callback invoked once per status transition.
+     * Called from tick() context (main loop), not ISR context.
+     *
+     * @param cb Function pointer receiving the new status (true = online).
+     *           Pass nullptr to deregister.
+     */
+    void setStatusChangeCallback(StatusChangeCallback cb);
+
+private:
+    uint32_t             timeout_ms_;
+    uint32_t             last_received_ms_;
+    bool                 is_online_;
+    bool                 ever_received_;   // false until first payload
+    StatusChangeCallback callback_;
+};
+```
+
+---
+
 ### `IScreenController` (interface)
 
 Abstract base for client-specific screen implementations. Each client project subclasses this to define its LVGL layout and widget update logic.
@@ -247,6 +320,17 @@ public:
     virtual void onPayloadReceived(const Payload& payload) = 0;
 
     /**
+     * Called by ServerConnectionMonitor::StatusChangeCallback on each
+     * online/offline transition.
+     * Implementations update the server status indicator widget.
+     *
+     * Must be non-blocking.
+     *
+     * @param online true when server transitions to online, false when offline.
+     */
+    virtual void onServerStatusChanged(bool online) = 0;
+
+    /**
      * Called from the main loop at regular intervals.
      * Responsible for:
      *   - Calling lv_timer_handler() to process LVGL render queue
@@ -267,25 +351,35 @@ public:
 #include "cyd_display.h"
 #include "brightness_controller.h"
 #include "espnow_receiver.h"
+#include "server_connection_monitor.h"
 #include "cyd_screen_controller.h" // defined in client project
 #include "security_config.h"
 
-static CYDDisplay          display(GPIO_BACKLIGHT_PIN);
-static BrightnessController brightness(display);
-static ESPNowReceiver      receiver;
-static CYDScreenController screen(brightness);
+static CYDDisplay              display(GPIO_BACKLIGHT_PIN);
+static BrightnessController    brightness(display);
+static ESPNowReceiver          receiver;
+static ServerConnectionMonitor connection_monitor;
+static CYDScreenController     screen(brightness);
 
 void app_main() {
     display.begin();
     brightness.applyInitial();
     screen.begin();
 
+    connection_monitor.setStatusChangeCallback([](bool online) {
+        screen.onServerStatusChanged(online);
+    });
+
     receiver.setCallback([](const Payload& p) {
+        uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+        connection_monitor.onPayloadReceived(now_ms);
         screen.onPayloadReceived(p);
     });
     receiver.begin(PMK_KEY);
 
     while (true) {
+        uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+        connection_monitor.tick(now_ms);
         screen.tick();
         vTaskDelay(pdMS_TO_TICKS(5));
     }
@@ -318,6 +412,7 @@ public:
      *   - Average consumption label
      *   - Distance label
      *   - MIL indicator
+     *   - Server status label (initial state: OFFLINE)
      *
      * @return true  All initialization succeeded.
      * @return false LVGL or driver initialization failed.
@@ -331,6 +426,14 @@ public:
      * @param payload Validated Payload containing all display metrics.
      */
     void onPayloadReceived(const Payload& payload) override;
+
+    /**
+     * Updates the server status indicator widget.
+     * Displays "SERVER ONLINE" (green) or "SERVER OFFLINE" (red).
+     *
+     * @param online true when server comes online, false when it goes offline.
+     */
+    void onServerStatusChanged(bool online) override;
 
     /**
      * Advances LVGL tick counter, runs lv_timer_handler(),
@@ -349,6 +452,7 @@ private:
     lv_obj_t* avg_consumption_label_;
     lv_obj_t* distance_label_;
     lv_obj_t* mil_indicator_;
+    lv_obj_t* server_status_label_;  // updated in onServerStatusChanged()
 
     uint32_t last_tick_ms_;
 };

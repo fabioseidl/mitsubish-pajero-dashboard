@@ -476,6 +476,79 @@ TEST: null_callback_does_not_crash_on_receive
 
 ---
 
+### Suite: `test_server_connection_monitor`
+
+Tests `ServerConnectionMonitor` timeout logic, online/offline transitions, and callback behaviour. No hardware or ESP-NOW mock required — all inputs are explicit `now_ms` timestamps.
+
+```
+TEST: isOnline_returns_false_before_first_payload
+  Given: fresh ServerConnectionMonitor(timeout_ms = 2000)
+  Expected: isOnline() == false
+
+TEST: isOnline_returns_true_after_first_payload
+  When:  onPayloadReceived(now_ms = 1000)
+         tick(now_ms = 1000)
+  Expected: isOnline() == true
+
+TEST: remains_online_within_timeout
+  When:  onPayloadReceived(now_ms = 0)
+         tick(now_ms = 1999)
+  Expected: isOnline() == true
+
+TEST: goes_offline_when_timeout_elapses
+  When:  onPayloadReceived(now_ms = 0)
+         tick(now_ms = 2000)
+  Expected: isOnline() == false
+
+TEST: callback_fired_once_on_online_transition
+  When:  tick(now_ms = 0)                  // still offline
+         onPayloadReceived(now_ms = 100)
+         tick(now_ms = 100)                // → online
+         tick(now_ms = 200)               // still online
+  Expected: StatusChangeCallback invoked exactly once with online == true
+
+TEST: callback_fired_once_on_offline_transition
+  When:  onPayloadReceived(now_ms = 0)
+         tick(now_ms = 0)                  // online
+         tick(now_ms = 2000)              // → offline
+         tick(now_ms = 2100)              // still offline
+  Expected: StatusChangeCallback invoked exactly once with online == false
+
+TEST: callback_fired_on_recovery_after_offline
+  When:  onPayloadReceived(now_ms = 0)
+         tick(now_ms = 0)                  // online
+         tick(now_ms = 2000)              // → offline (callback: false)
+         onPayloadReceived(now_ms = 2500)
+         tick(now_ms = 2500)              // → online again (callback: true)
+  Expected: callback invoked twice total: first false, then true
+
+TEST: no_callback_when_not_registered
+  Given: setStatusChangeCallback(nullptr)
+  When:  onPayloadReceived(now_ms = 0)
+         tick(now_ms = 0)
+         tick(now_ms = 2000)
+  Expected: no crash
+
+TEST: custom_timeout_respected
+  Given: ServerConnectionMonitor(timeout_ms = 500)
+  When:  onPayloadReceived(now_ms = 0)
+         tick(now_ms = 499)
+  Expected: isOnline() == true
+  When:  tick(now_ms = 500)
+  Expected: isOnline() == false
+
+TEST: repeated_payloads_keep_server_online
+  When:  onPayloadReceived(now_ms = 0)
+         tick(now_ms = 100)
+         onPayloadReceived(now_ms = 100)
+         tick(now_ms = 1900)
+         onPayloadReceived(now_ms = 1900)
+         tick(now_ms = 3800)
+  Expected: isOnline() == true  (last payload at 1900, timeout at 3900)
+```
+
+---
+
 ## Coverage Goals
 
 | Module | Target |
@@ -488,6 +561,7 @@ TEST: null_callback_does_not_crash_on_receive
 | `PayloadBuilder` | 100% |
 | `BrightnessController` | 100% |
 | `ESPNowReceiver` (logic only) | 90% |
+| `ServerConnectionMonitor` | 100% |
 | `SimulationDataGenerator` | 80% |
 | `CANDriver` | excluded (hardware) |
 | `CYDDisplay` | excluded (hardware) |
