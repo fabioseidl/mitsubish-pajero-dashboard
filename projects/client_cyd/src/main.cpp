@@ -18,7 +18,7 @@ static ESPNowReceiver          receiver;
 static ServerConnectionMonitor connection_monitor;
 static CYDScreenController     screen(brightness);
 
-extern "C" void app_main() {
+void setup() {
     display.begin();
     brightness.applyInitial();
     screen.begin();
@@ -33,12 +33,12 @@ extern "C" void app_main() {
         screen.onPayloadReceived(p);
     });
     receiver.begin(PMK_KEY);
+}
 
-    while (true) {
-        uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
-        connection_monitor.tick(now_ms);
-        screen.tick();
-        vTaskDelay(pdMS_TO_TICKS(5));
-    }
+void loop() {
+    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    connection_monitor.tick(now_ms);
+    screen.tick();
+    vTaskDelay(pdMS_TO_TICKS(5));
 }
 #endif

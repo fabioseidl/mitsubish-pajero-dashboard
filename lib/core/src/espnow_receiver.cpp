@@ -17,8 +17,8 @@ bool ESPNowReceiver::begin(const uint8_t pmk[16]) {
     esp_wifi_start();
     esp_now_init();
     esp_now_set_pmk(pmk);
-    esp_now_register_recv_cb([](const uint8_t* mac, const uint8_t* data, int len) {
-        ESPNowReceiver::onReceiveISR(mac, data, len);
+    esp_now_register_recv_cb([](const uint8_t* mac_addr, const uint8_t* data, int len) {
+        ESPNowReceiver::onReceiveISR(mac_addr, data, len);
     });
 #else
     (void)pmk;

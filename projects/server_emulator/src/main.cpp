@@ -1,11 +1,14 @@
 #ifndef UNIT_TEST
-#include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <esp_timer.h>
+#include <esp_log.h>
 
 #include "simulation_data_generator.h"
 #include "espnow_broadcaster.h"
 #include "security_config.h"
+
+static const char* TAG = "emulator";
 
 static void emulator_task(void* /*param*/) {
     SimulationDataGenerator generator(DrivingProfile::CITY);
@@ -22,6 +25,8 @@ static void emulator_task(void* /*param*/) {
         generator.tick(delta_ms);
         Payload payload = generator.getPayload();
         broadcaster.send(payload);
+        ESP_LOGI(TAG, "timestamp=%" PRIu32 " ms, rpm=%u, speed=%u km/h",
+                 payload.timestamp_ms, (unsigned)payload.rpm, (unsigned)payload.speed_kmh);
 
         vTaskDelay(pdMS_TO_TICKS(100));
     }

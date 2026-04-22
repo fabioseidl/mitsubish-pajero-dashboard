@@ -5,7 +5,7 @@
 #include "brightness_controller.h"
 
 #ifndef UNIT_TEST
-#include <lvgl.h>
+#include <src/lvgl.h>
 #else
 struct lv_obj_t;
 #endif
@@ -32,4 +32,6 @@ private:
     lv_obj_t* server_status_label_;
 
     uint32_t last_tick_ms_;
+    uint32_t last_touch_ms_;
+    bool     touch_pressed_;
 };

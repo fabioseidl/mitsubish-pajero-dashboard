@@ -29,8 +29,8 @@ bool ESPNowBroadcaster::begin(const uint8_t pmk[16]) {
     esp_now_add_peer(&peer);
 
     g_broadcaster_instance = this;
-    esp_now_register_send_cb([](const uint8_t* mac, esp_now_send_status_t status) {
-        ESPNowBroadcaster::onSendComplete(mac, status);
+    esp_now_register_send_cb([](const uint8_t* /*mac_addr*/, esp_now_send_status_t status) {
+        ESPNowBroadcaster::onSendComplete(nullptr, status);
     });
 #else
     (void)pmk;

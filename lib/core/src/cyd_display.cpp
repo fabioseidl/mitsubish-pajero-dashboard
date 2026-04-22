@@ -4,7 +4,7 @@
 #include <driver/ledc.h>
 #endif
 
-CYDDisplay::CYDDisplay(uint8_t backlight_pin, uint8_t pwm_channel)
+CYDDisplay::CYDDisplay(int backlight_pin, uint8_t pwm_channel)
     : backlight_pin_(backlight_pin), pwm_channel_(pwm_channel) {}
 
 bool CYDDisplay::begin() {
