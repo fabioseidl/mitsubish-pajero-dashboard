@@ -4,6 +4,8 @@
 #include <esp_timer.h>
 #include <esp_log.h>
 #include <nvs_flash.h>
+#include <esp_netif.h>
+#include <esp_event.h>
 
 #include "simulation_data_generator.h"
 #include "espnow_broadcaster.h"
@@ -51,6 +53,8 @@ extern "C" void app_main() {
         nvs_flash_erase();
         nvs_flash_init();
     }
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
     xTaskCreatePinnedToCore(emulator_task, "emulator", 4096, nullptr, 3, nullptr, 0);
 }
 #endif
