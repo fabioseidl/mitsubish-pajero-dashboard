@@ -6,6 +6,7 @@
 
 #ifndef UNIT_TEST
 #include <src/lvgl.h>
+#include <freertos/portmacro.h>
 #else
 struct lv_obj_t;
 #endif
@@ -34,4 +35,13 @@ private:
     uint32_t last_tick_ms_;
     uint32_t last_touch_ms_;
     bool     touch_pressed_;
+
+    // Pending updates from WiFi-task callbacks — applied to LVGL only in tick()
+    Payload  pending_payload_;
+    bool     has_pending_payload_ = false;
+    bool     pending_status_      = false;
+    bool     has_pending_status_  = false;
+#ifndef UNIT_TEST
+    portMUX_TYPE mux_ = portMUX_INITIALIZER_UNLOCKED;
+#endif
 };

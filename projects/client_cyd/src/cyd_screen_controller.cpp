@@ -112,26 +112,11 @@ bool CYDScreenController::begin() {
 
 void CYDScreenController::onPayloadReceived(const Payload& payload) {
 #ifndef UNIT_TEST
-    char buf[32];
-
-    lv_arc_set_value(rpm_arc_, payload.rpm);
-    snprintf(buf, sizeof(buf), "%u rpm", (unsigned)payload.rpm);
-    lv_label_set_text(rpm_label_, buf);
-
-    snprintf(buf, sizeof(buf), "%u km/h", (unsigned)payload.speed_kmh);
-    lv_label_set_text(speed_label_, buf);
-
-    snprintf(buf, sizeof(buf), "%.1f km/L", payload.consumption_km_per_l);
-    lv_label_set_text(consumption_label_, buf);
-
-    snprintf(buf, sizeof(buf), "avg %.1f km/L", payload.avg_consumption_km_per_l);
-    lv_label_set_text(avg_consumption_label_, buf);
-
-    snprintf(buf, sizeof(buf), "%.1f km", payload.distance_km);
-    lv_label_set_text(distance_label_, buf);
-
-    lv_obj_set_style_text_color(mil_indicator_,
-        payload.mil_on ? lv_color_hex(0xFF8000) : lv_color_hex(0x888888), 0);
+    // Called from WiFi task (CPU 0) — only buffer here; LVGL update happens in tick()
+    portENTER_CRITICAL(&mux_);
+    pending_payload_     = payload;
+    has_pending_payload_ = true;
+    portEXIT_CRITICAL(&mux_);
 #else
     (void)payload;
 #endif
@@ -139,13 +124,11 @@ void CYDScreenController::onPayloadReceived(const Payload& payload) {
 
 void CYDScreenController::onServerStatusChanged(bool online) {
 #ifndef UNIT_TEST
-    if (online) {
-        lv_label_set_text(server_status_label_, "SERVER ONLINE");
-        lv_obj_set_style_text_color(server_status_label_, lv_color_hex(0x00FF00), 0);
-    } else {
-        lv_label_set_text(server_status_label_, "SERVER OFFLINE");
-        lv_obj_set_style_text_color(server_status_label_, lv_color_hex(0xFF0000), 0);
-    }
+    // Called from Arduino loop task (same as tick()) — but guard anyway for safety
+    portENTER_CRITICAL(&mux_);
+    pending_status_     = online;
+    has_pending_status_ = true;
+    portEXIT_CRITICAL(&mux_);
 #else
     (void)online;
 #endif
@@ -156,6 +139,48 @@ void CYDScreenController::tick() {
     uint32_t now_ms   = (uint32_t)(esp_timer_get_time() / 1000);
     uint32_t delta_ms = now_ms - last_tick_ms_;
     last_tick_ms_     = now_ms;
+
+    // Drain pending updates from WiFi-task callbacks — safe to call LVGL here (loop task)
+    portENTER_CRITICAL(&mux_);
+    bool     apply_payload = has_pending_payload_;
+    Payload  payload_copy  = pending_payload_;
+    bool     apply_status  = has_pending_status_;
+    bool     status_copy   = pending_status_;
+    has_pending_payload_   = false;
+    has_pending_status_    = false;
+    portEXIT_CRITICAL(&mux_);
+
+    if (apply_payload) {
+        char buf[32];
+        lv_arc_set_value(rpm_arc_, payload_copy.rpm);
+        snprintf(buf, sizeof(buf), "%u rpm", (unsigned)payload_copy.rpm);
+        lv_label_set_text(rpm_label_, buf);
+
+        snprintf(buf, sizeof(buf), "%u km/h", (unsigned)payload_copy.speed_kmh);
+        lv_label_set_text(speed_label_, buf);
+
+        snprintf(buf, sizeof(buf), "%.1f km/L", payload_copy.consumption_km_per_l);
+        lv_label_set_text(consumption_label_, buf);
+
+        snprintf(buf, sizeof(buf), "avg %.1f km/L", payload_copy.avg_consumption_km_per_l);
+        lv_label_set_text(avg_consumption_label_, buf);
+
+        snprintf(buf, sizeof(buf), "%.1f km", payload_copy.distance_km);
+        lv_label_set_text(distance_label_, buf);
+
+        lv_obj_set_style_text_color(mil_indicator_,
+            payload_copy.mil_on ? lv_color_hex(0xFF8000) : lv_color_hex(0x888888), 0);
+    }
+
+    if (apply_status) {
+        if (status_copy) {
+            lv_label_set_text(server_status_label_, "SERVER ONLINE");
+            lv_obj_set_style_text_color(server_status_label_, lv_color_hex(0x00FF00), 0);
+        } else {
+            lv_label_set_text(server_status_label_, "SERVER OFFLINE");
+            lv_obj_set_style_text_color(server_status_label_, lv_color_hex(0xFF0000), 0);
+        }
+    }
 
     lv_tick_inc(delta_ms);
     lv_timer_handler();
