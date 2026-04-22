@@ -15,7 +15,11 @@ static void emulator_task(void* /*param*/) {
     ESPNowBroadcaster       broadcaster;
     uint32_t                last_tick_ms = 0;
 
-    broadcaster.begin(PMK_KEY);
+    bool begin_ok = broadcaster.begin(PMK_KEY);
+    ESP_LOGI(TAG, "broadcaster.begin=%d", begin_ok);
+
+    uint32_t send_count = 0;
+    uint32_t fail_count = 0;
 
     while (true) {
         uint32_t now_ms   = (uint32_t)(esp_timer_get_time() / 1000);
@@ -24,7 +28,14 @@ static void emulator_task(void* /*param*/) {
 
         generator.tick(delta_ms);
         Payload payload = generator.getPayload();
-        broadcaster.send(payload);
+        bool sent = broadcaster.send(payload);
+        sent ? ++send_count : ++fail_count;
+
+        if (send_count % 50 == 1 || fail_count > 0) {
+            ESP_LOGI(TAG, "send_ok=%d sent=%lu failed=%lu status=%d",
+                     sent, (unsigned long)send_count, (unsigned long)fail_count,
+                     (int)broadcaster.lastSendStatus());
+        }
         ESP_LOGI(TAG, "timestamp=%" PRIu32 " ms, rpm=%u, speed=%u km/h",
                  payload.timestamp_ms, (unsigned)payload.rpm, (unsigned)payload.speed_kmh);
 

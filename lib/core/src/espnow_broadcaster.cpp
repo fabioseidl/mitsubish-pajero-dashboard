@@ -19,19 +19,26 @@ bool ESPNowBroadcaster::begin(const uint8_t pmk[16]) {
     if (esp_wifi_init(&cfg) != ESP_OK) return false;
     if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK) return false;
     if (esp_wifi_start() != ESP_OK) return false;
+    esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
     if (esp_now_init() != ESP_OK) return false;
     if (esp_now_set_pmk(pmk) != ESP_OK) return false;
 
     esp_now_peer_info_t peer = {};
     memcpy(peer.peer_addr, BROADCAST_MAC, 6);
-    peer.channel = 0;
+    peer.channel = 1;
     peer.encrypt = false;
     esp_now_add_peer(&peer);
 
     g_broadcaster_instance = this;
+#ifdef ARDUINO
     esp_now_register_send_cb([](const uint8_t* /*mac_addr*/, esp_now_send_status_t status) {
         ESPNowBroadcaster::onSendComplete(nullptr, status);
     });
+#else
+    esp_now_register_send_cb([](const wifi_tx_info_t* /*info*/, esp_now_send_status_t status) {
+        ESPNowBroadcaster::onSendComplete(nullptr, status);
+    });
+#endif
 #else
     (void)pmk;
 #endif

@@ -16,6 +16,8 @@ public:
                               const uint8_t* data,
                               int len);
 
+    static uint32_t raw_rx_count_;
+
 private:
     static ESPNowReceiver* instance_;
 
