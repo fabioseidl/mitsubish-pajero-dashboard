@@ -11,6 +11,7 @@
 #include "cyd_screen_controller.h"
 #include "security_config.h"
 #include "pin_config.h"
+#include <WiFi.h>
 
 static CYDDisplay              display(GPIO_BACKLIGHT_PIN);
 static BrightnessController    brightness(display);

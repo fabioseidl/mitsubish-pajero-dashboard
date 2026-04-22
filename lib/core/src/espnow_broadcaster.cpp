@@ -25,9 +25,9 @@ bool ESPNowBroadcaster::begin(const uint8_t pmk[16]) {
 
     esp_now_peer_info_t peer = {};
     memcpy(peer.peer_addr, BROADCAST_MAC, 6);
-    peer.channel = 1;
+    peer.channel = 0;
     peer.encrypt = false;
-    esp_now_add_peer(&peer);
+    last_add_peer_err_ = esp_now_add_peer(&peer);
 
     g_broadcaster_instance = this;
 #ifdef ARDUINO
@@ -53,6 +53,7 @@ bool ESPNowBroadcaster::send(const Payload& payload) {
     esp_err_t err = esp_now_send(BROADCAST_MAC,
                                   (const uint8_t*)&payload,
                                   sizeof(Payload));
+    last_send_err_ = err;
     return err == ESP_OK;
 #else
     (void)payload;

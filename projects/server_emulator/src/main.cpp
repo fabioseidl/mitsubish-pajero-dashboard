@@ -3,6 +3,7 @@
 #include <freertos/task.h>
 #include <esp_timer.h>
 #include <esp_log.h>
+#include <nvs_flash.h>
 
 #include "simulation_data_generator.h"
 #include "espnow_broadcaster.h"
@@ -16,7 +17,8 @@ static void emulator_task(void* /*param*/) {
     uint32_t                last_tick_ms = 0;
 
     bool begin_ok = broadcaster.begin(PMK_KEY);
-    ESP_LOGI(TAG, "broadcaster.begin=%d", begin_ok);
+    ESP_LOGI(TAG, "begin=%d add_peer_err=%d send_err_init=%d",
+             begin_ok, (int)broadcaster.lastAddPeerErr(), (int)broadcaster.lastSendErr());
 
     uint32_t send_count = 0;
     uint32_t fail_count = 0;
@@ -31,10 +33,10 @@ static void emulator_task(void* /*param*/) {
         bool sent = broadcaster.send(payload);
         sent ? ++send_count : ++fail_count;
 
-        if (send_count % 50 == 1 || fail_count > 0) {
-            ESP_LOGI(TAG, "send_ok=%d sent=%lu failed=%lu status=%d",
+        if (fail_count % 50 == 1) {
+            ESP_LOGI(TAG, "send_ok=%d sent=%lu failed=%lu add_peer_err=%d last_send_err=%d",
                      sent, (unsigned long)send_count, (unsigned long)fail_count,
-                     (int)broadcaster.lastSendStatus());
+                     (int)broadcaster.lastAddPeerErr(), (int)broadcaster.lastSendErr());
         }
         ESP_LOGI(TAG, "timestamp=%" PRIu32 " ms, rpm=%u, speed=%u km/h",
                  payload.timestamp_ms, (unsigned)payload.rpm, (unsigned)payload.speed_kmh);
@@ -44,6 +46,11 @@ static void emulator_task(void* /*param*/) {
 }
 
 extern "C" void app_main() {
+    esp_err_t nvs_err = nvs_flash_init();
+    if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        nvs_flash_erase();
+        nvs_flash_init();
+    }
     xTaskCreatePinnedToCore(emulator_task, "emulator", 4096, nullptr, 3, nullptr, 0);
 }
 #endif
