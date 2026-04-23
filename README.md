@@ -11,7 +11,7 @@ Distributed car dashboard built on ESP32. A server node reads vehicle data from 
 | Server | ESP32 + MCP2515 + TJA1050 (OBD-II CAN adapter) |
 | Client (CYD) | ESP32 Cheap Yellow Display — ILI9341 2.4" 320x240, XPT2046 touch |
 
-Target vehicle: Mitsubishi Pajero Dakar (diesel).
+Target vehicle: Mitsubishi Pajero Dakar 3.2 Diesel.
 
 ---
 

@@ -1,0 +1,12 @@
+SET(SOURCES screens/ui_boot.c
+    screens/ui_hud.c
+    ui.c
+    components/ui_comp_hook.c
+    ui_helpers.c
+    images/ui_img_mitsubishi_logo_png.c
+    images/ui_img_icon_server_png.c
+    images/ui_img_icon_fuel_png.c
+    fonts/ui_font_robotobold150.c
+    fonts/ui_font_robotoregular24.c)
+
+add_library(ui ${SOURCES})
