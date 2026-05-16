@@ -159,7 +159,7 @@
                 "childs": [],
                 "nid": 1070,
                 "strtype": "IMAGE/Style_main",
-                "strval": "lv.PART.MAIN, Rectangle, Image, Transform",
+                "strval": "lv.PART.MAIN, Rectangle, Image, Transform,Pad",
                 "InheritedType": 11
               }
             ],
@@ -212,7 +212,7 @@
                 "strtype": "OBJECT/Position",
                 "intarray": [
                   0,
-                  -5
+                  -10
                 ],
                 "InheritedType": 7
               },
@@ -303,6 +303,12 @@
                 "InheritedType": 10
               },
               {
+                "nid": 1035,
+                "strtype": "LABEL/Recolor",
+                "strval": "False",
+                "InheritedType": 2
+              },
+              {
                 "part": "lv.PART.MAIN",
                 "childs": [
                   {
@@ -319,7 +325,7 @@
                       {
                         "nid": 10450,
                         "strtype": "_style/Text_Font",
-                        "strval": "robotobold40",
+                        "strval": "montserrat_32",
                         "InheritedType": 3
                       }
                     ],
@@ -511,7 +517,7 @@
                   {
                     "nid": 1000225,
                     "strtype": "CHANGE SCREEN/Delay",
-                    "integer": 1,
+                    "integer": 1000,
                     "InheritedType": 6
                   }
                 ],
@@ -653,6 +659,12 @@
                 "strtype": "LABEL/Text",
                 "strval": "0",
                 "InheritedType": 10
+              },
+              {
+                "nid": 1035,
+                "strtype": "LABEL/Recolor",
+                "strval": "False",
+                "InheritedType": 2
               },
               {
                 "part": "lv.PART.MAIN",
@@ -819,6 +831,12 @@
                 "strtype": "LABEL/Text",
                 "strval": "0",
                 "InheritedType": 10
+              },
+              {
+                "nid": 1035,
+                "strtype": "LABEL/Recolor",
+                "strval": "False",
+                "InheritedType": 2
               },
               {
                 "part": "lv.PART.MAIN",
@@ -1000,7 +1018,7 @@
                 "childs": [],
                 "nid": 1070,
                 "strtype": "IMAGE/Style_main",
-                "strval": "lv.PART.MAIN, Rectangle, Image, Transform",
+                "strval": "lv.PART.MAIN, Rectangle, Image, Transform,Pad",
                 "InheritedType": 11
               }
             ],
@@ -1160,7 +1178,7 @@
                 "childs": [],
                 "nid": 1070,
                 "strtype": "IMAGE/Style_main",
-                "strval": "lv.PART.MAIN, Rectangle, Image, Transform",
+                "strval": "lv.PART.MAIN, Rectangle, Image, Transform,Pad",
                 "InheritedType": 11
               }
             ],
@@ -1293,6 +1311,12 @@
                 "strtype": "LABEL/Text",
                 "strval": "0.00",
                 "InheritedType": 10
+              },
+              {
+                "nid": 1035,
+                "strtype": "LABEL/Recolor",
+                "strval": "False",
+                "InheritedType": 2
               },
               {
                 "part": "lv.PART.MAIN",
@@ -1444,7 +1468,7 @@
               {
                 "nid": 1030,
                 "strtype": "BAR/Value",
-                "integer": 1200,
+                "integer": 5000,
                 "InheritedType": 6
               },
               {
@@ -1489,11 +1513,108 @@
               },
               {
                 "part": "lv.PART.INDICATOR",
-                "childs": [],
+                "childs": [
+                  {
+                    "nid": 10000,
+                    "strtype": "_style/StyleState",
+                    "strval": "DEFAULT",
+                    "childs": [
+                      {
+                        "nid": 10510,
+                        "strtype": "_style/Bg_Radius",
+                        "InheritedType": 6
+                      },
+                      {
+                        "nid": 10520,
+                        "flags": 4096,
+                        "strtype": "_style/Bg_Color",
+                        "intarray": [
+                          255,
+                          255,
+                          255,
+                          255
+                        ],
+                        "InheritedType": 7
+                      }
+                    ],
+                    "InheritedType": 1
+                  }
+                ],
                 "nid": 1070,
                 "strtype": "BAR/Style_indicator",
                 "strval": "lv.PART.INDICATOR, Rectangle",
                 "InheritedType": 11
+              },
+              {
+                "disabled": false,
+                "nid": 1000252,
+                "strtype": "_event/EventHandler",
+                "strval": "VALUE_CHANGED",
+                "childs": [
+                  {
+                    "nid": 1000253,
+                    "strtype": "_event/name",
+                    "strval": "speedchange",
+                    "InheritedType": 10
+                  },
+                  {
+                    "nid": 1000254,
+                    "strtype": "_event/condition_C",
+                    "strval": "",
+                    "InheritedType": 10
+                  },
+                  {
+                    "nid": 1000255,
+                    "strtype": "_event/condition_P",
+                    "strval": "",
+                    "InheritedType": 10
+                  },
+                  {
+                    "nid": 1000256,
+                    "strtype": "_event/action",
+                    "strval": "BAR_PROPERTY",
+                    "childs": [
+                      {
+                        "nid": 1000257,
+                        "strtype": "BAR_PROPERTY/Name",
+                        "strval": "BAR_PROPERTY",
+                        "InheritedType": 10
+                      },
+                      {
+                        "nid": 1000258,
+                        "strtype": "BAR_PROPERTY/Call",
+                        "strval": "SetBarProperty(<{Target}>, '<{Property}>', <{Value}>)",
+                        "InheritedType": 10
+                      },
+                      {
+                        "nid": 1000259,
+                        "strtype": "BAR_PROPERTY/CallC",
+                        "strval": "_ui_bar_set_property(<{Target}>, _UI_BAR_PROPERTY_<{Property}>, <{Value}>);",
+                        "InheritedType": 10
+                      },
+                      {
+                        "nid": 1000260,
+                        "strtype": "BAR_PROPERTY/Target",
+                        "strval": "GUID68372045-643903S6295112",
+                        "InheritedType": 9
+                      },
+                      {
+                        "nid": 1000261,
+                        "strtype": "BAR_PROPERTY/Property",
+                        "strval": "Value_with_anim",
+                        "InheritedType": 3
+                      },
+                      {
+                        "nid": 1000262,
+                        "strtype": "BAR_PROPERTY/Value",
+                        "strval": "",
+                        "InheritedType": 10
+                      }
+                    ],
+                    "InheritedType": 10
+                  }
+                ],
+                "InheritedType": 4
               }
             ],
             "saved_objtypeKey": "BAR"
@@ -1637,7 +1758,7 @@
     "description": "",
     "board": "DIS01728A-1 - ESP32-S3 2.8inch HMI Display 320x240 RGB - Arduino-IDE",
     "board_version": "v2.3.0",
-    "editor_version": "1.6.0",
+    "editor_version": "1.6.1",
     "image": "",
     "export_temp_image": false,
     "force_export_images": false,
@@ -1651,9 +1772,10 @@
     "custom_variable_prefix": "uic",
     "separate_screen_save": false,
     "hierarchy_state_save": false,
-    "backup_cnt": 22,
+    "reverse_event_order": false,
+    "backup_cnt": 26,
     "autosave_cnt": 0,
-    "group_color_cnt": 1,
+    "group_color_cnt": 2,
     "imagebytearrayprefix": null,
     "lvgl_version": "9.3",
     "callfuncsexport": "C_FILE",
@@ -1662,7 +1784,7 @@
     "naming": "Name",
     "naming_force_lowercase": false,
     "naming_add_subcomponent": false,
-    "nidcnt": 1000242,
+    "nidcnt": 1000263,
     "BitDepth": 16,
     "Name": "SquareLine_Project"
   }

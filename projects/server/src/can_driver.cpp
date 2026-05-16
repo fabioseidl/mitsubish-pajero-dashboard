@@ -1,29 +1,36 @@
 #include "can_driver.h"
+#include "pin_config.h"
 
 #ifndef UNIT_TEST
-#include <SPI.h>
-#include <mcp_can.h>
+#include <Arduino.h>
+#include "driver/twai.h"
 #endif
-
-CANDriver::CANDriver(uint8_t cs_pin, uint8_t int_pin)
-    : cs_pin_(cs_pin), int_pin_(int_pin) {}
 
 bool CANDriver::begin() {
 #ifndef UNIT_TEST
-    SPI.begin();
-    MCP_CAN mcp_can(cs_pin_);
-    if (mcp_can.begin(MCP_ANY, CAN_500KBPS, MCP_8MHZ) != CAN_OK) {
+    twai_general_config_t gCfg = TWAI_GENERAL_CONFIG_DEFAULT(PIN_CAN_TX, PIN_CAN_RX, TWAI_MODE_LISTEN_ONLY);
+    twai_timing_config_t  tCfg = TWAI_TIMING_CONFIG_500KBITS();
+    twai_filter_config_t  fCfg = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+
+    if (twai_driver_install(&gCfg, &tCfg, &fCfg) != ESP_OK) {
+        Serial.println("TWAI driver install failed");
         return false;
     }
-    mcp_can.setMode(MCP_NORMAL);
-    pinMode(int_pin_, INPUT);
+    if (twai_start() != ESP_OK) {
+        Serial.println("TWAI start failed");
+        twai_driver_uninstall();
+        return false;
+    }
+    Serial.printf("TWAI ready: TX=GPIO%d RX=GPIO%d 500kbps\n", PIN_CAN_TX, PIN_CAN_RX);
 #endif
     return true;
 }
 
 bool CANDriver::isFrameAvailable() {
 #ifndef UNIT_TEST
-    return digitalRead(int_pin_) == LOW;
+    twai_status_info_t status;
+    if (twai_get_status_info(&status) != ESP_OK) return false;
+    return status.msgs_to_rx > 0;
 #else
     return false;
 #endif
@@ -31,17 +38,12 @@ bool CANDriver::isFrameAvailable() {
 
 bool CANDriver::readFrame(CANFrame& out_frame) {
 #ifndef UNIT_TEST
-    MCP_CAN mcp_can(cs_pin_);
-    uint8_t buf[8] = {};
-    uint8_t dlc    = 0;
-    uint32_t id    = 0;
-    if (mcp_can.readMsgBuf(&id, &dlc, buf) != CAN_OK) {
-        return false;
-    }
-    out_frame.id          = id;
-    out_frame.dlc         = dlc;
-    out_frame.is_extended = (mcp_can.isExtendedFrame() == 1);
-    for (uint8_t i = 0; i < 8; i++) out_frame.data[i] = buf[i];
+    twai_message_t msg;
+    if (twai_receive(&msg, pdMS_TO_TICKS(10)) != ESP_OK) return false;
+    out_frame.id          = msg.identifier;
+    out_frame.dlc         = msg.data_length_code;
+    out_frame.is_extended = msg.extd;
+    for (uint8_t i = 0; i < 8; i++) out_frame.data[i] = msg.data[i];
     return true;
 #else
     (void)out_frame;

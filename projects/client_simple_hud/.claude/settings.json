@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/fabioseidl/Documents/Repos/mitsubish-pajero-dashboard/**)"
+    ]
+  }
+}

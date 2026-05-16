@@ -12,21 +12,38 @@
 #include "payload_builder.h"
 #include "espnow_broadcaster.h"
 #include "pid_map.h"
-#include "pin_config.h"
 #include "security_config.h"
 
 static DataAggregator aggregator;
 
 static void can_rx_task(void* /*param*/) {
-    CANDriver     driver(PIN_CAN_CS, PIN_CAN_INT);
+    CANDriver     driver;
     PIDDictionary dictionary;
+    bool          car_can_connected = false;
 
-    driver.begin();
+    Serial.println("Initializing TWAI...");
+    if (!driver.begin()) {
+        Serial.println("ERROR: Failed to initialize TWAI");
+        while (true) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
+    Serial.println("TWAI initialized successfully");
 
     while (true) {
         if (driver.isFrameAvailable()) {
             CANFrame frame;
             if (driver.readFrame(frame)) {
+                if (!car_can_connected) {
+                    car_can_connected = true;
+                    Serial.println("Connected to vehicle CAN bus");
+                }
+                Serial.printf("CAN message received: ID=0x%03X EXT=%d DLC=%d DATA=", frame.id, frame.is_extended ? 1 : 0, frame.dlc);
+                for (uint8_t i = 0; i < frame.dlc; ++i) {
+                    Serial.printf(" %02X", frame.data[i]);
+                }
+                Serial.println();
+
                 if (frame.data[2] == PID_MONITOR_STATUS) {
                     aggregator.updateMilStatus(PIDTranslator::extractMilStatus(frame));
                     aggregator.updateDtcCount(PIDTranslator::extractDtcCount(frame));
@@ -68,8 +85,18 @@ static void broadcast_task(void* /*param*/) {
     }
 }
 
-extern "C" void app_main() {
+void setup() {
+    Serial.begin(115200);
+    while (!Serial) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    Serial.println("Server starting...");
+
     xTaskCreatePinnedToCore(can_rx_task,    "can_rx",    4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(broadcast_task, "broadcast", 4096, nullptr, 3, nullptr, 0);
+}
+
+void loop() {
+    vTaskDelay(pdMS_TO_TICKS(1000));
 }
 #endif

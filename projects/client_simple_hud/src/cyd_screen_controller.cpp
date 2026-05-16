@@ -120,7 +120,6 @@ void CYDScreenController::tick() {
 
         snprintf(buf, sizeof(buf), "%u", (unsigned)payload_copy.rpm);
         lv_label_set_text(ui_lbrpm, buf);
-        lv_bar_set_value(ui_barrpm, payload_copy.rpm, LV_ANIM_ON);
 
         snprintf(buf, sizeof(buf), "%.1f", (float)payload_copy.avg_consumption_km_per_l);
         lv_label_set_text(ui_lbavgconsumption, buf);
