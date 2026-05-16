@@ -27,7 +27,7 @@ struct CANFrame {
 
 ### `ICANDriver` (interface)
 
-Abstract interface for CAN bus access. Exists solely to enable host-side testing via mock injection without requiring MCP2515 hardware.
+Abstract interface for CAN bus access. Exists solely to enable host-side testing via mock injection without requiring TWAI hardware.
 
 ```cpp
 // projects/server/include/ican_driver.h
@@ -37,10 +37,10 @@ public:
     virtual ~ICANDriver() = default;
 
     /**
-     * Initializes SPI and MCP2515 controller.
+     * Initializes TWAI controller.
      *
      * @return true  Initialization succeeded; driver ready to receive frames.
-     * @return false Initialization failed (SPI error, MCP2515 not responding).
+     * @return false Initialization failed (TWAI error).
      */
     virtual bool begin() = 0;
 
@@ -53,7 +53,7 @@ public:
     virtual bool isFrameAvailable() = 0;
 
     /**
-     * Reads one frame from the MCP2515 RX buffer.
+     * Reads one frame from the TWAI RX buffer.
      *
      * @param out_frame Reference to a CANFrame that will be populated.
      * @return true  Frame was read successfully; out_frame contains valid data.
@@ -67,7 +67,7 @@ public:
 
 ### `CANDriver : ICANDriver`
 
-Concrete MCP2515 implementation. Wraps the hardware SPI driver.
+Concrete TWAI implementation. Wraps the ESP32 built-in TWAI driver.
 
 ```cpp
 // projects/server/include/can_driver.h
@@ -75,41 +75,32 @@ Concrete MCP2515 implementation. Wraps the hardware SPI driver.
 class CANDriver : public ICANDriver {
 public:
     /**
-     * @param cs_pin  GPIO number for MCP2515 chip select (SPI CS).
-     * @param int_pin GPIO number for MCP2515 interrupt line (active low).
-     */
-    explicit CANDriver(uint8_t cs_pin, uint8_t int_pin);
-
-    /**
-     * Initializes SPI bus and configures MCP2515 for 500 kbps, normal mode.
+     * Initializes TWAI controller for 500 kbps, listen-only mode.
      * Must be called before any readFrame() calls.
      *
-     * @return true  MCP2515 responded and is configured.
-     * @return false MCP2515 did not acknowledge initialization.
+     * @return true  TWAI initialized and ready.
+     * @return false TWAI initialization failed.
      */
     bool begin() override;
 
     /**
-     * Polls the MCP2515 INT pin state to determine frame availability.
-     * Does not perform a full SPI transaction.
+     * Checks whether one or more CAN frames are available in the RX buffer.
      *
-     * @return true  INT pin is asserted (frame available).
-     * @return false INT pin is deasserted (no frame).
+     * @return true  One or more frames are available.
+     * @return false RX buffer is empty.
      */
     bool isFrameAvailable() override;
 
     /**
-     * Performs a full SPI read of one frame from the MCP2515 RX buffer.
+     * Performs a read of one frame from the TWAI RX buffer.
      *
      * @param out_frame Populated with the received frame on success.
      * @return true  Frame read successfully.
-     * @return false No frame available or SPI error.
+     * @return false No frame available or read error.
      */
     bool readFrame(CANFrame& out_frame) override;
 
 private:
-    uint8_t cs_pin_;
-    uint8_t int_pin_;
 };
 ```
 

@@ -2,7 +2,7 @@
 
 ## Summary
 
-A distributed car dashboard system built on ESP32 microcontrollers. One ESP32 acts as a CAN bus server, reading vehicle data via MCP2515 + TJA1050 from the OBD-II port, translating it, computing derived metrics, and broadcasting it wirelessly. One or more ESP32 clients receive the data and render it on displays using LVGL.
+A distributed car dashboard system built on ESP32 microcontrollers. One ESP32 acts as a CAN bus server, reading vehicle data via built-in TWAI (CAN controller) from the OBD-II port, translating it, computing derived metrics, and broadcasting it wirelessly. One or more ESP32 clients receive the data and render it on displays using LVGL.
 
 A server emulator project replicates the server broadcast behavior without CAN hardware, enabling client development independently of the vehicle.
 
@@ -24,8 +24,8 @@ A server emulator project replicates the server broadcast behavior without CAN h
 ## Hardware
 
 ### Server Node
-- MCU: ESP32 (any variant with SPI)
-- CAN controller: MCP2515 (SPI)
+- MCU: ESP32 (any variant with built-in TWAI)
+- CAN controller: TWAI (built-in)
 - CAN transceiver: TJA1050
 - Connection: OBD-II port (CAN High / CAN Low)
 - CAN bus speed: 500 kbps

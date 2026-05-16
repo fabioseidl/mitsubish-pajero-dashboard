@@ -6,7 +6,7 @@ Read the root `CLAUDE.md` and `docs/03_server_spec.md` before working on this pr
 
 ## Purpose
 
-Reads OBD-II data from the vehicle CAN bus via MCP2515 + TJA1050, translates raw frames into engineering values, computes derived metrics, accumulates session data, and broadcasts a `Payload` struct via ESP-NOW at 10 Hz.
+Reads OBD-II data from the vehicle CAN bus via TWAI + TJA1050, translates raw frames into engineering values, computes derived metrics, accumulates session data, and broadcasts a `Payload` struct via ESP-NOW at 10 Hz.
 
 ---
 
@@ -15,7 +15,7 @@ Reads OBD-II data from the vehicle CAN bus via MCP2515 + TJA1050, translates raw
 | Component | Detail |
 |---|---|
 | MCU | ESP32 |
-| CAN controller | MCP2515 (SPI) |
+| CAN controller | TWAI (built-in) |
 | CAN transceiver | TJA1050 |
 | CAN speed | 500 kbps |
 | Target vehicle | Mitsubishi Pajero Dakar (diesel) |
@@ -29,7 +29,7 @@ Pin assignments must be defined as named constants in `include/pin_config.h`. Ne
 | Class | File | Responsibility |
 |---|---|---|
 | `ICANDriver` | `include/ican_driver.h` | Interface for CAN hardware abstraction |
-| `CANDriver` | `include/can_driver.h` | MCP2515 SPI implementation |
+| `CANDriver` | `include/can_driver.h` | TWAI implementation |
 | `PIDDictionary` | `include/pid_dictionary.h` | Lookup from (can_id, pid_code) to PidDefinition |
 | `PIDTranslator` | `include/pid_translator.h` | Raw bytes → engineering float; bitmask extraction |
 | `DataAggregator` | `include/data_aggregator.h` | Thread-safe latest-value store per PID |

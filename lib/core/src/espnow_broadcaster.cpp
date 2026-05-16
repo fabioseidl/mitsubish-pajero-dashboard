@@ -4,6 +4,9 @@
 #ifndef UNIT_TEST
 #include <esp_wifi.h>
 #include <esp_now.h>
+#ifdef ARDUINO
+#include <WiFi.h>
+#endif
 #endif
 
 static const uint8_t BROADCAST_MAC[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -15,10 +18,15 @@ bool ESPNowBroadcaster::begin(const uint8_t pmk[16]) {
     last_send_status_ = ESP_NOW_SEND_SUCCESS;
 
 #ifndef UNIT_TEST
+#ifdef ARDUINO
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
+#else
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     if (esp_wifi_init(&cfg) != ESP_OK) return false;
     if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK) return false;
     if (esp_wifi_start() != ESP_OK) return false;
+#endif
     esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
     if (esp_now_init() != ESP_OK) return false;
     if (esp_now_set_pmk(pmk) != ESP_OK) return false;

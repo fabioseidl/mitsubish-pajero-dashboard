@@ -65,7 +65,9 @@ static void broadcast_task(void* /*param*/) {
     ESPNowBroadcaster  broadcaster;
     uint32_t           last_tick_ms = 0;
 
-    broadcaster.begin(PMK_KEY);
+    bool begin_ok = broadcaster.begin(PMK_KEY);
+    Serial.printf("ESP-NOW begin=%d add_peer_err=%d send_err_init=%d\n",
+                  begin_ok, (int)broadcaster.lastAddPeerErr(), (int)broadcaster.lastSendErr());
 
     while (true) {
         uint32_t now_ms   = (uint32_t)(esp_timer_get_time() / 1000);

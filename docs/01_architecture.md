@@ -7,7 +7,7 @@
         |
    OBD-II Port
         |
-  [ MCP2515 + TJA1050 ] (SPI)
+  [ TWAI + TJA1050 ] (GPIO 4/5)
         |
   [ ESP32 SERVER ]              [ ESP32 SERVER EMULATOR ]
     - CAN frame reading            - Synthetic data generation
@@ -35,7 +35,7 @@
 
 | Responsibility | Description |
 |---|---|
-| CAN reading | Poll MCP2515 via SPI; receive raw CAN frames at 500 kbps |
+| CAN reading | Poll TWAI via GPIO 4/5; receive raw CAN frames at 500 kbps |
 | Frame filtering | Accept only frames matching known PIDs in `pid_map.h` |
 | PID translation | Convert raw bytes to engineering values per formula in `pid_map.h` |
 | Bitmask extraction | PID 0x01: extract `mil_on` and `dtc_count` from raw 4-byte response |
