@@ -97,6 +97,8 @@ Widgets to implement:
 
 `ESPNowReceiver` receive logic is tested in `test/host/lib/test_espnow_receiver.cpp`.
 
+All tests validate the specifications defined in `docs/04_client_lib_spec.md`.
+
 ---
 
 ## Build

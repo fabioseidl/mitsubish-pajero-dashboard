@@ -108,6 +108,8 @@ Test files:
 
 `CANDriver` is excluded from host tests — test via `MockCANDriver` (see `test/host/mocks/mock_can_driver.h`).
 
+All tests validate the specifications defined in `docs/03_server_spec.md`.
+
 ---
 
 ## Build

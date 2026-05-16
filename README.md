@@ -64,6 +64,6 @@ Use `server_emulator` instead of `server` when developing without the vehicle.
 
 ## Development
 
-This project follows TDD. Write a failing test before writing any production code. See `docs/06_test_spec.md` for the full test plan and `CLAUDE.md` for Claude Code session rules.
+This project follows spec-driven development. Write specifications before implementing features, and validate with comprehensive tests. See `docs/06_test_spec.md` for the full specification and test plan, and `CLAUDE.md` for Claude Code session rules.
 
 Full documentation is in `docs/`.

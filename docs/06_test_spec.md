@@ -1,12 +1,13 @@
-# Test Specification
+# Specification-Driven Development
 
-## Methodology: Test-Driven Development (TDD)
+## Methodology: Spec-Driven Development
 
-All non-trivial logic is written test-first. The red-green-refactor cycle is strictly followed:
+All non-trivial logic is specified upfront and validated by comprehensive tests:
 
-1. Write a failing test that defines the expected behavior
-2. Write the minimum production code to make the test pass
-3. Refactor without breaking the test
+1. Write a specification that clearly defines expected behavior, inputs, outputs, and edge cases
+2. Write tests that validate the specification
+3. Implement production code to satisfy both specification and tests
+4. Refactor without breaking tests or violating the specification
 
 Framework: **Unity** (via PlatformIO native environment)
 Execution: host machine — macOS ARM64 (Apple M2), no hardware required

@@ -44,7 +44,7 @@ A server emulator project replicates the server broadcast behavior without CAN h
 - Framework: Arduino (via PlatformIO)
 - IDE: VSCode + PlatformIO extension
 - Build system: PlatformIO (monorepo, separate `platformio.ini` per sub-project)
-- Testing methodology: Test-Driven Development (TDD)
+- Development methodology: Spec-Driven Development (specifications first, validated by tests)
 - Test framework: Unity (run on host)
 - Host machine: macOS ARM64 (Apple M2)
 - Language: C++

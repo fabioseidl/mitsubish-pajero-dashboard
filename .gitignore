@@ -8,3 +8,6 @@ lib/core/include/security_config.h
 
 # VSCode settings
 .vscode/
+
+# Build Artifacts
+build/

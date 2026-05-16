@@ -80,6 +80,8 @@ Profiles use sinusoidal functions of `elapsed_ms_` to produce smooth, realistic 
 - `setProfile()` does not reset session
 - `tick(0)` does not crash or accumulate
 
+All tests validate the specifications defined in `docs/03_server_spec.md`.
+
 ---
 
 ## Build
