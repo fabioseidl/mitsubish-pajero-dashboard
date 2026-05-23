@@ -19,10 +19,16 @@ public:
         return true;
     }
 
+    bool sendFrame(const CANFrame& frame) override {
+        sent_frames.push(frame);
+        return true;
+    }
+
     void pushFrame(const CANFrame& frame) {
         queued_frames.push(frame);
     }
 
     bool begin_return_value = true;
     std::queue<CANFrame> queued_frames;
+    std::queue<CANFrame> sent_frames;
 };

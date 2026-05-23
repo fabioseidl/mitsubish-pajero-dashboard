@@ -8,4 +8,5 @@ public:
     bool begin() override;
     bool isFrameAvailable() override;
     bool readFrame(CANFrame& out_frame) override;
+    bool sendFrame(const CANFrame& frame) override;
 };

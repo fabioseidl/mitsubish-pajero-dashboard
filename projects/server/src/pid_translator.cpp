@@ -8,8 +8,9 @@ float PIDTranslator::translate(const CANFrame& frame, const PidDefinition& def) 
 }
 
 float PIDTranslator::applyLinearFormula(const CANFrame& frame, const PidDefinition& def) {
-    float byte_A = (float)frame.data[2];
-    float byte_B = (float)frame.data[3];
+    // data[0]=PCI, data[1]=0x41 service, data[2]=PID code, data[3]=byte A, data[4]=byte B
+    float byte_A = (float)frame.data[3];
+    float byte_B = (float)frame.data[4];
     return (byte_A * def.a_mult + byte_B * def.b_mult) * def.scale + def.offset;
 }
 

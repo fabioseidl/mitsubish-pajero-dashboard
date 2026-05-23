@@ -8,7 +8,7 @@
 
 bool CANDriver::begin() {
 #ifndef UNIT_TEST
-    twai_general_config_t gCfg = TWAI_GENERAL_CONFIG_DEFAULT(PIN_CAN_TX, PIN_CAN_RX, TWAI_MODE_LISTEN_ONLY);
+    twai_general_config_t gCfg = TWAI_GENERAL_CONFIG_DEFAULT(PIN_CAN_TX, PIN_CAN_RX, TWAI_MODE_NORMAL);
     twai_timing_config_t  tCfg = TWAI_TIMING_CONFIG_500KBITS();
     twai_filter_config_t  fCfg = TWAI_FILTER_CONFIG_ACCEPT_ALL();
 
@@ -48,5 +48,19 @@ bool CANDriver::readFrame(CANFrame& out_frame) {
 #else
     (void)out_frame;
     return false;
+#endif
+}
+
+bool CANDriver::sendFrame(const CANFrame& frame) {
+#ifndef UNIT_TEST
+    twai_message_t msg = {};
+    msg.identifier         = frame.id;
+    msg.data_length_code   = frame.dlc;
+    msg.extd               = frame.is_extended ? 1 : 0;
+    for (uint8_t i = 0; i < frame.dlc; i++) msg.data[i] = frame.data[i];
+    return twai_transmit(&msg, pdMS_TO_TICKS(10)) == ESP_OK;
+#else
+    (void)frame;
+    return true;
 #endif
 }

@@ -72,7 +72,6 @@ void ESPNowReceiver::onReceiveISR(const uint8_t* mac, const uint8_t* data, int l
     memcpy(&payload, data, sizeof(Payload));
 
     if (payload.version != PAYLOAD_VERSION) return;
-    if (!(payload.flags & PAYLOAD_FLAG_DATA_VALID)) return;
 
     if (instance_->callback_) {
         instance_->callback_(payload);
