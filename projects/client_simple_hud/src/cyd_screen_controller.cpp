@@ -121,7 +121,11 @@ void CYDScreenController::tick() {
         snprintf(buf, sizeof(buf), "%u", (unsigned)payload_copy.rpm);
         lv_label_set_text(ui_lbrpm, buf);
 
-        snprintf(buf, sizeof(buf), "%.1f", (float)payload_copy.avg_consumption_km_per_l);
+        if (payload_copy.avg_consumption_km_per_l > 0.0f) {
+            snprintf(buf, sizeof(buf), "%.1f", (float)payload_copy.avg_consumption_km_per_l);
+        } else {
+            snprintf(buf, sizeof(buf), "--");
+        }
         lv_label_set_text(ui_lbavgconsumption, buf);
     }
 

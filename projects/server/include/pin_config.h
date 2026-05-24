@@ -1,6 +1,11 @@
 #pragma once
 
-#include "driver/gpio.h"
+// SPI bus — shared by both MCP2515 chips
+static constexpr int PIN_SPI_SCK  = 12;
+static constexpr int PIN_SPI_MISO = 13;
+static constexpr int PIN_SPI_MOSI = 11;
 
-static constexpr gpio_num_t PIN_CAN_TX = GPIO_NUM_5; // TWAI TX <- ESP32 GPIO5
-static constexpr gpio_num_t PIN_CAN_RX = GPIO_NUM_4; // TWAI RX -> ESP32 GPIO4
+// MCP2515 CAN A (OBD-II port in use)
+static constexpr int PIN_MCP2515_CS  = 10;
+static constexpr int PIN_MCP2515_RST =  9;
+static constexpr int PIN_MCP2515_INT =  8;

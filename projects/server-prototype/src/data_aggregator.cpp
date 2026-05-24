@@ -80,7 +80,7 @@ uint8_t DataAggregator::getDtcCount() const {
 
 bool DataAggregator::allRequiredPidsReceived() const {
     mtx_lock(mutex_);
-    bool r = valid_[PID_RPM] && valid_[PID_SPEED];
+    bool r = valid_[PID_RPM] && valid_[PID_SPEED] && valid_[PID_FUEL_RATE];
     mtx_unlock(mutex_);
     return r;
 }

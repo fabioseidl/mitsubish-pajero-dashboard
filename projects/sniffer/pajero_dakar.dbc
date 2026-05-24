@@ -1,0 +1,31 @@
+VERSION ""
+
+NS_ :
+    NS_DESC_
+    CM_
+    BU_
+    VAL_
+
+BS_:
+
+BU_: ECU ESP32
+
+BO_ 530 Engine_Data_212: 8 ECU
+ SG_ Engine_RPM : 32|16@1+ (0.125,0) [0|8000] "RPM" ESP32
+ SG_ Vehicle_Speed : 48|8@1+ (1,-40) [0|215] "km/h" ESP32
+
+BO_ 786 Throttle_Status_312: 8 ECU
+ SG_ Accelerator_Pedal_Sensor_1 : 0|16@1+ (0.02442,0) [0|100] "%" ESP32
+ SG_ Accelerator_Pedal_Sensor_2 : 16|16@1+ (0.02442,0) [0|100] "%" ESP32
+
+BO_ 776 Cooling_System_308: 8 ECU
+ SG_ Engine_Coolant_Temp : 8|16@1+ (1,-40) [-40|215] "C" ESP32
+
+BO_ 536 Injection_System_218: 8 ECU
+ SG_ Fuel_Rail_Pressure : 8|24@1+ (1,0) [0|200000] "kPa" ESP32
+
+
+CM_ BU_ ECU "Unidade de Controle do Motor (Mitsubishi Pajero Dakar)";
+CM_ BU_ ESP32 "Módulo Receptor de Telemetria via ESP-NOW";
+CM_ SG_ 530 Engine_RPM "Rotação do motor calculada com fator multiplicador de 0.125";
+CM_ SG_ 786 Accelerator_Pedal_Sensor_1 "Sinal percentual interpolado com base na resolução de 12 bits (100 / 4095)";

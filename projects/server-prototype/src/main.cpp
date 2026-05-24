@@ -55,9 +55,9 @@ static void can_rx_task(void* /*param*/) {
     size_t   poll_idx     = 0;
     uint32_t last_poll_ms = 0;
 
-    Serial.println("Initializing CAN driver...");
+    Serial.println("Initializing TWAI...");
     if (!driver.begin()) {
-        Serial.println("ERROR: Failed to initialize CAN driver");
+        Serial.println("ERROR: Failed to initialize TWAI");
         while (true) {
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
@@ -69,7 +69,7 @@ static void can_rx_task(void* /*param*/) {
 
         if (now_ms - last_poll_ms >= OBD_POLL_INTERVAL_MS) {
             driver.sendFrame(makeOBDRequest(POLL_PIDS[poll_idx]));
-            poll_idx     = (poll_idx + 1) % POLL_COUNT;
+            poll_idx   = (poll_idx + 1) % POLL_COUNT;
             last_poll_ms = now_ms;
         }
 
@@ -82,10 +82,6 @@ static void can_rx_task(void* /*param*/) {
                 }
 
                 if (frame.id != 0x7E8) {
-                    Serial.printf("SKIP CAN ID=0x%03X DLC=%d data=%02X %02X %02X %02X %02X %02X %02X %02X\n",
-                        frame.id, frame.dlc,
-                        frame.data[0], frame.data[1], frame.data[2], frame.data[3],
-                        frame.data[4], frame.data[5], frame.data[6], frame.data[7]);
                     vTaskDelay(pdMS_TO_TICKS(1));
                     continue;
                 }
