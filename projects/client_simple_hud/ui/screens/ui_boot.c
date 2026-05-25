@@ -12,7 +12,7 @@ void ui_event_boot( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
 
 if ( event_code == LV_EVENT_SCREEN_LOADED) {
-      _ui_screen_change( &ui_hud, LV_SCR_LOAD_ANIM_FADE_ON, 100, 1000, &ui_hud_screen_init);
+      _ui_screen_change( &ui_hud, LV_SCR_LOAD_ANIM_FADE_ON, 200, 3000, &ui_hud_screen_init);
 }
 }
 
@@ -43,7 +43,7 @@ lv_obj_set_flex_flow(ui_bootlabel,LV_FLEX_FLOW_ROW);
 lv_obj_set_flex_align(ui_bootlabel, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
 lv_label_set_text(ui_bootlabel,"PAJERO DAKAR");
 lv_obj_set_style_text_align(ui_bootlabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN| LV_STATE_DEFAULT);
-lv_obj_set_style_text_font(ui_bootlabel, &lv_font_montserrat_32, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_bootlabel, &ui_font_robotoregular24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 lv_obj_add_event_cb(ui_boot, ui_event_boot, LV_EVENT_ALL, NULL);
 uic_bootlabel = ui_bootlabel;

@@ -5,6 +5,9 @@
 // Backlight (LEDC PWM)
 static constexpr int GPIO_BACKLIGHT_PIN = 21;
 
+// LDR light sensor (ADC input-only)
+static constexpr int GPIO_LDR_PIN = 34;
+
 // ILI9341 display SPI (VSPI / SPI2)
 static constexpr int GPIO_LCD_MOSI = 13;
 static constexpr int GPIO_LCD_CLK  = 14;
@@ -22,3 +25,6 @@ static constexpr int GPIO_TOUCH_MISO = 39;
 
 // Secondary backlight enable (active HIGH)
 static constexpr int GPIO_BL_EN = 27;
+
+// Built-in BOOT button on top of CYD board (active LOW, internal pull-up)
+static constexpr int GPIO_BUTTON_PIN = 0;

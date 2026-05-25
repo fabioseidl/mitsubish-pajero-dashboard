@@ -28,9 +28,9 @@ void setup() {
     delay(1500);  // DEBUG: allow serial monitor to connect
     Serial.println("=== SETUP START ===");
 
-    display.begin();
+    screen.begin();          // LGFX init must come first — it reconfigures GPIOs
+    display.begin();         // LEDC backlight setup after LGFX can't override GPIO21
     brightness.applyInitial();
-    screen.begin();
 
     connection_monitor.setStatusChangeCallback([](bool online) {
         screen.onServerStatusChanged(online);
@@ -48,19 +48,8 @@ void setup() {
 
 void loop() {
     uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
-    connection_monitor.tick(now_ms);
-    screen.tick();
-
-    static uint32_t s_last_log_ms = 0;
-    if (now_ms - s_last_log_ms >= 5000) {
-        s_last_log_ms = now_ms;
-        Serial.printf("[LOOP] ok=%d ch=%d raw=%lu rx=%lu up=%lus\n",
-                      s_receiver_ok, s_wifi_channel,
-                      (unsigned long)ESPNowReceiver::raw_rx_count_,
-                      (unsigned long)s_rx_count,
-                      (unsigned long)(now_ms / 1000));
-    }
-
+    connection_monitor.tick(now_ms);  // evaluate timeout → fires onServerStatusChanged
+    screen.tick();                    // keeps LVGL rendering — must not be skipped
     vTaskDelay(pdMS_TO_TICKS(5));
 }
 #endif

@@ -1,7 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Read(//Users/fabioseidl/Documents/Repos/mitsubish-pajero-dashboard/**)"
+      "Read(//Users/fabioseidl/Documents/Repos/mitsubish-pajero-dashboard/**)",
+      "Bash(mkdir -p /Users/fabioseidl/Documents/Repos/mitsubish-pajero-dashboard/projects/button_scan/src)",
+      "Bash(make)"
+    ],
+    "additionalDirectories": [
+      "/Users/fabioseidl/Documents/Repos/mitsubish-pajero-dashboard/projects/button_scan",
+      "/Users/fabioseidl/Documents/Repos/mitsubish-pajero-dashboard/lib/core/src",
+      "/Users/fabioseidl/Documents/Repos/mitsubish-pajero-dashboard/test/host/lib",
+      "/Users/fabioseidl/Documents/Repos/mitsubish-pajero-dashboard/lib/core/include"
     ]
   }
 }

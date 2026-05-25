@@ -5,14 +5,14 @@
 
 class CYDDisplay : public IDisplay {
 public:
-    explicit CYDDisplay(int backlight_pin, uint8_t pwm_channel = 0);
+    explicit CYDDisplay(int backlight_pin);
 
     bool begin() override;
     void setBacklightPercent(uint8_t percent) override;
 
 private:
     int     backlight_pin_;
-    uint8_t pwm_channel_;
+    uint8_t last_percent_ = 255; // sentinel: forces first write through
 
     uint32_t percentToDuty(uint8_t percent) const;
 };

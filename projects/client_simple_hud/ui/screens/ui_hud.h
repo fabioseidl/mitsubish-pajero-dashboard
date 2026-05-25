@@ -19,8 +19,6 @@ extern lv_obj_t *ui_lbrpm;
 extern lv_obj_t *ui_iconserverdisconected;
 extern lv_obj_t *ui_Image3;
 extern lv_obj_t *ui_lbavgconsumption;
-extern void ui_event_barrpm( lv_event_t * e);
-extern lv_obj_t *ui_barrpm;
 // CUSTOM VARIABLES
 
 #ifdef __cplusplus

@@ -5,15 +5,8 @@
 
 #include "../ui.h"
 
-lv_obj_t *ui_hud = NULL;lv_obj_t *ui_lbSpeed = NULL;lv_obj_t *ui_lbrpm = NULL;lv_obj_t *ui_iconserverdisconected = NULL;lv_obj_t *ui_Image3 = NULL;lv_obj_t *ui_lbavgconsumption = NULL;lv_obj_t *ui_barrpm = NULL;
+lv_obj_t *ui_hud = NULL;lv_obj_t *ui_lbSpeed = NULL;lv_obj_t *ui_lbrpm = NULL;lv_obj_t *ui_iconserverdisconected = NULL;lv_obj_t *ui_Image3 = NULL;lv_obj_t *ui_lbavgconsumption = NULL;
 // event funtions
-void ui_event_barrpm( lv_event_t * e) {
-    lv_event_code_t event_code = lv_event_get_code(e);
-
-if ( event_code == LV_EVENT_VALUE_CHANGED) {
-      _ui_bar_set_property(ui_barrpm, _UI_BAR_PROPERTY_VALUE_WITH_ANIM, );
-}
-}
 
 // build funtions
 
@@ -34,8 +27,9 @@ lv_obj_set_style_text_font(ui_lbSpeed, &ui_font_robotobold150, LV_PART_MAIN| LV_
 ui_lbrpm = lv_label_create(ui_hud);
 lv_obj_set_width( ui_lbrpm, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbrpm, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbrpm, 40 );
-lv_obj_set_y( ui_lbrpm, 10 );
+lv_obj_set_x( ui_lbrpm, 0 );
+lv_obj_set_y( ui_lbrpm, -10 );
+lv_obj_set_align( ui_lbrpm, LV_ALIGN_BOTTOM_MID );
 lv_label_set_text(ui_lbrpm,"0");
 lv_obj_set_style_text_font(ui_lbrpm, &ui_font_robotoregular24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
@@ -56,7 +50,7 @@ lv_obj_set_height( ui_Image3, LV_SIZE_CONTENT);   /// 32
 lv_obj_set_x( ui_Image3, 5 );
 lv_obj_set_y( ui_Image3, -10 );
 lv_obj_set_align( ui_Image3, LV_ALIGN_BOTTOM_LEFT );
-lv_obj_add_flag( ui_Image3, LV_OBJ_FLAG_CLICKABLE );   /// Flags
+lv_obj_add_flag( ui_Image3, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_CLICKABLE );   /// Flags
 lv_obj_remove_flag( ui_Image3, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
 
 ui_lbavgconsumption = lv_label_create(ui_hud);
@@ -66,26 +60,8 @@ lv_obj_set_x( ui_lbavgconsumption, 40 );
 lv_obj_set_y( ui_lbavgconsumption, -8 );
 lv_obj_set_align( ui_lbavgconsumption, LV_ALIGN_BOTTOM_LEFT );
 lv_label_set_text(ui_lbavgconsumption,"0.00");
+lv_obj_add_flag( ui_lbavgconsumption, LV_OBJ_FLAG_HIDDEN );   /// Flags
 lv_obj_set_style_text_font(ui_lbavgconsumption, &ui_font_robotoregular24, LV_PART_MAIN| LV_STATE_DEFAULT);
-
-ui_barrpm = lv_bar_create(ui_hud);
-lv_bar_set_range(ui_barrpm, 0,6000);
-lv_bar_set_value(ui_barrpm,5000,LV_ANIM_OFF);
-lv_bar_set_start_value(ui_barrpm, 0, LV_ANIM_OFF);
-lv_obj_set_width( ui_barrpm, 180);
-lv_obj_set_height( ui_barrpm, 10);
-lv_obj_set_x( ui_barrpm, 10 );
-lv_obj_set_y( ui_barrpm, 185 );
-lv_obj_set_style_anim_duration(ui_barrpm, 100, LV_PART_MAIN| LV_STATE_DEFAULT);
-lv_obj_set_style_transform_rotation(ui_barrpm, -900, LV_PART_MAIN| LV_STATE_DEFAULT);
-
-lv_obj_set_style_radius(ui_barrpm, 0, LV_PART_INDICATOR| LV_STATE_DEFAULT);
-lv_obj_set_style_bg_color(ui_barrpm, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT );
-lv_obj_set_style_bg_opa(ui_barrpm, 255, LV_PART_INDICATOR| LV_STATE_DEFAULT);
-
-//Compensating for LVGL9.1 draw crash with bar/slider max value when top-padding is nonzero and right-padding is 0
-if (lv_obj_get_style_pad_top(ui_barrpm,LV_PART_MAIN) > 0) lv_obj_set_style_pad_right( ui_barrpm, lv_obj_get_style_pad_right(ui_barrpm,LV_PART_MAIN) + 1, LV_PART_MAIN );
-lv_obj_add_event_cb(ui_barrpm, ui_event_barrpm, LV_EVENT_ALL, NULL);
 
 }
 
@@ -100,6 +76,5 @@ ui_lbrpm= NULL;
 ui_iconserverdisconected= NULL;
 ui_Image3= NULL;
 ui_lbavgconsumption= NULL;
-ui_barrpm= NULL;
 
 }

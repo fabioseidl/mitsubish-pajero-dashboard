@@ -10,9 +10,10 @@
 
 static LGFX s_lgfx;
 
-// Double-buffered, 10-line partial render buffers aligned for DMA
-static uint8_t s_draw_buf_1[320 * 10 * 2] __attribute__((aligned(32)));
-static uint8_t s_draw_buf_2[320 * 10 * 2] __attribute__((aligned(32)));
+// Double-buffered, 8-line partial render buffers aligned for DMA
+// (reduced from 10 lines to reclaim ~2.5 KB of DRAM; negligible perf impact)
+static uint8_t s_draw_buf_1[320 * 8 * 2] __attribute__((aligned(32)));
+static uint8_t s_draw_buf_2[320 * 8 * 2] __attribute__((aligned(32)));
 
 static void rounder_event_cb(lv_event_t* e) {
     lv_area_t* area = lv_event_get_invalidated_area(e);
@@ -45,7 +46,10 @@ CYDScreenController::CYDScreenController(BrightnessController& brightness)
     : brightness_(brightness),
       last_tick_ms_(0),
       last_touch_ms_(0),
-      touch_pressed_(false) {}
+      touch_pressed_(false),
+      btn_pressed_(false),
+      last_btn_ms_(0),
+      pending_payload_(new Payload()) {}
 
 bool CYDScreenController::begin() {
 #ifndef UNIT_TEST
@@ -60,6 +64,18 @@ bool CYDScreenController::begin() {
     // Enable secondary backlight power rail
     pinMode(GPIO_BL_EN, OUTPUT);
     digitalWrite(GPIO_BL_EN, HIGH);
+
+    // LDR light sensor — GPIO34 is input-only ADC1_CH6
+    // ADC_11db attenuation: full 0–3.3 V range (12-bit → 0–4095)
+    // Without explicit attenuation, IDF 5 defaults to ADC_0db (~0–1.1 V) which
+    // clips readings to 0 or max for typical LDR voltages.
+    analogReadResolution(12);
+    analogSetPinAttenuation(GPIO_LDR_PIN, ADC_11db);
+    uint16_t ldr_test = (uint16_t)analogRead(GPIO_LDR_PIN);
+    Serial.printf("[LDR] init test read: %u\n", ldr_test);
+
+    // Configure built-in BOOT button (GPIO 0, active LOW)
+    pinMode(GPIO_BUTTON_PIN, INPUT_PULLUP);
     Serial.println("[SCREEN] LGFX + backlight OK");
 
     lv_init();
@@ -84,7 +100,7 @@ void CYDScreenController::onPayloadReceived(const Payload& payload) {
 #ifndef UNIT_TEST
     // Called from WiFi task (CPU 0) — only buffer here; LVGL update happens in tick()
     portENTER_CRITICAL(&mux_);
-    pending_payload_     = payload;
+    *pending_payload_    = payload;
     has_pending_payload_ = true;
     portEXIT_CRITICAL(&mux_);
 #else
@@ -109,7 +125,7 @@ void CYDScreenController::tick() {
     // Drain pending payload from WiFi-task callback — safe to call LVGL here (loop task)
     portENTER_CRITICAL(&mux_);
     bool    apply_payload = has_pending_payload_;
-    Payload payload_copy  = pending_payload_;
+    Payload payload_copy  = *pending_payload_;
     has_pending_payload_  = false;
     portEXIT_CRITICAL(&mux_);
 
@@ -132,6 +148,15 @@ void CYDScreenController::tick() {
     lv_tick_inc(delta_ms);
     lv_timer_handler();
 
+    // LDR auto-brightness — sample every 500 ms and feed EMA in BrightnessController
+    static uint32_t s_last_ldr_ms = 0;
+    if (now_ms - s_last_ldr_ms >= 500) {
+        s_last_ldr_ms = now_ms;
+        uint16_t raw = (uint16_t)analogRead(GPIO_LDR_PIN);
+        brightness_.onLdrReading(raw);
+        Serial.printf("[LDR] raw=%4u  backlight=%3u%%\n", raw, brightness_.getLdrPercent());
+    }
+
     // XPT2046 touch poll — advance brightness on each new press
     int16_t tx = 0, ty = 0;
     bool touched = s_lgfx.getTouch(&tx, &ty);
@@ -145,6 +170,21 @@ void CYDScreenController::tick() {
         }
     } else {
         touch_pressed_ = false;
+    }
+
+    // Physical BOOT button (GPIO 0, active LOW) — cycle brightness on each press
+    bool btn_down = (digitalRead(GPIO_BUTTON_PIN) == LOW);
+    if (btn_down) {
+        if (!btn_pressed_ && (now_ms - last_btn_ms_ >= 300)) {
+            brightness_.onTouch();
+            last_btn_ms_ = now_ms;
+            Serial.printf("[SCREEN] Button pressed — brightness level %u (%u%%)\n",
+                          brightness_.getCurrentLevel(),
+                          brightness_.getCurrentPercent());
+        }
+        btn_pressed_ = true;
+    } else {
+        btn_pressed_ = false;
     }
 #endif
 }
