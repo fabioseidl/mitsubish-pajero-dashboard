@@ -511,7 +511,6 @@
                   {
                     "nid": 1000224,
                     "strtype": "CHANGE SCREEN/Speed",
-                    "integer": 200,
                     "InheritedType": 6
                   },
                   {
@@ -1512,7 +1511,7 @@
     "separate_screen_save": false,
     "hierarchy_state_save": false,
     "reverse_event_order": false,
-    "backup_cnt": 42,
+    "backup_cnt": 44,
     "autosave_cnt": 0,
     "group_color_cnt": 2,
     "imagebytearrayprefix": null,
