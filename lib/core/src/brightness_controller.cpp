@@ -8,9 +8,10 @@ BrightnessController::BrightnessController(IDisplay& display)
       ldr_ema_(0.0f), // start assuming dark → full brightness until first real reading
       ldr_percent_(0) {}
 
-void BrightnessController::onTouch() {
+void BrightnessController::onTouch(uint32_t now_ms) {
     current_level_ = (current_level_ + 1) % LEVEL_COUNT;
     display_.setBacklightPercent(LEVEL_PERCENTS[current_level_]);
+    manual_override_until_ms_ = now_ms + MANUAL_OVERRIDE_MS;
 }
 
 uint8_t BrightnessController::getCurrentLevel() const {
@@ -25,7 +26,10 @@ void BrightnessController::applyInitial() {
     display_.setBacklightPercent(LEVEL_PERCENTS[current_level_]);
 }
 
-void BrightnessController::onLdrReading(uint16_t raw_adc) {
+void BrightnessController::onLdrReading(uint16_t raw_adc, uint32_t now_ms) {
+    // Respect manual override: if the user adjusted brightness recently, don't
+    // override their choice until the hold-off window expires.
+    if (now_ms < manual_override_until_ms_) return;
     // Update exponential moving average
     ldr_ema_ = LDR_EMA_ALPHA * raw_adc + (1.0f - LDR_EMA_ALPHA) * ldr_ema_;
 
@@ -40,8 +44,8 @@ void BrightnessController::onLdrReading(uint16_t raw_adc) {
     // Invert if the circuit wires bright-light to a low ADC reading
     if (LDR_INVERT) norm = 1.0f - norm;
 
-    // Map to backlight percent [BL_PCT_MIN, 100]
-    ldr_percent_ = (uint8_t)(BL_PCT_MIN + norm * (100 - BL_PCT_MIN));
+    // Map to backlight percent [BL_PCT_MIN, BL_PCT_MAX]
+    ldr_percent_ = (uint8_t)(BL_PCT_MIN + norm * (BL_PCT_MAX - BL_PCT_MIN));
 
     display_.setBacklightPercent(ldr_percent_);
 }

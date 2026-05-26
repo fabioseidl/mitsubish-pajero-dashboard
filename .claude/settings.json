@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(xargs cat -n)"
+      "Bash(xargs cat -n)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }

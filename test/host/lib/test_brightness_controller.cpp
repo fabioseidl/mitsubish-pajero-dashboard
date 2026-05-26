@@ -67,29 +67,49 @@ static void test_onTouch_does_not_call_begin_on_display() {
     TEST_ASSERT_FALSE(d.begin_called);
 }
 
-static void test_onLdrReading_bright_sets_high_backlight() {
-    // Full brightness ADC value should produce ~100% backlight after convergence
+// LDR_INVERT=true: dark env (raw=0) → high backlight (up to BL_PCT_MAX).
+static void test_onLdrReading_dark_env_sets_high_backlight() {
     MockDisplay d;
     BrightnessController ctrl(d);
-    // Feed saturated bright reading many times so EMA fully converges
-    for (int i = 0; i < 100; ++i) ctrl.onLdrReading(4095);
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT8(90, d.last_percent);
+    for (int i = 0; i < 100; ++i) ctrl.onLdrReading(0, 0);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT8(25, d.last_percent); // near BL_PCT_MAX (30%)
 }
 
-static void test_onLdrReading_dark_sets_low_backlight() {
-    // Full dark ADC value should produce ~BL_PCT_MIN backlight after convergence
+// LDR_INVERT=true: bright env (raw=4095) → low backlight (down to BL_PCT_MIN).
+static void test_onLdrReading_bright_env_sets_low_backlight() {
     MockDisplay d;
     BrightnessController ctrl(d);
-    for (int i = 0; i < 100; ++i) ctrl.onLdrReading(0);
-    TEST_ASSERT_LESS_OR_EQUAL_UINT8(15, d.last_percent);
+    for (int i = 0; i < 100; ++i) ctrl.onLdrReading(4095, 0);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT8(10, d.last_percent); // near BL_PCT_MIN (5%)
 }
 
 static void test_onLdrReading_calls_setBacklightPercent() {
     MockDisplay d;
     BrightnessController ctrl(d);
     int before = d.call_count;
-    ctrl.onLdrReading(2048);
+    ctrl.onLdrReading(2048, 0);
     TEST_ASSERT_GREATER_THAN_INT(before, d.call_count);
+}
+
+// After onTouch(), LDR readings within the hold-off window must not override brightness.
+static void test_onLdrReading_suppressed_during_manual_override() {
+    MockDisplay d;
+    BrightnessController ctrl(d);
+    ctrl.onTouch(0);                        // manual override active until t=10000ms
+    int count_after_touch = d.call_count;
+    for (int i = 0; i < 10; ++i)
+        ctrl.onLdrReading(0, 5000);         // 5000 ms < 10000 ms hold-off → suppressed
+    TEST_ASSERT_EQUAL_INT(count_after_touch, d.call_count);
+}
+
+// Once the hold-off expires the LDR resumes control.
+static void test_onLdrReading_resumes_after_override_expires() {
+    MockDisplay d;
+    BrightnessController ctrl(d);
+    ctrl.onTouch(0);                        // override until t=10000ms
+    int count_after_touch = d.call_count;
+    ctrl.onLdrReading(2048, 15000);         // 15000 ms > 10000 ms → should apply
+    TEST_ASSERT_GREATER_THAN_INT(count_after_touch, d.call_count);
 }
 
 void run_brightness_controller_tests() {
@@ -101,9 +121,11 @@ void run_brightness_controller_tests() {
     RUN_TEST(test_four_touches_return_to_original_level);
     RUN_TEST(test_level_percents_are_25_50_75_100);
     RUN_TEST(test_onTouch_does_not_call_begin_on_display);
-    RUN_TEST(test_onLdrReading_bright_sets_high_backlight);
-    RUN_TEST(test_onLdrReading_dark_sets_low_backlight);
+    RUN_TEST(test_onLdrReading_dark_env_sets_high_backlight);
+    RUN_TEST(test_onLdrReading_bright_env_sets_low_backlight);
     RUN_TEST(test_onLdrReading_calls_setBacklightPercent);
+    RUN_TEST(test_onLdrReading_suppressed_during_manual_override);
+    RUN_TEST(test_onLdrReading_resumes_after_override_expires);
 }
 
 #include "../../../lib/core/src/brightness_controller.cpp"

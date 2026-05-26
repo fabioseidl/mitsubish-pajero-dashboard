@@ -61,10 +61,6 @@ bool CYDScreenController::begin() {
     s_lgfx.setRotation(0);      // offset_rotation=4 in lgfx_config handles landscape
     s_lgfx.startWrite();        // Keep SPI CS active for DMA pushes
 
-    // Enable secondary backlight power rail
-    pinMode(GPIO_BL_EN, OUTPUT);
-    digitalWrite(GPIO_BL_EN, HIGH);
-
     // LDR light sensor — GPIO34 is input-only ADC1_CH6
     // ADC_11db attenuation: full 0–3.3 V range (12-bit → 0–4095)
     // Without explicit attenuation, IDF 5 defaults to ADC_0db (~0–1.1 V) which
@@ -153,7 +149,7 @@ void CYDScreenController::tick() {
     if (now_ms - s_last_ldr_ms >= 500) {
         s_last_ldr_ms = now_ms;
         uint16_t raw = (uint16_t)analogRead(GPIO_LDR_PIN);
-        brightness_.onLdrReading(raw);
+        brightness_.onLdrReading(raw, now_ms);
         Serial.printf("[LDR] raw=%4u  backlight=%3u%%\n", raw, brightness_.getLdrPercent());
     }
 
@@ -163,7 +159,7 @@ void CYDScreenController::tick() {
     if (touched) {
         if (!touch_pressed_) {
             if (now_ms - last_touch_ms_ >= 300) {
-                brightness_.onTouch();
+                brightness_.onTouch(now_ms);
                 last_touch_ms_ = now_ms;
             }
             touch_pressed_ = true;
@@ -176,7 +172,7 @@ void CYDScreenController::tick() {
     bool btn_down = (digitalRead(GPIO_BUTTON_PIN) == LOW);
     if (btn_down) {
         if (!btn_pressed_ && (now_ms - last_btn_ms_ >= 300)) {
-            brightness_.onTouch();
+            brightness_.onTouch(now_ms);
             last_btn_ms_ = now_ms;
             Serial.printf("[SCREEN] Button pressed — brightness level %u (%u%%)\n",
                           brightness_.getCurrentLevel(),

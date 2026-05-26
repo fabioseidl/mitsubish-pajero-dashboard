@@ -19,8 +19,10 @@ bool CYDDisplay::begin() {
     // Circuit is active-HIGH through a transistor: duty=0 → dark, duty=255 → full brightness.
     // Arduino-ESP32 v2.x LEDC API: ledcWrite takes the CHANNEL, not the pin.
     // Channel 7 is used to stay clear of low channels auto-allocated by other libraries.
-    ledcSetup(BL_LEDC_CHANNEL, 5000, 8);         // channel, freq, 8-bit resolution
+    // 1 kHz is more reliable than 5 kHz for slow transistors on cheap backlight circuits.
+    ledcSetup(BL_LEDC_CHANNEL, 1000, 8);         // channel, freq, 8-bit resolution
     ledcAttachPin(backlight_pin_, BL_LEDC_CHANNEL);
+
     ledcWrite(BL_LEDC_CHANNEL, percentToDuty(75));
     Serial.printf("[DISPLAY] backlight init GPIO%d ch%u — duty %lu/255\n",
                   backlight_pin_, BL_LEDC_CHANNEL, (unsigned long)percentToDuty(75));
