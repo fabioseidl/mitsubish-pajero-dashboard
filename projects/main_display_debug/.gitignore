@@ -1,0 +1,5 @@
+# Never commit the real PMK key
+include/security_config.h
+
+# PlatformIO build artefacts
+.pio/

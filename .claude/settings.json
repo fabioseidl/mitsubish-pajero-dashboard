@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(xargs cat -n)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(python3 -)",
+      "Bash(grep -n \"^#define [A-Z_]*$\" /Users/fabioseidl/Documents/Repos/mitsubish-pajero-dashboard/projects/main_display_debug/include/lv_conf.h)"
     ]
   }
 }
