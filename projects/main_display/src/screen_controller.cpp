@@ -90,10 +90,14 @@ void MainScreenController::begin() {
     // ── LVGL core ──
     lv_init();
 
-    // Partial render buffers in PSRAM. Two buffers let LVGL render the next
-    // region while the previous one is pushed. RGB565 => 2 bytes per pixel.
+    // Small partial render buffers in PSRAM. With a single panel framebuffer
+    // (use_psram=1 — required so the backlight rail doesn't brown out, see
+    // lgfx_config.h), small partial flushes keep the CPU/DMA contention window
+    // short, minimising the horizontal tearing inherent to a single live
+    // framebuffer. Two buffers let LVGL render the next region while the previous
+    // is pushed. RGB565 => 2 bytes per pixel.
     constexpr uint32_t kBufLines  = 80;
-    constexpr uint32_t kBufPixels = 1024 * kBufLines;
+    constexpr uint32_t kBufPixels = 1024u * kBufLines;
     constexpr size_t   kBufBytes  = kBufPixels * sizeof(lv_color16_t);
 
     void* buf1 = heap_caps_malloc(kBufBytes, MALLOC_CAP_SPIRAM);

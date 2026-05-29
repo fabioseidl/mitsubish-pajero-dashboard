@@ -1,6 +1,12 @@
 # Waveshare ESP32-S3-Touch-LCD-7B — Hardware Specification
 
-> Status: Verified working as of 2026-05. All parameters below produced a functional 1024×600 image with touch and backlight operational.
+> Status: Verified working as of 2026-05. All parameters below produced a functional 1024×600 image with backlight operational, running **LVGL 9.5.0** + **LovyanGFX 1.1.16** under the full `main_display` application (WiFi/ESP-NOW + LVGL).
+>
+> Critical lessons learned this revision (details in the relevant sections):
+> - **LovyanGFX must be 1.1.x** — `1.2.x` leaves the RGB panel dark (§7, §10).
+> - **`use_psram` must be `1` on this board** — `use_psram=2` leaves the panel completely dark the instant its double-buffer DMA starts (reproduced with a direct draw before WiFi; not an LVGL/power issue), even though the PCF8574 enable stays asserted (§4, §9).
+> - **Backlight = PCF8574 P1**, confirmed empirically by an I²C bit-scan (§5.2).
+> - **LVGL 9.5.0** is the rendering stack (§15); the LVGL 8 API is no longer used.
 
 ---
 
@@ -124,19 +130,33 @@ The 1024×600 RGB565 framebuffer requires approximately 1.2 MB per frame.
 
 PSRAM is mandatory.
 
-Recommended LovyanGFX configuration:
+**Verified configuration for the `main_display` application:**
 
 ```cpp
-cfg.use_psram = 2;
+cfg_detail.use_psram = 1;   // single framebuffer — REQUIRED here
 ```
 
 Meaning:
 
-* `0` = internal SRAM
+* `0` = internal SRAM (insufficient — framebuffer is ~1.2 MB)
 * `1` = single PSRAM framebuffer
 * `2` = double framebuffer in PSRAM
 
-Double buffering enables tear-free DMA rendering.
+`use_psram = 2` enables tear-free double-buffered DMA, but on this board it makes
+**the panel go completely dark** the instant `lcd.init()` starts the
+double-buffer DMA. This was reproduced with a **direct `fillScreen` color flash
+before WiFi starts** (no LVGL, no radio load) — so it is **not** an LVGL/present
+problem, **not** WiFi load, and **not** USB supply (occurs on a MacBook USB-C +
+Apple cable at low activity). Every PCF8574 write still returns ACK and P1 stays
+asserted; the panel/backlight simply will not light under the `use_psram=2` DMA.
+Suspected cause: an internal regulator/backlight-converter limit or a LovyanGFX
+1.1.16 `Panel_RGB` interaction specific to this board revision. See §9.
+
+Therefore this board uses `use_psram = 1`. The trade-off is mild **horizontal
+tearing** on a single live framebuffer (LVGL writes the buffer while the RGB
+peripheral scans it out). Mitigated by (a) small partial-mode flushes and
+(b) updating a label only when its text actually changes (skip no-op redraws).
+Tear-free operation via `use_psram = 2` is **not available** on this board.
 
 ---
 
@@ -168,6 +188,13 @@ Expected I²C scan:
 | P1          | `0x02`   | LCD_BL                  | HIGH = ON      |
 | P2          | `0x04`   | TP_RST                  | HIGH = running |
 | P3–P7       | `0xF8`   | Unused / board-specific | —              |
+
+> **Verified by I²C bit-scan:** writing `0x02` (P1 only) turns the backlight ON;
+> the operating value `0x07` (`P0|P1|P2` = LCD out of reset + backlight + touch
+> out of reset) is correct. The I²C scan finds exactly one device, `0x24`
+> (the GT911 touch controller does not appear until its own init sequence runs).
+> If the backlight will not light, run a bit-scan (write `0x01,0x02,0x04…0x80,0xFF`,
+> 2.5 s each, watch the panel) before assuming a wiring/chip fault.
 
 ---
 
@@ -214,6 +241,11 @@ Wire.endTransmission();
 
 # 7. LovyanGFX Configuration Summary
 
+> **Pin LovyanGFX to 1.1.x** (`lovyan03/LovyanGFX @ ~1.1.16`). With `1.2.x` the
+> exact same `Panel_RGB` / `Bus_RGB` configuration below leaves the panel dark
+> (backlight + I²C are fine; the panel never produces an image). `1.1.16` is the
+> verified version.
+
 Required includes:
 
 ```cpp
@@ -243,7 +275,7 @@ public:
     _panel_instance.config(cfg_p);
 
     auto cfg_d = _panel_instance.config_detail();
-    cfg_d.use_psram = 2;
+    cfg_d.use_psram = 1;   // see §4 — must be 1 under full app load (backlight)
     _panel_instance.config_detail(cfg_d);
 
     auto cfg = _bus_instance.config();
@@ -312,22 +344,26 @@ public:
 | Pitfall                        | Cause                           | Fix                          |
 | ------------------------------ | ------------------------------- | ---------------------------- |
 | Screen dark after `lcd.init()` | Backlight/reset not initialized | Initialize PCF8574 first     |
+| Panel dark, backlight + I²C OK | LovyanGFX 1.2.x                  | Pin LovyanGFX to 1.1.x (§7)  |
+| Panel dark, PCF writes ACK     | `use_psram=2` (panel won't light under double-buffer DMA, even pre-WiFi) | Use `use_psram=1` (§4) |
 | Wrong colors                   | Incorrect RGB mapping           | Use verified mapping from §3 |
 | Garbled image                  | Invalid timing values           | Use timings from §2.1        |
+| Horizontal tearing/flicker     | Single framebuffer (`use_psram=1`) | Keep flushes small (partial); stronger PSU for `use_psram=2` |
 | PSRAM crashes                  | Incorrect memory config         | Enable OPI PSRAM             |
 | I²C macro conflicts            | Board package GPIO defines      | Use explicit GPIO constants  |
 | Image corruption at high clock | PSRAM bandwidth limit           | Start with 16 MHz PCLK       |
 
 # 10. Software Compatibility Matrix
 
-| Component     | Tested Version | Status          |
-| ------------- | -------------- | --------------- |
-| Arduino-ESP32 | 3.x            | Working         |
-| LovyanGFX     | 1.1.x          | Working         |
-| ESP-IDF       | 5.x            | Untested        |
-| LVGL          | 8.x            | Working         |
-| TFT_eSPI      | —              | Not recommended |
-| PlatformIO    | Latest         | Working         |
+| Component     | Tested Version | Status                                   |
+| ------------- | -------------- | ---------------------------------------- |
+| Arduino-ESP32 | 3.x (platform espressif32@6.9.0) | Working                |
+| LovyanGFX     | 1.1.16         | Working — **required**; 1.2.x = dark panel |
+| ESP-IDF       | 5.x            | Untested                                 |
+| LVGL          | 9.5.0          | Working (current stack)                  |
+| LVGL          | 8.x            | Legacy — no longer used                  |
+| TFT_eSPI      | —              | Not recommended                          |
+| PlatformIO    | Latest         | Working                                  |
 
 ---
 
@@ -400,20 +436,42 @@ Recommended calibration test:
 
 ---
 
-# 15. LVGL Integration Notes
+# 15. LVGL Integration Notes (LVGL 9.5.0)
 
-Recommended LVGL settings:
+Verified LVGL settings (`lv_conf.h`):
 
 ```cpp
 #define LV_COLOR_DEPTH 16
-#define LV_COLOR_16_SWAP 0
+// LV_COLOR_16_SWAP does not exist in LVGL 9 — the panel uses native RGB565
+// (no swap). Pixels are pushed unswapped to LovyanGFX via pushImage().
 ```
 
-Framebuffer strategy:
+LVGL 9 display/input registration (the LVGL 8 `lv_disp_drv_t` / `lv_indev_drv_t`
+APIs are gone):
 
-* use DMA-capable PSRAM buffers;
-* partial rendering preferred;
-* double buffering recommended.
+```cpp
+lv_display_t* disp = lv_display_create(1024, 600);
+lv_display_set_flush_cb(disp, flush_cb);                 // cb: (lv_display_t*, const lv_area_t*, uint8_t* px_map)
+lv_display_set_buffers(disp, buf1, buf2, bytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
+
+lv_indev_t* indev = lv_indev_create();
+lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+lv_indev_set_read_cb(indev, touch_cb);                   // cb: (lv_indev_t*, lv_indev_data_t*)
+```
+
+Framebuffer strategy (verified):
+
+* DMA-capable PSRAM partial buffers (e.g. two buffers of 1024 × 80 px);
+* **PARTIAL** render mode — smallest flushes minimise tearing on the single
+  framebuffer (`use_psram=1`, see §4);
+* flush pushes RGB565 via `lcd.pushImage(x, y, w, h, (uint16_t*)px_map)` then
+  `lv_display_flush_ready(disp)`;
+* advance time with `lv_tick_inc(elapsed_ms)` and run `lv_timer_handler()` from
+  the loop task. All LVGL calls must stay on one task (it is not thread-safe);
+  buffer ESP-NOW payloads from the WiFi task and apply them in the loop.
+
+> Do **not** use FULL refresh mode with `use_psram=1`: pushing the whole 1.2 MB
+> frame each update maximises the CPU/DMA contention window and worsens tearing.
 
 ---
 

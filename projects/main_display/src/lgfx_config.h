@@ -25,12 +25,12 @@ public:
         cfg_panel.offset_y = 0;
         _panel_instance.config(cfg_panel);
 
-        // Single framebuffer in PSRAM (BOARD_SPEC §4: use_psram=1 = single PSRAM
-        // framebuffer). With LVGL doing PARTIAL-mode flushes via pushImage, a SINGLE
-        // buffer is required: pushImage then writes straight into the buffer being
-        // scanned out, so partial updates are visible immediately. With use_psram=2
-        // (double buffer) LVGL's partial regions land in the hidden back buffer and
-        // never present — the screen stays on the last direct draw (black).
+        // Single framebuffer in PSRAM (use_psram=1) — REQUIRED here.
+        // use_psram=2 (double buffer) works in the bare hello-world test, but in
+        // the FULL app (LVGL draw buffers + WiFi/ESP-NOW heap) the two ~1.2 MB
+        // framebuffers crash lcd.init() into a boot loop (RTC_SW_SYS_RST). The
+        // original app ran fine on use_psram=1 and produces a valid image, so the
+        // panel lights with a single buffer. Trade-off: mild horizontal tearing.
         auto cfg_detail = _panel_instance.config_detail();
         cfg_detail.use_psram = 1;
         _panel_instance.config_detail(cfg_detail);
@@ -39,6 +39,7 @@ public:
         auto cfg = _bus_instance.config();
         cfg.panel = &_panel_instance;
 
+        // BOARD_SPEC §3 verified "correct colors" mapping.
         // Blue: D0–D4
         cfg.pin_d0  = GPIO_NUM_14;
         cfg.pin_d1  = GPIO_NUM_38;

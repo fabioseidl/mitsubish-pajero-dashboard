@@ -1,5 +1,9 @@
 #include "dashboard_ui.h"
 
+#include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
+
 #include "lvgl/lvgl.h"
 #include "dashboard_widgets.h"
 
@@ -42,6 +46,20 @@ Widgets w;
 
 using dashboard_widgets::make_flex;
 using dashboard_widgets::make_stat_block;
+
+// Updates a label only if its rendered text actually changed. Avoids needless
+// invalidations/redraws — on this single-framebuffer panel every redraw is a
+// potential tear, so skipping no-op updates reduces visible flicker.
+static void set_if_changed(lv_obj_t* label, const char* fmt, ...) {
+    char buf[24];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (strcmp(lv_label_get_text(label), buf) != 0) {
+        lv_label_set_text(label, buf);
+    }
+}
 
 void create() {
     lv_obj_t* scr = lv_screen_active();
@@ -103,16 +121,16 @@ void update(const Payload& p) {
     if (w.speed == nullptr) return;            // create() not called yet
     if (!(p.flags & PAYLOAD_FLAG_DATA_VALID)) return;
 
-    lv_label_set_text_fmt(w.speed,           "%u",   (unsigned)p.speed_kmh);
-    lv_label_set_text_fmt(w.rpm,             "%u",   (unsigned)p.rpm);
-    lv_label_set_text_fmt(w.fuel_rate,       "%.1f", p.fuel_rate_l_per_h);
-    lv_label_set_text_fmt(w.consumption,     "%.1f", p.consumption_km_per_l);
-    lv_label_set_text_fmt(w.avg_consumption, "%.1f", p.avg_consumption_km_per_l);
-    lv_label_set_text_fmt(w.distance,        "%.1f", p.distance_km);
-    lv_label_set_text_fmt(w.baro,            "%u",   (unsigned)p.baro_pressure_kpa);
-    lv_label_set_text_fmt(w.ambient,         "%.0f", p.ambient_temp_c);
-    lv_label_set_text_fmt(w.gear,            "%.0f", p.at_gear_pos);
-    lv_label_set_text_fmt(w.boost,           "%.1f", p.boost_pres);
+    set_if_changed(w.speed,           "%u",   (unsigned)p.speed_kmh);
+    set_if_changed(w.rpm,             "%u",   (unsigned)p.rpm);
+    set_if_changed(w.fuel_rate,       "%.1f", p.fuel_rate_l_per_h);
+    set_if_changed(w.consumption,     "%.1f", p.consumption_km_per_l);
+    set_if_changed(w.avg_consumption, "%.1f", p.avg_consumption_km_per_l);
+    set_if_changed(w.distance,        "%.1f", p.distance_km);
+    set_if_changed(w.baro,            "%u",   (unsigned)p.baro_pressure_kpa);
+    set_if_changed(w.ambient,         "%.0f", p.ambient_temp_c);
+    set_if_changed(w.gear,            "%.0f", p.at_gear_pos);
+    set_if_changed(w.boost,           "%.1f", p.boost_pres);
 }
 
 void set_server_status(bool online) {
