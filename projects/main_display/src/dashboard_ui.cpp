@@ -32,13 +32,13 @@ struct Widgets {
     lv_obj_t* fuel_rate       = nullptr;
     lv_obj_t* consumption     = nullptr;
     lv_obj_t* avg_consumption = nullptr;
-    lv_obj_t* distance        = nullptr;
+    lv_obj_t* boost           = nullptr;
     // grid row 2
-    lv_obj_t* baro    = nullptr;
-    lv_obj_t* ambient = nullptr;
-    lv_obj_t* gear    = nullptr;
-    lv_obj_t* boost   = nullptr;
-    // status
+    lv_obj_t* altitude    = nullptr;
+    lv_obj_t* engine_load = nullptr;
+    lv_obj_t* voltage     = nullptr;
+    lv_obj_t* distance    = nullptr;
+    // status — overlay in the top-right corner
     lv_obj_t* status = nullptr;
 };
 Widgets w;
@@ -90,29 +90,24 @@ void create() {
     w.fuel_rate       = make_stat_block(g1, "FUEL RATE (L/h)",   FONT_TITLE, FONT_VALUE, "--");
     w.consumption     = make_stat_block(g1, "CONS (km/L)",       FONT_TITLE, FONT_VALUE, "--");
     w.avg_consumption = make_stat_block(g1, "AVG CONS (km/L)",   FONT_TITLE, FONT_VALUE, "--");
-    w.distance        = make_stat_block(g1, "DISTANCE (km)",     FONT_TITLE, FONT_VALUE, "--");
+    w.boost           = make_stat_block(g1, "BOOST",             FONT_TITLE, FONT_VALUE, "--");
 
     // ── Info grid row 2 ──
     lv_obj_t* g2 = make_flex(root, LV_FLEX_FLOW_ROW);
     lv_obj_set_width(g2, lv_pct(100));
     lv_obj_set_flex_grow(g2, 3);
     lv_obj_set_style_pad_column(g2, 8, 0);
-    w.baro    = make_stat_block(g2, "BARO (kPa)",   FONT_TITLE, FONT_VALUE, "--");
-    w.ambient = make_stat_block(g2, "AMBIENT (C)",  FONT_TITLE, FONT_VALUE, "--");
-    w.gear    = make_stat_block(g2, "AT GEAR",      FONT_TITLE, FONT_VALUE, "--");
-    w.boost   = make_stat_block(g2, "BOOST",        FONT_TITLE, FONT_VALUE, "--");
+    w.altitude    = make_stat_block(g2, "ALT (m)",          FONT_TITLE, FONT_VALUE, "--");
+    w.engine_load = make_stat_block(g2, "ENGINE LOAD (%)",  FONT_TITLE, FONT_VALUE, "--");
+    w.voltage     = make_stat_block(g2, "VOLTAGE (V)",      FONT_TITLE, FONT_VALUE, "--");
+    w.distance    = make_stat_block(g2, "DISTANCE (km)",    FONT_TITLE, FONT_VALUE, "--");
 
-    // ── Status bar — small fixed-height strip at the bottom ──
-    lv_obj_t* status_bar = make_flex(root, LV_FLEX_FLOW_ROW);
-    lv_obj_set_width(status_bar, lv_pct(100));
-    lv_obj_set_height(status_bar, 40);
-    lv_obj_set_flex_align(status_bar,
-                          LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER);
-
-    w.status = lv_label_create(status_bar);
+    // ── Status indicator — overlay anchored to the top-right corner ──
+    // Parented to the screen (not the flex root) so it floats above the grid
+    // instead of consuming a row, and aligns to the panel's top-right corner.
+    w.status = lv_label_create(scr);
     lv_obj_set_style_text_font(w.status, FONT_STATUS, 0);
+    lv_obj_align(w.status, LV_ALIGN_TOP_RIGHT, -12, 8);
 
     set_server_status(false);  // assume offline until first packet arrives
 }
@@ -126,11 +121,11 @@ void update(const Payload& p) {
     set_if_changed(w.fuel_rate,       "%.1f", p.fuel_rate_l_per_h);
     set_if_changed(w.consumption,     "%.1f", p.consumption_km_per_l);
     set_if_changed(w.avg_consumption, "%.1f", p.avg_consumption_km_per_l);
-    set_if_changed(w.distance,        "%.1f", p.distance_km);
-    set_if_changed(w.baro,            "%u",   (unsigned)p.baro_pressure_kpa);
-    set_if_changed(w.ambient,         "%.0f", p.ambient_temp_c);
-    set_if_changed(w.gear,            "%.0f", p.at_gear_pos);
     set_if_changed(w.boost,           "%.1f", p.boost_pres);
+    set_if_changed(w.altitude,        "%.0f", p.altitude_m);
+    set_if_changed(w.engine_load,     "%.0f", p.engine_load_pct);
+    set_if_changed(w.voltage,         "%.1f", p.module_voltage_v);
+    set_if_changed(w.distance,        "%.1f", p.distance_km);
 }
 
 void set_server_status(bool online) {

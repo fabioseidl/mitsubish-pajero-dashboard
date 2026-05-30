@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define PAYLOAD_VERSION 2
+#define PAYLOAD_VERSION 3
 
 typedef struct __attribute__((packed)) {
     uint8_t  version;
@@ -36,6 +36,7 @@ typedef struct __attribute__((packed)) {
     uint8_t  warmups;                   // PID_WARMUPS       (0x30)  count
     uint16_t dist_cleared_km;           // PID_DIST_CLEARED  (0x31)  km
     uint8_t  baro_pressure_kpa;         // PID_BARO_PRESSURE (0x33)  kPa
+    float    altitude_m;                // derived from baro_pressure_kpa  m
     float    catalyst_temp_c;           // PID_CATALYST_TEMP (0x3C)  °C
     float    module_voltage_v;          // PID_MODULE_VOLTAGE (0x42) V
     float    rel_throttle_pct;          // PID_REL_THROTTLE  (0x45)  %
@@ -93,5 +94,5 @@ typedef struct __attribute__((packed)) {
 #define PAYLOAD_FLAG_DATA_VALID     (1 << 0)
 #define PAYLOAD_FLAG_ENGINE_RUNNING (1 << 1)
 
-static_assert(sizeof(Payload) == 221,
+static_assert(sizeof(Payload) == 225,
     "Payload size mismatch - check struct fields and packing");

@@ -237,12 +237,24 @@ static void broadcast_task(void* /*param*/) {
         last_tick_ms      = now_ms;
 
         float speed       = aggregator.get(PID_SPEED);
-        float fuel_rate   = aggregator.get(PID_FUEL_RATE);
+        float fuel_rate   = DerivedCalculator::computeFuelRate(aggregator);
         float consumption = DerivedCalculator::computeConsumption(aggregator);
 
         session.update(speed, fuel_rate, delta_ms);
 
         Payload payload = PayloadBuilder::build(aggregator, session, consumption, now_ms);
+
+        // Smooth altitude. OBD baro is whole-kPa, so the raw altitude snaps in
+        // ~84 m steps. A slow EMA lets the baro dithering between adjacent kPa
+        // values average toward the true altitude and removes the visible
+        // stepping (~2 s time constant at this 10 Hz broadcast rate).
+        static const float ALT_EMA_ALPHA = 0.05f;
+        static bool        alt_init      = false;
+        static float       alt_ema       = 0.0f;
+        if (!alt_init) { alt_ema = payload.altitude_m; alt_init = true; }
+        else           { alt_ema += ALT_EMA_ALPHA * (payload.altitude_m - alt_ema); }
+        payload.altitude_m = alt_ema;
+
         bool sent = broadcaster.send(payload);
         sent ? ++send_count : ++fail_count;
 
