@@ -2,9 +2,20 @@
 #include "pid_map.h"
 #include <math.h>
 
-// Diesel fuel properties used to derive fuel rate from MAF when PID 0x5E is
-// unsupported. Stoichiometric AFR ~14.5:1, density ~835 g/L.
-static constexpr float DIESEL_AFR_STOICH    = 14.5f;
+// Diesel fuel properties used to derive fuel rate from MAF when the direct
+// fuel-rate PID (0x5E) is unsupported.
+//
+// A diesel runs with large, variable excess air, so the textbook stoichiometric
+// AFR (~14.5:1) badly OVER-estimates fuel — at cruise the real air-fuel ratio is
+// more like 30–40:1. DIESEL_EFFECTIVE_AFR is therefore an *effective average*
+// AFR across mixed driving, and is the main CALIBRATION KNOB for fuel economy:
+//   • fuel rate / consumption reads too HIGH  → INCREASE this value
+//   • reads too LOW                           → DECREASE this value
+// Tune it so AVG CONS (km/L) matches your real fuel-receipt economy over a tank.
+// (A single constant can't capture how lambda swings with load — idle vs full
+// throttle — but cruise dominates a tank, so a cruise-tuned value tracks the
+// long-run average well.) Diesel fuel density ~835 g/L.
+static constexpr float DIESEL_EFFECTIVE_AFR = 35.0f;
 static constexpr float DIESEL_DENSITY_G_L   = 835.0f;
 
 // Sea-level reference pressure for the barometric altitude formula.
@@ -26,18 +37,16 @@ float DerivedCalculator::computeFuelRate(const DataAggregator& aggregator) {
     float direct = aggregator.get(PID_FUEL_RATE);
     if (direct > 0.0f) return direct;
 
-    // Fallback: estimate from air mass flow and commanded AFR.
-    //   fuel_mass (g/s) = MAF (g/s) / (AFR_stoich * lambda)
+    // Fallback: estimate from air mass flow using a calibrated diesel AFR.
+    //   fuel_mass (g/s) = MAF (g/s) / DIESEL_EFFECTIVE_AFR
     //   fuel_rate (L/h) = fuel_mass * 3600 / density (g/L)
+    // NB: commanded AFR (PID 0x44) is intentionally NOT used here — it is
+    // unsupported on this vehicle and would peg lambda at 1.0, producing the
+    // stoichiometric over-estimate this constant exists to avoid.
     float maf = aggregator.get(PID_MAF);   // g/s
     if (maf <= 0.0f) return 0.0f;
 
-    float lambda = aggregator.get(PID_CMD_AFR);   // commanded AFR as lambda
-    if (lambda <= 0.0f) lambda = 1.0f;            // assume stoichiometric if unavailable
-
-    float afr      = DIESEL_AFR_STOICH * lambda;
-    float fuel_g_s = maf / afr;
-    return fuel_g_s * 3600.0f / DIESEL_DENSITY_G_L;
+    return maf * 3600.0f / (DIESEL_EFFECTIVE_AFR * DIESEL_DENSITY_G_L);
 }
 
 float DerivedCalculator::computeConsumption(const DataAggregator& aggregator) {
