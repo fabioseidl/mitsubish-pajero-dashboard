@@ -340,13 +340,14 @@ static void broadcast_task(void* /*param*/) {
 
         // Log every broadcast message with its full contents.
         Serial.printf(
-            "[TX #%lu %s ok=%lu fail=%lu] t=%lums spd=%ukm/h rpm=%u "
-            "fuel=%.1fL/h cons=%.1fkm/L avg=%.1fkm/L dist=%.1fkm alt=%.0fm "
+            "[TX #%lu %s ok=%lu fail=%lu] t=%lums spd=%ukm/h rpm=%u maf=%.1fg/s "
+            "fuel=%.2fL/h cons=%.1fkm/L avg=%.1fkm/L dist=%.1fkm alt=%.0fm "
             "load=%.0f%% volt=%.1fV boost=%.1f coolant=%.0fC flags=0x%02X\n",
             (unsigned long)send_count, sent ? "OK" : "FAIL",
             (unsigned long)send_count, (unsigned long)fail_count,
             (unsigned long)payload.timestamp_ms,
             (unsigned)payload.speed_kmh, (unsigned)payload.rpm,
+            payload.maf_g_per_s,
             payload.fuel_rate_l_per_h, payload.consumption_km_per_l,
             payload.avg_consumption_km_per_l, payload.distance_km,
             payload.altitude_m, payload.engine_load_pct,
