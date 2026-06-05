@@ -87,6 +87,10 @@ Payload PayloadBuilder::build(const DataAggregator& aggregator,
     p.inj_cor_cyl3             = aggregator.get(PID_M22_INJ_COR_CYL3);
     p.inj_cor_cyl4             = aggregator.get(PID_M22_INJ_COR_CYL4);
 
+    // Mitsubishi advanced PIDs (real DIDs confirmed for the Pajero 4M41)
+    p.fuel_temp_c              = aggregator.get(PID_M22_FUEL_TEMP);
+    p.cooling_fan_duty_pct     = aggregator.get(PID_M22_FAN_DUTY);
+
     p.flags = 0;
     if (aggregator.allRequiredPidsReceived()) {
         p.flags |= PAYLOAD_FLAG_DATA_VALID;

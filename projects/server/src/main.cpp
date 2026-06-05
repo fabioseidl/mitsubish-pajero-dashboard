@@ -21,6 +21,7 @@
 #include <esp_log.h>
 #include <esp_sleep.h>
 #include <esp_wifi.h>
+#include <math.h>
 
 static const char* TAG = "server";
 
@@ -55,28 +56,48 @@ static CANFrame makeOBDRequest(uint8_t pid) {
     return f;
 }
 
-// Build a Mode 22 (UDS ReadDataByIdentifier) request for a 16-bit DID.
-static CANFrame makeMode22Request(uint16_t did) {
+// Build a Mode 22 (UDS ReadDataByIdentifier) request for a 16-bit DID, sent with
+// physical addressing to a specific ECU (req_id). The response arrives on
+// req_id + UDS_RESP_OFFSET as an ISO-TP single or multi frame.
+static CANFrame makeMode22Request(uint16_t req_id, uint16_t did) {
     CANFrame f = {};
-    f.id          = OBD_REQUEST_ID;
+    f.id          = req_id;
     f.dlc         = 8;
     f.is_extended = false;
-    f.data[0]     = 0x03;
-    f.data[1]     = 0x22;
+    f.data[0]     = 0x03;                 // ISO-TP single frame, length 3
+    f.data[1]     = 0x22;                 // UDS ReadDataByIdentifier
     f.data[2]     = (did >> 8) & 0xFF;
     f.data[3]     = did & 0xFF;
     return f;
 }
 
-// Look up a Mode 22 real PID and return its DataAggregator slot ID.
-// Returns 0xFF when not found.
-static uint8_t mode22SlotId(uint16_t real_pid) {
-    for (size_t i = 0; i < MODE22_PID_MAP_SIZE; ++i) {
-        if (MODE22_PID_MAP[i].real_pid == real_pid) {
-            return MODE22_PID_MAP[i].slot_id;
+// Build an ISO-TP flow-control "clear to send" frame (block size 0, ST 0).
+static CANFrame makeFlowControl(uint16_t req_id) {
+    CANFrame f = {};
+    f.id          = req_id;
+    f.dlc         = 8;
+    f.is_extended = false;
+    f.data[0]     = 0x30;                 // FC, ContinueToSend
+    return f;
+}
+
+// Apply every advanced-PID formula keyed to this (ECU, DID) against a fully
+// reassembled UDS positive response and push the results into the aggregator.
+static void dispatchMode22(uint32_t resp_id, const uint8_t* uds, uint8_t uds_len,
+                           DataAggregator& agg) {
+    if (uds_len < 3 || uds[0] != 0x62) return;
+    uint16_t did    = ((uint16_t)uds[1] << 8) | uds[2];
+    uint16_t req_id = (uint16_t)(resp_id - UDS_RESP_OFFSET);
+    for (size_t i = 0; i < MODE22_ADVANCED_PIDS_SIZE; ++i) {
+        const Mode22AdvancedPid& def = MODE22_ADVANCED_PIDS[i];
+        if (def.req_id != req_id || def.did != did) continue;
+        float v = PIDTranslator::translateMode22(uds, uds_len, def);
+        if (!isnan(v)) {
+            agg.update(def.slot_id, v);
+            Serial.printf("  -> M22 %s = %.1f %s (DID 0x%04X)\n",
+                          def.name, v, def.unit, did);
         }
     }
-    return 0xFF;
 }
 
 // Enter deep sleep to save the car battery while the engine is off. Drains the
@@ -114,6 +135,8 @@ static void can_rx_task(void* /*param*/) {
         PID_SPEED,
         PID_MAF,             // feeds fuel rate / consumption
         PID_ENGINE_LOAD,
+        PID_ACCEL_D,         // overrun fuel-cut detection needs a live pedal — a
+        PID_ACCEL_E,         // stale (slow-polled) pedal misses the lift-off window
     };
     static const size_t FAST_COUNT = sizeof(FAST_PIDS) / sizeof(FAST_PIDS[0]);
 
@@ -138,8 +161,6 @@ static void can_rx_task(void* /*param*/) {
         PID_CATALYST_TEMP,
         PID_MODULE_VOLTAGE,
         PID_REL_THROTTLE,
-        PID_ACCEL_D,
-        PID_ACCEL_E,
         PID_THROTTLE_ACT,
         PID_TIME_MIL,
         PID_TIME_CLEARED,
@@ -158,17 +179,22 @@ static void can_rx_task(void* /*param*/) {
     };
     static const size_t SLOW_MODE01_COUNT = sizeof(SLOW_PIDS) / sizeof(SLOW_PIDS[0]);
 
-    // Mode 22 poll list — 16-bit DIDs, UDS service 0x22
-    // Responses arrive as 0x62 positive or 0x7F negative (currently all negative).
-    static const uint16_t MODE22_POLL_PIDS[] = {
-        // AT ECU (responses on 0x7E9)
-        0xF100, 0xF101, 0xF102, 0xF103, 0xF104,
-        0xF105, 0xF106, 0xF107, 0xF108, 0xF109, 0xF10A,
-        // Engine ECU (responses on 0x7E8)
-        0xF300, 0xF301, 0xF302, 0xF303, 0xF304,
-        0xF305, 0xF306, 0xF307, 0xF308, 0xF309,
+    // Mode 22 poll list — the Mitsubishi advanced PIDs from the reverse-eng doc.
+    // DISABLED: a sniffer DID sweep (projects/sniffer) confirmed this vehicle's
+    // ECUs do not implement UDS service 0x22 — the engine answers every DID with
+    // 0x11 (serviceNotSupported) and the TCM with 0x80. Polling them only wasted
+    // a slow-round-robin slot per cycle on guaranteed rejections, slowing the
+    // genuinely-useful slow PIDs. Kept here (gated off) for reference and for a
+    // future vehicle that does support them; the ISO-TP reassembly path below
+    // stays in place, dormant, since nothing requests these DIDs.
+    static constexpr bool POLL_MODE22 = false;
+    struct Mode22Req { uint16_t req_id; uint16_t did; };
+    static const Mode22Req MODE22_REQS[] = {
+        { UDS_REQ_ENGINE, 0x20F2 },   // fuel temperature
+        { UDS_REQ_ENGINE, 0x2151 },   // cooling fan duty
+        { UDS_REQ_TCM,    0x20AB },   // transmission input + output speed
     };
-    static const size_t MODE22_COUNT = sizeof(MODE22_POLL_PIDS) / sizeof(MODE22_POLL_PIDS[0]);
+    static const size_t MODE22_COUNT = sizeof(MODE22_REQS) / sizeof(MODE22_REQS[0]);
 
     size_t   fast_step    = 0;   // position in the FAST_COUNT-fast-then-1-slow cycle
     size_t   slow_idx     = 0;   // round-robin across SLOW_PIDS then MODE22_POLL_PIDS
@@ -176,6 +202,21 @@ static void can_rx_task(void* /*param*/) {
     // Seeded to boot time so a freshly-woken board gets one CAR_OFF_TIMEOUT_MS
     // window to detect bus traffic before deciding the car is still off.
     uint32_t last_activity_ms = (uint32_t)(esp_timer_get_time() / 1000);
+
+    // ISO-TP reassembly state — one slot per advanced-PID ECU response id.
+    // Mode 22 advanced PIDs return data bytes that spill past the 7-byte single
+    // frame (e.g. fuel temp at D4), so we must reassemble multi-frame responses.
+    struct IsoTpRx {
+        uint32_t resp_id;
+        bool     active;
+        uint16_t total;      // expected reassembled UDS length
+        uint16_t got;        // bytes collected so far
+        uint8_t  buf[64];    // reassembled UDS, buf[0] == service byte (0x62)
+    };
+    IsoTpRx isotp[2] = {
+        { 0x7E8, false, 0, 0, {0} },   // engine ECU
+        { 0x7E9, false, 0, 0, {0} },   // transmission ECU
+    };
 
     Serial.println("Initializing CAN driver...");
     if (!driver.begin()) {
@@ -200,11 +241,12 @@ static void can_rx_task(void* /*param*/) {
                 driver.sendFrame(makeOBDRequest(FAST_PIDS[fast_step]));
             } else {
                 // One slow PID this cycle, then the fast sweep restarts.
-                size_t slow_total = SLOW_MODE01_COUNT + MODE22_COUNT;
+                size_t slow_total = SLOW_MODE01_COUNT + (POLL_MODE22 ? MODE22_COUNT : 0);
                 if (slow_idx < SLOW_MODE01_COUNT) {
                     driver.sendFrame(makeOBDRequest(SLOW_PIDS[slow_idx]));
                 } else {
-                    driver.sendFrame(makeMode22Request(MODE22_POLL_PIDS[slow_idx - SLOW_MODE01_COUNT]));
+                    const Mode22Req& r = MODE22_REQS[slow_idx - SLOW_MODE01_COUNT];
+                    driver.sendFrame(makeMode22Request(r.req_id, r.did));
                 }
                 slow_idx = (slow_idx + 1) % slow_total;
             }
@@ -236,50 +278,67 @@ static void can_rx_task(void* /*param*/) {
                     continue;
                 }
 
-                uint8_t service_response = frame.data[1];
+                uint8_t pci = frame.data[0] & 0xF0;
 
-                if (service_response == 0x41 && frame.id == 0x7E8) {
-                    // --- Mode 01 positive response (engine ECU only) ---
-                    uint8_t pid = frame.data[2];
-                    Serial.printf("CAN ID=0x%03X PID=0x%02X DLC=%d\n", frame.id, pid, frame.dlc);
+                if (pci == 0x00) {
+                    // ── ISO-TP single frame ──────────────────────────────────
+                    uint8_t service_response = frame.data[1];
 
-                    if (pid == PID_MONITOR_STATUS) {
-                        Serial.println("  -> Updating MIL/DTC status");
-                        aggregator.updateMilStatus(PIDTranslator::extractMilStatus(frame));
-                        aggregator.updateDtcCount(PIDTranslator::extractDtcCount(frame));
-                    } else {
-                        const PidDefinition* def = dictionary.lookup(frame.id, pid);
-                        if (def != nullptr) {
-                            float value = PIDTranslator::translate(frame, *def);
-                            Serial.printf("  -> PID 0x%02X = %.2f\n", pid, value);
-                            aggregator.update(def->pid, value);
+                    if (service_response == 0x41 && frame.id == 0x7E8) {
+                        // --- Mode 01 positive response (engine ECU only) ---
+                        uint8_t pid = frame.data[2];
+
+                        if (pid == PID_MONITOR_STATUS) {
+                            aggregator.updateMilStatus(PIDTranslator::extractMilStatus(frame));
+                            aggregator.updateDtcCount(PIDTranslator::extractDtcCount(frame));
                         } else {
-                            Serial.printf("  -> PID 0x%02X not in dictionary\n", pid);
+                            const PidDefinition* def = dictionary.lookup(frame.id, pid);
+                            if (def != nullptr) {
+                                float value = PIDTranslator::translate(frame, *def);
+                                aggregator.update(def->pid, value);
+                            }
+                        }
+
+                    } else if (service_response == 0x62) {
+                        // --- Mode 22 positive response, single frame ---
+                        // UDS = frame.data[1 .. 1+len]; buf[0]=0x62, buf[1..2]=DID.
+                        uint8_t len = frame.data[0] & 0x0F;
+                        uint8_t uds[8] = {0};
+                        for (uint8_t k = 0; k < len && (uint8_t)(1 + k) < 8; ++k) {
+                            uds[k] = frame.data[1 + k];
+                        }
+                        dispatchMode22(frame.id, uds, len, aggregator);
+
+                    } else if (service_response == 0x7F) {
+                        // Negative response — ignore
+                    }
+
+                } else if (pci == 0x10) {
+                    // ── ISO-TP first frame: start reassembly, send flow control ─
+                    IsoTpRx& rx = (frame.id == 0x7E8) ? isotp[0] : isotp[1];
+                    rx.total  = (((uint16_t)(frame.data[0] & 0x0F)) << 8) | frame.data[1];
+                    rx.got    = 0;
+                    rx.active = true;
+                    // First frame carries 6 UDS bytes (data[2..7]).
+                    for (uint8_t k = 0; k < 6 && rx.got < rx.total && rx.got < sizeof(rx.buf); ++k) {
+                        rx.buf[rx.got++] = frame.data[2 + k];
+                    }
+                    driver.sendFrame(makeFlowControl(frame.id - UDS_RESP_OFFSET));
+
+                } else if (pci == 0x20) {
+                    // ── ISO-TP consecutive frame: append until complete ───────
+                    IsoTpRx& rx = (frame.id == 0x7E8) ? isotp[0] : isotp[1];
+                    if (rx.active) {
+                        for (uint8_t k = 0; k < 7 && rx.got < rx.total && rx.got < sizeof(rx.buf); ++k) {
+                            rx.buf[rx.got++] = frame.data[1 + k];
+                        }
+                        if (rx.got >= rx.total) {
+                            uint8_t uds_len = (rx.total < sizeof(rx.buf))
+                                              ? (uint8_t)rx.total : (uint8_t)sizeof(rx.buf);
+                            dispatchMode22(frame.id, rx.buf, uds_len, aggregator);
+                            rx.active = false;
                         }
                     }
-
-                } else if (service_response == 0x62) {
-                    // --- Mode 22 positive response ---
-                    // Layout: [len] 0x62 [DID_high] [DID_low] [data A] [data B] ...
-                    uint16_t real_pid = ((uint16_t)frame.data[2] << 8) | frame.data[3];
-                    uint8_t  slot     = mode22SlotId(real_pid);
-                    Serial.printf("CAN ID=0x%03X Mode22 DID=0x%04X DLC=%d\n",
-                                  frame.id, real_pid, frame.dlc);
-                    if (slot != 0xFF) {
-                        // Store first data byte as a raw float until the formula
-                        // is confirmed by the ECU documentation.
-                        float value = (float)frame.data[4];
-                        Serial.printf("  -> Mode22 DID=0x%04X slot=0x%02X value=%.0f\n",
-                                      real_pid, slot, value);
-                        aggregator.update(slot, value);
-                    } else {
-                        Serial.printf("  -> Mode22 DID=0x%04X not in MODE22_PID_MAP\n", real_pid);
-                    }
-
-                } else if (service_response == 0x7F) {
-                    // Negative response — log and ignore
-                    Serial.printf("  -> NEG_RESP CAN=0x%03X svc=0x%02X NRC=0x%02X\n",
-                                  frame.id, frame.data[2], frame.data[3]);
                 }
             }
         }
@@ -338,21 +397,50 @@ static void broadcast_task(void* /*param*/) {
         bool sent = broadcaster.send(payload);
         sent ? ++send_count : ++fail_count;
 
-        // Log every broadcast message with its full contents.
+        // Log every broadcast message with its full contents (all Payload fields).
         Serial.printf(
-            "[TX #%lu %s ok=%lu fail=%lu] t=%lums spd=%ukm/h rpm=%u maf=%.1fg/s "
-            "fuel=%.2fL/h cons=%.1fkm/L avg=%.1fkm/L dist=%.1fkm alt=%.0fm "
-            "load=%.0f%% volt=%.1fV boost=%.1f coolant=%.0fC flags=0x%02X\n",
+            "[TX #%lu %s ok=%lu fail=%lu] ver=%u t=%lums\n"
+            "  rpm=%u spd=%ukm/h fuel_rate=%.2fL/h cons=%.2fkm/L avg=%.2fkm/L dist=%.2fkm\n"
+            "  mil=%d dtc=%u flags=0x%02X\n"
+            "  load=%.1f%% coolant=%.1fC map=%ukPa iat=%.1fC maf=%.2fg/s throttle=%.1f%%\n"
+            "  runtime=%us dist_mil=%ukm fuel_rail=%.1fkPa egr_cmd=%.1f%% egr_err=%.1f%%\n"
+            "  warmups=%u dist_cleared=%ukm baro=%ukPa alt=%.1fm cat=%.1fC volt=%.2fV\n"
+            "  rel_thr=%.1f%% accel_d=%.1f%% accel_e=%.1f%% thr_act=%.1f%% time_mil=%umin time_cleared=%umin\n"
+            "  stft=%.1f%% ltft=%.1f%% fuel_pres=%.1fkPa o2=%.3f abs_load=%.1f%% cmd_afr=%.3f\n"
+            "  ambient=%.1fC throttle_b=%.1f%% hybrid_batt=%.1f%% oil=%.1fC obd_std=%u\n"
+            "  at: gear=%.1f ratio=%.2f in=%.0frpm out=%.0frpm slip=%.0frpm atf=%.1fC sol=0x%.0f "
+            "lockup=%.0f prndl=%.0f tgt_gear=%.1f oil_pres=%.1f\n"
+            "  eng22: boost=%.2f egr_pos=%.1f%% dpf_soot=%.2f dpf_regen=%.0f rail_act=%.1f rail_des=%.1f "
+            "inj=[%.2f %.2f %.2f %.2f]\n"
+            "  fuel_temp=%.1fC fan_duty=%.1f%%\n",
             (unsigned long)send_count, sent ? "OK" : "FAIL",
             (unsigned long)send_count, (unsigned long)fail_count,
-            (unsigned long)payload.timestamp_ms,
-            (unsigned)payload.speed_kmh, (unsigned)payload.rpm,
-            payload.maf_g_per_s,
+            (unsigned)payload.version, (unsigned long)payload.timestamp_ms,
+            (unsigned)payload.rpm, (unsigned)payload.speed_kmh,
             payload.fuel_rate_l_per_h, payload.consumption_km_per_l,
             payload.avg_consumption_km_per_l, payload.distance_km,
-            payload.altitude_m, payload.engine_load_pct,
-            payload.module_voltage_v, payload.boost_pres,
-            payload.coolant_temp_c, payload.flags);
+            (int)payload.mil_on, (unsigned)payload.dtc_count, payload.flags,
+            payload.engine_load_pct, payload.coolant_temp_c, (unsigned)payload.map_pressure_kpa,
+            payload.intake_air_temp_c, payload.maf_g_per_s, payload.throttle_pct,
+            (unsigned)payload.runtime_s, (unsigned)payload.dist_mil_km, payload.fuel_rail_pres_kpa,
+            payload.egr_cmd_pct, payload.egr_error_pct,
+            (unsigned)payload.warmups, (unsigned)payload.dist_cleared_km,
+            (unsigned)payload.baro_pressure_kpa, payload.altitude_m, payload.catalyst_temp_c,
+            payload.module_voltage_v,
+            payload.rel_throttle_pct, payload.accel_d_pct, payload.accel_e_pct, payload.throttle_act_pct,
+            (unsigned)payload.time_mil_min, (unsigned)payload.time_cleared_min,
+            payload.stft_pct, payload.ltft_pct, payload.fuel_pressure_kpa, payload.o2_sensor,
+            payload.abs_load_pct, payload.cmd_afr_lambda,
+            payload.ambient_temp_c, payload.throttle_b_pct, payload.hybrid_batt_pct,
+            payload.oil_temp_c, (unsigned)payload.obd_standards,
+            payload.at_gear_pos, payload.at_gear_ratio, payload.at_input_speed_rpm,
+            payload.at_output_speed_rpm, payload.at_tc_slip_rpm, payload.at_atf_temp_c,
+            payload.at_shift_sol_status, payload.at_lockup_status, payload.at_prndl,
+            payload.at_target_gear, payload.at_oil_pres,
+            payload.boost_pres, payload.egr_valve_pos_pct, payload.dpf_soot_load,
+            payload.dpf_regen_status, payload.rail_pres_act, payload.rail_pres_des,
+            payload.inj_cor_cyl1, payload.inj_cor_cyl2, payload.inj_cor_cyl3, payload.inj_cor_cyl4,
+            payload.fuel_temp_c, payload.cooling_fan_duty_pct);
 
         vTaskDelay(pdMS_TO_TICKS(100));
     }

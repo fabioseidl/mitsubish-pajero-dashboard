@@ -28,6 +28,34 @@ static constexpr float AFR_CRUISE      = 37.0f;    // leaner-cruise AFR
 static constexpr float AFR_RICH_CLAMP  = 22.0f;    // richest AFR (full load)
 static constexpr float DIESEL_DENSITY_G_L = 835.0f;
 
+// Load-aware refinement (PID 0x04, Calculated Engine Load).
+//
+// MAF alone can't distinguish a high-rpm/light-load point from a low-rpm/heavy-
+// load one at the same airflow, so the pure-MAF AFR mis-estimates fueling there.
+// Calculated load is a more direct torque/fuel-demand proxy, so we scale the AFR
+// leaner at light load and richer at heavy load. The correction is NEUTRAL at
+// LOAD_AFR_REF, so the MAF calibration above is unchanged at that operating
+// point; it only reshapes the curve away from it. It is also neutral whenever the
+// load PID is unavailable, leaving the pure-MAF estimate as a safe fallback.
+//
+// CALIBRATION: with LOAD_AFR_GAIN at 0, behaviour is exactly the old pure-MAF
+// model — raise it to pull light-load (cruise) fuel down. Set LOAD_AFR_REF to a
+// logged steady-cruise load %. The TX log already prints load=%, maf= and fuel=,
+// so tune against a real drive. The factor is clamped so load can't run AFR away.
+static constexpr float LOAD_AFR_REF  = 45.0f;    // % load where the correction is neutral
+static constexpr float LOAD_AFR_GAIN = 0.006f;   // AFR scale per % load below/above ref
+static constexpr float LOAD_AFR_MIN  = 0.75f;    // clamp on the multiplicative factor
+static constexpr float LOAD_AFR_MAX  = 1.30f;
+
+// Overrun (deceleration) fuel cut-off. When you lift off and the wheels keep the
+// engine spinning above idle, a common-rail diesel injects *no* fuel. MAF can't
+// see this — air still flows — so the air-based estimate over-reads exactly when
+// real consumption is zero. Detecting it (released pedal + elevated rpm while
+// moving) and forcing the rate to 0 is physically correct and the single biggest
+// accuracy gain for both instantaneous economy and trip-average fuel use.
+static constexpr float FUEL_CUT_PEDAL_MAX_PCT = 3.0f;    // pedal essentially released
+static constexpr float FUEL_CUT_RPM_MIN       = 1100.0f; // above idle → engine-braking
+
 // Sea-level reference pressure for the barometric altitude formula.
 //
 // CALIBRATION KNOB. The ISA standard value is 101.325 kPa, but actual sea-level
@@ -47,6 +75,22 @@ float DerivedCalculator::computeFuelRate(const DataAggregator& aggregator) {
     float direct = aggregator.get(PID_FUEL_RATE);
     if (direct > 0.0f) return direct;
 
+    // Overrun fuel cut-off: detect a released pedal at elevated rpm while moving
+    // and report zero fuel. Guard on a *valid* pedal reading so an unsupported
+    // pedal PID (which reads 0) can't be mistaken for a permanently-lifted
+    // throttle and zero out fuel everywhere. Prefer the accelerator-pedal PIDs
+    // (0x49/0x4A); fall back to throttle position (0x11).
+    float pedal = -1.0f;
+    if (aggregator.isValid(PID_ACCEL_D)) pedal = aggregator.get(PID_ACCEL_D);
+    if (aggregator.isValid(PID_ACCEL_E)) pedal = fmaxf(pedal, aggregator.get(PID_ACCEL_E));
+    if (pedal < 0.0f && aggregator.isValid(PID_THROTTLE)) pedal = aggregator.get(PID_THROTTLE);
+
+    float rpm   = aggregator.get(PID_RPM);
+    float speed = aggregator.get(PID_SPEED);
+    bool overrun = (pedal >= 0.0f) && (pedal <= FUEL_CUT_PEDAL_MAX_PCT)
+                   && (rpm > FUEL_CUT_RPM_MIN) && (speed > 0.0f);
+    if (overrun) return 0.0f;
+
     // Fallback: estimate from air mass flow using a load-dependent diesel AFR.
     // NB: commanded AFR (PID 0x44) is intentionally NOT used here — it is
     // unsupported on this vehicle and would peg lambda at 1.0, producing a
@@ -54,10 +98,20 @@ float DerivedCalculator::computeFuelRate(const DataAggregator& aggregator) {
     float maf = aggregator.get(PID_MAF);   // g/s
     if (maf <= 0.0f) return 0.0f;
 
-    // Effective AFR interpolated between the idle and cruise calibration points,
-    // then clamped so it never runs leaner than idle or richer than full load.
+    // Effective AFR interpolated between the idle and cruise calibration points.
     float afr = AFR_IDLE + (AFR_CRUISE - AFR_IDLE)
                            * (maf - MAF_IDLE) / (MAF_CRUISE - MAF_IDLE);
+
+    // Load-aware correction: nudge AFR leaner at light load, richer at heavy load
+    // (neutral at LOAD_AFR_REF, and neutral when the load PID isn't available).
+    if (aggregator.isValid(PID_ENGINE_LOAD)) {
+        float factor = 1.0f + LOAD_AFR_GAIN * (LOAD_AFR_REF - aggregator.get(PID_ENGINE_LOAD));
+        if (factor < LOAD_AFR_MIN) factor = LOAD_AFR_MIN;
+        if (factor > LOAD_AFR_MAX) factor = LOAD_AFR_MAX;
+        afr *= factor;
+    }
+
+    // Clamp so it never runs leaner than idle or richer than full load.
     if (afr > AFR_IDLE)       afr = AFR_IDLE;
     if (afr < AFR_RICH_CLAMP) afr = AFR_RICH_CLAMP;
 

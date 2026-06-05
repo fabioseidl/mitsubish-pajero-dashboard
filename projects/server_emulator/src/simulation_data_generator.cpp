@@ -151,6 +151,14 @@ Payload SimulationDataGenerator::getPayload() const {
     p.inj_cor_cyl3       =  1.5f * sinf(t * 0.7f + 3.1416f);
     p.inj_cor_cyl4       =  1.5f * sinf(t * 0.7f + 4.7124f);
 
+    // -----------------------------------------------------------------------
+    // Mitsubishi advanced PIDs (Pajero 4M41) — DID 0x20F2 / 0x2151
+    // -----------------------------------------------------------------------
+    // Fuel temperature tracks ambient + load, lagging a little below coolant.
+    p.fuel_temp_c        = 40.0f + 30.0f * (load_pct / 100.0f) + 3.0f * sinf(t * 0.03f);
+    // Cooling fan stays off until the engine warms, then ramps with coolant temp.
+    p.cooling_fan_duty_pct = fminf(100.0f, fmaxf(0.0f, (p.coolant_temp_c - 90.0f) * 12.0f));
+
     p.flags = PAYLOAD_FLAG_DATA_VALID;
     if (rpm > 400.0f) {
         p.flags |= PAYLOAD_FLAG_ENGINE_RUNNING;

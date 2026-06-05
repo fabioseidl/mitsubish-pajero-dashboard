@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define PAYLOAD_VERSION 3
+#define PAYLOAD_VERSION 4
 
 typedef struct __attribute__((packed)) {
     uint8_t  version;
@@ -61,13 +61,14 @@ typedef struct __attribute__((packed)) {
     // --- Mode 01 informational ---
     uint8_t  obd_standards;             // PID_OBD_STANDARDS (0x1C)  raw enum (6=EOBD)
 
-    // --- Mode 22 — AT ECU (0x7E9), real PIDs 0xF100–0xF10A ---
-    // All returned negative responses during initial scan; values are 0 until
-    // the ECU grants access.  Formulas and units are unconfirmed.
-    float    at_gear_pos;               // F100  current gear position
-    float    at_gear_ratio;             // F101  gear ratio
-    float    at_input_speed_rpm;        // F102  input shaft speed  (rpm)
-    float    at_output_speed_rpm;       // F103  output shaft speed (rpm)
+    // --- Mode 22 — AT ECU (0x7E9) ---
+    // input/output shaft speeds are now read from the real Mitsubishi advanced
+    // DID 0x20AB (TCM); the remaining fields are legacy speculative slots that
+    // stay 0 on the real vehicle until confirmed DIDs are found.
+    float    at_gear_pos;               // (legacy) current gear position
+    float    at_gear_ratio;             // (legacy) gear ratio
+    float    at_input_speed_rpm;        // DID 0x20AB D1,D2  input shaft speed  (rpm)
+    float    at_output_speed_rpm;       // DID 0x20AB D3,D4  output shaft speed (rpm)
     float    at_tc_slip_rpm;            // F104  torque converter slip (rpm)
     float    at_atf_temp_c;             // F105  ATF temperature (°C)
     float    at_shift_sol_status;       // F106  shift solenoid status (bitmask)
@@ -88,11 +89,15 @@ typedef struct __attribute__((packed)) {
     float    inj_cor_cyl3;              // F308  injector correction cyl 3
     float    inj_cor_cyl4;              // F309  injector correction cyl 4
 
+    // --- Mitsubishi advanced PIDs (Pajero IV 3.2 DI-D / 4M41) ---
+    float    fuel_temp_c;               // DID 0x20F2 D4  fuel temperature (°C)
+    float    cooling_fan_duty_pct;      // DID 0x2151 D1  cooling fan duty (%)
+
     uint8_t  flags;
 } Payload;
 
 #define PAYLOAD_FLAG_DATA_VALID     (1 << 0)
 #define PAYLOAD_FLAG_ENGINE_RUNNING (1 << 1)
 
-static_assert(sizeof(Payload) == 225,
+static_assert(sizeof(Payload) == 233,
     "Payload size mismatch - check struct fields and packing");

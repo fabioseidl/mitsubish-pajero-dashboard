@@ -29,12 +29,12 @@ struct Widgets {
     lv_obj_t* speed = nullptr;
     lv_obj_t* rpm   = nullptr;
     // grid row 1
-    lv_obj_t* fuel_rate       = nullptr;
+    lv_obj_t* intake_air_temp = nullptr;
     lv_obj_t* consumption     = nullptr;
     lv_obj_t* avg_consumption = nullptr;
-    lv_obj_t* boost           = nullptr;
+    lv_obj_t* coolant_temp    = nullptr;
     // grid row 2
-    lv_obj_t* altitude    = nullptr;
+    lv_obj_t* runtime     = nullptr;
     lv_obj_t* engine_load = nullptr;
     lv_obj_t* voltage     = nullptr;
     lv_obj_t* distance    = nullptr;
@@ -58,6 +58,21 @@ static void set_if_changed(lv_obj_t* label, const char* fmt, ...) {
     va_end(ap);
     if (strcmp(lv_label_get_text(label), buf) != 0) {
         lv_label_set_text(label, buf);
+    }
+}
+
+// Formats an engine runtime into a human-readable string:
+//   < 60 s        → seconds      ("45 s")
+//   1–59 minutes  → minutes      ("12 min")
+//   ≥ 60 minutes  → hours+minutes ("2h 05m")
+static void format_runtime(char* buf, size_t n, uint16_t runtime_s) {
+    if (runtime_s < 60) {
+        snprintf(buf, n, "%u s", (unsigned)runtime_s);
+    } else if (runtime_s < 3600) {
+        snprintf(buf, n, "%u min", (unsigned)(runtime_s / 60));
+    } else {
+        snprintf(buf, n, "%uh %02um", (unsigned)(runtime_s / 3600),
+                 (unsigned)((runtime_s % 3600) / 60));
     }
 }
 
@@ -87,20 +102,20 @@ void create() {
     lv_obj_set_width(g1, lv_pct(100));
     lv_obj_set_flex_grow(g1, 3);
     lv_obj_set_style_pad_column(g1, 8, 0);
-    w.fuel_rate       = make_stat_block(g1, "FUEL RATE (L/h)",   FONT_TITLE, FONT_VALUE, "--");
-    w.consumption     = make_stat_block(g1, "CONS (km/L)",       FONT_TITLE, FONT_VALUE, "--");
     w.avg_consumption = make_stat_block(g1, "AVG CONS (km/L)",   FONT_TITLE, FONT_VALUE, "--");
-    w.boost           = make_stat_block(g1, "BOOST",             FONT_TITLE, FONT_VALUE, "--");
+    w.consumption     = make_stat_block(g1, "CONS (km/L)",       FONT_TITLE, FONT_VALUE, "--");
+    w.intake_air_temp = make_stat_block(g1, "INTAKE AIR (C)",    FONT_TITLE, FONT_VALUE, "--");
+    w.runtime         = make_stat_block(g1, "RUNTIME",           FONT_TITLE, FONT_VALUE, "--");
 
     // ── Info grid row 2 ──
     lv_obj_t* g2 = make_flex(root, LV_FLEX_FLOW_ROW);
     lv_obj_set_width(g2, lv_pct(100));
     lv_obj_set_flex_grow(g2, 3);
     lv_obj_set_style_pad_column(g2, 8, 0);
-    w.altitude    = make_stat_block(g2, "ALT (m)",          FONT_TITLE, FONT_VALUE, "--");
-    w.engine_load = make_stat_block(g2, "ENGINE LOAD (%)",  FONT_TITLE, FONT_VALUE, "--");
-    w.voltage     = make_stat_block(g2, "VOLTAGE (V)",      FONT_TITLE, FONT_VALUE, "--");
-    w.distance    = make_stat_block(g2, "DISTANCE (km)",    FONT_TITLE, FONT_VALUE, "--");
+    w.coolant_temp = make_stat_block(g2, "COOLANT (C)",      FONT_TITLE, FONT_VALUE, "--");
+    w.engine_load  = make_stat_block(g2, "ENGINE LOAD (%)",  FONT_TITLE, FONT_VALUE, "--");
+    w.voltage      = make_stat_block(g2, "VOLTAGE (V)",      FONT_TITLE, FONT_VALUE, "--");
+    w.distance     = make_stat_block(g2, "DISTANCE (km)",    FONT_TITLE, FONT_VALUE, "--");
 
     // ── Status indicator — overlay anchored to the top-right corner ──
     // Parented to the screen (not the flex root) so it floats above the grid
@@ -118,11 +133,13 @@ void update(const Payload& p) {
 
     set_if_changed(w.speed,           "%u",   (unsigned)p.speed_kmh);
     set_if_changed(w.rpm,             "%u",   (unsigned)p.rpm);
-    set_if_changed(w.fuel_rate,       "%.1f", p.fuel_rate_l_per_h);
+    set_if_changed(w.intake_air_temp, "%.0f", p.intake_air_temp_c);
     set_if_changed(w.consumption,     "%.1f", p.consumption_km_per_l);
     set_if_changed(w.avg_consumption, "%.1f", p.avg_consumption_km_per_l);
-    set_if_changed(w.boost,           "%.1f", p.boost_pres);
-    set_if_changed(w.altitude,        "%.0f", p.altitude_m);
+    set_if_changed(w.coolant_temp,    "%.0f", p.coolant_temp_c);
+    char runtime_buf[16];
+    format_runtime(runtime_buf, sizeof(runtime_buf), p.runtime_s);
+    set_if_changed(w.runtime,         "%s",   runtime_buf);
     set_if_changed(w.engine_load,     "%.0f", p.engine_load_pct);
     set_if_changed(w.voltage,         "%.1f", p.module_voltage_v);
     set_if_changed(w.distance,        "%.1f", p.distance_km);
