@@ -364,3 +364,56 @@ def ca(s):
 `k.java`=Outlander 2.0/2.4 CVT · `l.java`=Outlander 2.2 DI-D · `m.java`=Outlander 2.3 DI-D ·
 `n.java`=Pajero IV 3.2 DI-D. PID dispatch table & protocol maps live in `c.java`; Torque AIDL in
 `d/a/a/a/a.java`.
+
+---
+
+## 9. Second source — igkov `bcomp11` (passive broadcast channels + legacy KWP)
+
+> Source: <https://github.com/igkov/bcomp11> — an open-source Pajero trip computer
+> (`obd.c` request/ISO-TP, `bcomp.c` decoding). This source is **independent of the
+> Torque plugin above** and contributes two things that table doesn't have: data
+> read **passively from free-running broadcast frames** (no request at all), and a
+> **legacy KWP service `0x21`** path for the transmission/odometer.
+
+### 9.1 Free-running broadcast frames (no request needed) — **confirmed on this truck**
+
+Both IDs below are already present in `dumps/candump.log` on our Pajero IV (0x608 at
+~5–10 Hz, 0x218 at ~50 Hz). Because they are broadcast continuously, the sniffer reads
+them in **listen-only** mode — zero bus risk.
+
+| CAN ID | Meaning (bcomp11) | Bytes | Formula | Notes |
+|--------|-------------------|-------|---------|-------|
+| `0x608` | Diesel injected fuel quantity | D5,D6 | `D5×256 + D6` (raw) | bcomp11 `bcomp.raw_fuel`; D0 also tracks load. If this is real injected fuel it **drops to ~0 on overrun** — unlike the MAF estimate. |
+| `0x218` | Transmission status / gear | D2 | `D2 & 0x0F` | bcomp11 `data[2] & 0x0F` = selected gear / PRNDL. |
+
+> ⚠ Byte offsets are **bcomp11's** and **unverified on this exact vehicle**. The sniffer
+> prints the raw bytes alongside the decode so they can be confirmed on a real drive.
+> If `0x608` confirms, it can **replace the MAF→AFR estimate** in
+> `projects/server/src/derived_calculator.cpp` with a real injected-fuel reading.
+
+### 9.2 Legacy KWP `0x21` ReadDataByLocalIdentifier (TCM)
+
+bcomp11 reads the Pajero auto-transmission and odometer with the **older KWP service
+`0x21`** (1-byte local identifier), not UDS `0x22`. Request = `02 21 LID`, positive
+response = `61 LID D0 D1 …` (note: **one** echo byte, so D0 = `resp[2]`).
+
+| Req | LID | Meaning | Candidate decode (D0 = `resp[2]`) |
+|-----|-----|---------|-----------------------------------|
+| `0x7E1` | `0x02` | AT info | input = `D2×128 + D3/2` rpm · output = `D4×128 + D5/2` rpm · ATF = `D6 − 40` °C · relay = `D7×3315/255` · ratio = `D8×714/255` · slip = `D9 − 51` |
+| `0x7E1` | `0x03` | Odometer | `(D2×256 + D3)×256 + D4` km (24-bit) |
+
+> ⚠ These LID decodes are bcomp11's and may target an **earlier Pajero generation**.
+> The well-researched §4 table reads our 4M41 trans speeds via **UDS `0x22` DID `0x20AB`**;
+> the `0x21` path here is an **alternative to try** if `0x22` is rejected. Verify against a
+> raw capture before trusting either the service or the offsets.
+
+### 9.3 Sniffer commands for verifying all of the above
+
+Implemented in `projects/sniffer/src/main.cpp`:
+
+| Command | Mode | What it does |
+|---------|------|--------------|
+| `WATCH [id …]` | listen-only | Decode broadcast frames live (default `0x608` + `0x218`), rate-limited. Zero-risk confirmation of §9.1. |
+| `FUELLOG` | active | CSV row/cycle: `0x608` fuel + `0x218` gear vs polled rpm / accel / speed. Look for `accel≈0 & rpm>1100 & speed>0` → fuel should collapse to ~0 (the overrun test). |
+| `RDLI <req> <lid>` | active | KWP `0x21` read (§9.2), e.g. `RDLI 7E1 02` (AT) / `RDLI 7E1 03` (odometer). Prints raw bytes + bcomp11's candidate decode. |
+| `VERIFY [m01\|m22]` | active | Polls **every `verified=false` PID** in `pid_map.h` (Mode 01 and the Mode 22 advanced table) and reports which ones this vehicle actually answers — the shortlist for flipping `verified` to `true`. |
