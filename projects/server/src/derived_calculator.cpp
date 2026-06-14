@@ -55,6 +55,14 @@ static constexpr float LOAD_AFR_MAX  = 1.30f;
 // accuracy gain for both instantaneous economy and trip-average fuel use.
 static constexpr float FUEL_CUT_PEDAL_MAX_PCT = 3.0f;    // pedal essentially released
 static constexpr float FUEL_CUT_RPM_MIN       = 1100.0f; // above idle → engine-braking
+// Cruise-control discriminator. With cruise active the *physical* pedal reads ~0
+// even though the ECU is fueling to hold speed, so pedal+rpm alone mistakes a
+// steady cruise for engine-braking and zeroes out fuel — distorting trip economy.
+// On a diesel the calculated engine load (0x04) tracks injected fuel quantity: it
+// collapses toward zero during real DFCO but stays high while holding speed (cruise
+// ≈ LOAD_AFR_REF). Require load BELOW this before cutting. Keep it well under the
+// observed cruise load; tune from the log (load= is printed each TX line).
+static constexpr float FUEL_CUT_LOAD_MAX_PCT  = 25.0f;   // % calc load; above this we never cut
 
 // Sea-level reference pressure for the barometric altitude formula.
 //
@@ -87,8 +95,13 @@ float DerivedCalculator::computeFuelRate(const DataAggregator& aggregator) {
 
     float rpm   = aggregator.get(PID_RPM);
     float speed = aggregator.get(PID_SPEED);
+    // Only a low, VALID engine load confirms true overrun (vs. cruise holding
+    // speed). If the load PID is unavailable we err toward NOT cutting, so a
+    // cruise is never wrongly zeroed — at worst we slightly over-read real DFCO.
+    bool load_low = aggregator.isValid(PID_ENGINE_LOAD)
+                    && (aggregator.get(PID_ENGINE_LOAD) <= FUEL_CUT_LOAD_MAX_PCT);
     bool overrun = (pedal >= 0.0f) && (pedal <= FUEL_CUT_PEDAL_MAX_PCT)
-                   && (rpm > FUEL_CUT_RPM_MIN) && (speed > 0.0f);
+                   && (rpm > FUEL_CUT_RPM_MIN) && (speed > 0.0f) && load_low;
     if (overrun) return 0.0f;
 
     // Fallback: estimate from air mass flow using a load-dependent diesel AFR.

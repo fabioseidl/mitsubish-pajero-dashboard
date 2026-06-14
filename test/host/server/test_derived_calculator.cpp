@@ -55,14 +55,39 @@ static void test_compute_low_speed_high_fuel_returns_low_value() {
 
 // ---- Overrun fuel cut-off ----
 
-// Released pedal + elevated rpm + moving → no fuel, even with high air flow.
+// Released pedal + elevated rpm + moving + LOW load → true engine-braking, no
+// fuel, even with high air flow.
 static void test_fuel_rate_overrun_returns_zero() {
     DataAggregator agg;
     agg.update(PID_MAF, 40.0f);       // air still flowing
     agg.update(PID_RPM, 2000.0f);
     agg.update(PID_SPEED, 80.0f);
     agg.update(PID_ACCEL_D, 0.0f);    // pedal released (valid reading)
+    agg.update(PID_ENGINE_LOAD, 5.0f); // fueling collapsed → real DFCO
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, DerivedCalculator::computeFuelRate(agg));
+}
+
+// Cruise control: physical pedal reads ~0 but the ECU is fueling to hold speed,
+// so engine load stays high. The cut must NOT fire — this is the reported bug.
+static void test_fuel_rate_cruise_control_not_cut() {
+    DataAggregator agg;
+    agg.update(PID_MAF, 60.0f);
+    agg.update(PID_RPM, 2000.0f);
+    agg.update(PID_SPEED, 95.0f);
+    agg.update(PID_ACCEL_D, 0.0f);     // foot off the pedal (cruise holding)
+    agg.update(PID_ENGINE_LOAD, 45.0f); // but the engine is loaded → fueling
+    TEST_ASSERT_TRUE(DerivedCalculator::computeFuelRate(agg) > 0.0f);
+}
+
+// Released pedal + elevated rpm but the load PID is unavailable → cannot confirm
+// overrun, so we must NOT cut (err toward over-reading, never zero a cruise).
+static void test_fuel_rate_overrun_without_load_does_not_cut() {
+    DataAggregator agg;
+    agg.update(PID_MAF, 40.0f);
+    agg.update(PID_RPM, 2000.0f);
+    agg.update(PID_SPEED, 80.0f);
+    agg.update(PID_ACCEL_D, 0.0f);     // pedal released, but no load reading
+    TEST_ASSERT_TRUE(DerivedCalculator::computeFuelRate(agg) > 0.0f);
 }
 
 // Without any valid pedal signal the cut must NOT trigger (else an unsupported
@@ -99,6 +124,8 @@ static void test_fuel_rate_idle_released_pedal_not_cut() {
 
 void run_derived_calculator_tests() {
     RUN_TEST(test_fuel_rate_overrun_returns_zero);
+    RUN_TEST(test_fuel_rate_cruise_control_not_cut);
+    RUN_TEST(test_fuel_rate_overrun_without_load_does_not_cut);
     RUN_TEST(test_fuel_rate_no_pedal_signal_does_not_cut);
     RUN_TEST(test_fuel_rate_pedal_pressed_is_not_cut);
     RUN_TEST(test_fuel_rate_idle_released_pedal_not_cut);
