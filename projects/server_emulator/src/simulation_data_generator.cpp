@@ -56,7 +56,13 @@ Payload SimulationDataGenerator::getPayload() const {
     p.egr_error_pct            = 0.0f;
     p.warmups                  = 0;
     p.dist_cleared_km          = 0;
-    p.baro_pressure_kpa        = 101;
+    // Simulated altitude profile: a slow climb/descent between 0 and ~1200 m.
+    // Barometric pressure is derived from it (inverse of the altitude formula)
+    // so baro and altitude stay mutually consistent, like on the real server.
+    float altitude_m           = 600.0f + 600.0f * sinf(t * 0.02f);
+    float baro_kpa             = 101.325f * powf(1.0f - altitude_m / 44330.0f, 5.255f);
+    p.baro_pressure_kpa        = (uint8_t)(baro_kpa + 0.5f);
+    p.altitude_m               = altitude_m;
     p.catalyst_temp_c          = 320.0f + (load_pct / 100.0f) * 180.0f;
     p.module_voltage_v         = 13.8f + 0.4f * sinf(t * 0.1f);
     p.rel_throttle_pct         = throttle * 0.95f;
@@ -144,6 +150,14 @@ Payload SimulationDataGenerator::getPayload() const {
     p.inj_cor_cyl2       =  1.5f * sinf(t * 0.7f + 1.5708f);
     p.inj_cor_cyl3       =  1.5f * sinf(t * 0.7f + 3.1416f);
     p.inj_cor_cyl4       =  1.5f * sinf(t * 0.7f + 4.7124f);
+
+    // -----------------------------------------------------------------------
+    // Mitsubishi advanced PIDs (Pajero 4M41) — DID 0x20F2 / 0x2151
+    // -----------------------------------------------------------------------
+    // Fuel temperature tracks ambient + load, lagging a little below coolant.
+    p.fuel_temp_c        = 40.0f + 30.0f * (load_pct / 100.0f) + 3.0f * sinf(t * 0.03f);
+    // Cooling fan stays off until the engine warms, then ramps with coolant temp.
+    p.cooling_fan_duty_pct = fminf(100.0f, fmaxf(0.0f, (p.coolant_temp_c - 90.0f) * 12.0f));
 
     p.flags = PAYLOAD_FLAG_DATA_VALID;
     if (rpm > 400.0f) {

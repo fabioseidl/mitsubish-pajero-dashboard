@@ -69,6 +69,18 @@ bool CANDriver::readFrame(CANFrame& out_frame) {
     return false;
 }
 
+void CANDriver::prepareForSleep() {
+#ifndef UNIT_TEST
+#ifdef USE_MCP2515
+    // Drain both RX buffers (reading clears each RXnIF), then clear any
+    // remaining interrupt flags so the push-pull INT pin returns HIGH.
+    struct can_frame msg;
+    while (mcp2515.readMessage(&msg) == MCP2515::ERROR_OK) { /* discard */ }
+    mcp2515.clearInterrupts();
+#endif
+#endif
+}
+
 bool CANDriver::sendFrame(const CANFrame& frame) {
 #ifndef UNIT_TEST
 #ifdef USE_MCP2515

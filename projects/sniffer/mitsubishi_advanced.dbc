@@ -1,0 +1,80 @@
+VERSION ""
+
+
+NS_ :
+    NS_DESC_
+    CM_
+    BA_DEF_
+    BA_
+    VAL_
+    CAT_DEF_
+    CAT_
+    FILTER
+    BA_DEF_DEF_
+    EV_DATA_
+    ENVVAR_DATA_
+    SGTYPE_
+    SGTYPE_VAL_
+    BA_DEF_SGTYPE_
+    BA_SGTYPE_
+    SIG_TYPE_REF_
+    VAL_TABLE_
+    SIG_GROUP_
+    SIG_VALTYPE_
+    SIGTYPE_VALTYPE_
+    BO_TX_BU_
+    BA_DEF_REL_
+    BA_REL_
+    BA_DEF_DEF_REL_
+    BU_SG_REL_
+    BU_EV_REL_
+    BU_BO_REL_
+    SG_MUL_VAL_
+
+BS_: 
+BU_: 
+BO_ 2016 ENG_Request: 8 Vector__XXX
+   SG_ Req_Service_E : 7|8@0+ (1,0) [0|255] "" Vector__XXX
+   SG_ Req_DID_E : 15|16@0+ (1,0) [0|65535] "" Vector__XXX
+
+BO_ 2017 TCM_Request: 8 Vector__XXX
+   SG_ Req_Service_T : 7|8@0+ (1,0) [0|255] "" Vector__XXX
+   SG_ Req_DID_T : 15|16@0+ (1,0) [0|65535] "" Vector__XXX
+
+BO_ 2024 ENG_Response: 64 Vector__XXX
+   SG_ DID M : 15|16@0+ (1,0) [0|65535] "" Vector__XXX
+   SG_ FanDuty_20B7 m8375 : 24|8@1+ (0.3922,0) [0|100] "%" Vector__XXX
+   SG_ EvapPurgeDuty_20B9 m8377 : 24|8@1+ (0.3922,0) [0|100] "%" Vector__XXX
+   SG_ IdleControl_20C6 m8390 : 31|1@1+ (1,0) [0|1] "" Vector__XXX
+   SG_ AlternatorLoad_20AA m8362 : 56|8@1+ (0.392,0) [0|100] "%" Vector__XXX
+   SG_ ColtInputSpeed_20DF m8415 : 39|16@0+ (1,0) [0|7000] "rpm" Vector__XXX
+   SG_ ColtOutputSpeed_20DF m8415 : 55|16@0+ (1,0) [0|7000] "rpm" Vector__XXX
+   SG_ FuelTemp_20F2 m8434 : 56|8@1+ (1,-40) [-40|145] "degC" Vector__XXX
+   SG_ FanDuty_2151 m8529 : 32|8@1+ (1,0) [0|100] "%" Vector__XXX
+   SG_ RailValveDuty_216B m8555 : 56|8@1+ (0.3922,0) [0|100] "%" Vector__XXX
+   SG_ FuelTemp_216B m8555 : 112|8@1+ (1,-40) [-40|145] "degC" Vector__XXX
+
+BO_ 2025 TCM_Response: 64 Vector__XXX
+   SG_ DID M : 15|16@0+ (1,0) [0|65535] "" Vector__XXX
+   SG_ InputSpeed_20AB m8363 : 39|16@0+ (0.5,0) [0|7000] "rpm" Vector__XXX
+   SG_ OutputSpeed_20AB m8363 : 55|16@0+ (0.5,0) [0|7000] "rpm" Vector__XXX
+   SG_ PrimarySpeed_20AC m8364 : 24|8@1+ (32,0) [0|8160] "rpm" Vector__XXX
+   SG_ SecondarySpeed_20AC m8364 : 32|8@1+ (64,0) [0|16320] "rpm" Vector__XXX
+   SG_ Clutch1Slip_214F m8527 : 31|16@0- (0.5,0) [-900|1500] "rpm" Vector__XXX
+   SG_ Clutch2Slip_214F m8527 : 47|16@0- (0.5,0) [-900|1500] "rpm" Vector__XXX
+
+BA_DEF_ BO_ "GenMsgBackgroundColor" STRING ;
+BA_DEF_ BO_ "GenMsgForegroundColor" STRING ;
+BA_DEF_DEF_ "GenMsgBackgroundColor" "#ffffff";
+BA_DEF_DEF_ "GenMsgForegroundColor" "#000000";
+CM_ BO_ 2016 "UDS request to Engine ECU (req ID 0x7E0). Reassembled SDU = 22 DIDhi DIDlo.";
+CM_ BO_ 2017 "UDS request to Transmission/TCM (req ID 0x7E1). Reassembled SDU = 22 DIDhi DIDlo.";
+CM_ BO_ 2024 "Engine ECU response (resp ID 0x7E8 = 0x7E0+8). Multiplexed by DID.";
+CM_ SG_ 2024 DID "ReadDataByIdentifier DID. Decimal multiplexor values: 8362=0x20AA AltLoad, 8375=0x20B7 FanDuty(petrol), 8377=0x20B9 EvapPurge, 8390=0x20C6 IdleCtrl, 8415=0x20DF Colt speeds, 8434=0x20F2 FuelTemp, 8529=0x2151 FanDuty(diesel), 8555=0x216B FuelTemp+RailValve.";
+CM_ SG_ 2024 IdleControl_20C6 "Bit7 of D0: 1 = idle control active.";
+CM_ SG_ 2024 FuelTemp_20F2 "Diesel fuel temp = D4 - 40 (4N13/4D56/4N14/4M41).";
+CM_ SG_ 2024 FuelTemp_216B "Outlander 2.2 DI-D (4HN): fuel temp = D11 - 40. Requires multi-frame reassembly.";
+CM_ BO_ 2025 "Transmission/TCM response (resp ID 0x7E9 = 0x7E1+8). Multiplexed by DID.";
+CM_ SG_ 2025 DID "ReadDataByIdentifier DID. Decimal multiplexor values: 8363=0x20AB Input/Output speed, 8364=0x20AC Primary/Secondary speed, 8527=0x214F Clutch1/2 slip.";
+CM_ SG_ 2025 Clutch2Slip_214F "INFERRED byte offset (D2,D3). Verify against a raw capture: in the Lite build clutch1/clutch2 share DID 0x214F and the byte selector was not recoverable. Clutch1 (D0,D1) is confirmed.";
+VAL_ 2024 IdleControl_20C6 1 "Active" 0 "Inactive";

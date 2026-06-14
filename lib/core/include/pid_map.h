@@ -65,10 +65,15 @@ typedef struct {
 #define PID_FUEL_RATE       0x5Eu
 
 // ---------- Mode 22 — DataAggregator slot IDs ----------
-// Mode 22 real PIDs (0xF1xx / 0xF3xx) exceed the DataAggregator's uint8-indexed
-// store.  Each real PID is remapped to a slot ID in the 0xA0–0xBF range, which
-// is unused by all Mode 01 PIDs.  The server's Mode 22 response handler performs
-// the real_pid → slot_id lookup via MODE22_PID_MAP below.
+// Mode 22 DIDs (0x20xx / 0x21xx) exceed the DataAggregator's uint8-indexed
+// store.  Each is remapped to a slot ID in the 0xA0–0xBF range, which is unused
+// by all Mode 01 PIDs.  The server's Mode 22 response handler looks the slot up
+// via MODE22_ADVANCED_PIDS below.
+//
+// The 0xA0–0xAA / 0xB0–0xB9 ranges below were originally reserved for a set of
+// speculative DIDs (0xF1xx/0xF3xx) that the ECU never answered.  They are kept
+// for payload-field continuity; only the slots referenced by
+// MODE22_ADVANCED_PIDS are actually populated from the bus.
 //
 // AT ECU (CAN response 0x7E9) — real PIDs 0xF100–0xF10A
 #define PID_M22_AT_GEAR_POS      0xA0u  // Current gear position
@@ -94,6 +99,11 @@ typedef struct {
 #define PID_M22_INJ_COR_CYL2     0xB7u  // Injector correction cyl 2
 #define PID_M22_INJ_COR_CYL3     0xB8u  // Injector correction cyl 3
 #define PID_M22_INJ_COR_CYL4     0xB9u  // Injector correction cyl 4
+//
+// Mitsubishi advanced PIDs confirmed for the Pajero IV 3.2 DI-D (4M41)
+// (see projects/sniffer/assets/MITSUBISHI_ADVANCED_PIDS.md)
+#define PID_M22_FUEL_TEMP        0xBAu  // Fuel temperature (°C), DID 0x20F2
+#define PID_M22_FAN_DUTY         0xBBu  // Cooling fan duty (%),  DID 0x2151
 
 static const PidDefinition PID_MAP[] = {
     { PID_MONITOR_STATUS,  "Monitor Status",                   "",      4,     FORMULA_BITMASK, 0.0f,    0.0f,    0.0f,           0.0f,     0.0f,      0.0f,      true  },
@@ -137,41 +147,50 @@ static const PidDefinition PID_MAP[] = {
 
 #define PID_MAP_SIZE (sizeof(PID_MAP) / sizeof(PID_MAP[0]))
 
-// ---------- Mode 22 PID mapping table ----------
-// Maps the real 16-bit UDS PID to its DataAggregator slot ID and metadata.
-// All entries are unverified — the ECU returned negative responses during
-// initial scanning; formulas and data_bytes are unknown until confirmed.
-typedef struct {
-    uint16_t    real_pid;   // UDS ReadDataByIdentifier PID sent on the bus
-    uint8_t     slot_id;    // PID_M22_* define used as DataAggregator key
-    const char* name;
-    const char* unit;
-} Mode22PidDefinition;
+// ---------- Mode 22 — UDS physical addressing ----------
+// Manufacturer-specific "advanced" parameters are read with UDS service 0x22
+// (ReadDataByIdentifier) using *physical* addressing: the request goes straight
+// to one ECU and the response arrives on (request id + 8).  No diagnostic
+// session (10 xx) or TesterPresent (3E 00) is required for these reads.
+#define UDS_REQ_ENGINE   0x7E0u   // engine ECU  request → response 0x7E8
+#define UDS_REQ_TCM      0x7E1u   // transmission ECU request → response 0x7E9
+#define UDS_RESP_OFFSET  0x008u   // response id = request id + 8
 
-static const Mode22PidDefinition MODE22_PID_MAP[] = {
-    // AT ECU — responses on CAN ID 0x7E9
-    { 0xF100, PID_M22_AT_GEAR_POS,     "AT Current Gear Position",       ""    },
-    { 0xF101, PID_M22_AT_GEAR_RATIO,   "AT Gear Ratio",                  ""    },
-    { 0xF102, PID_M22_AT_INPUT_SPEED,  "AT Input Shaft Speed",           "rpm" },
-    { 0xF103, PID_M22_AT_OUTPUT_SPEED, "AT Output Shaft Speed",          "rpm" },
-    { 0xF104, PID_M22_AT_TC_SLIP,      "AT Torque Converter Slip",       "rpm" },
-    { 0xF105, PID_M22_AT_ATF_TEMP,     "AT ATF Temperature",             "C"   },
-    { 0xF106, PID_M22_AT_SHIFT_SOL,    "AT Shift Solenoid Status",       ""    },
-    { 0xF107, PID_M22_AT_LOCKUP,       "AT Lock-up Status",              ""    },
-    { 0xF108, PID_M22_AT_PRNDL,        "AT Gear Selector (PRNDL)",       ""    },
-    { 0xF109, PID_M22_AT_TARGET_GEAR,  "AT Target Gear",                 ""    },
-    { 0xF10A, PID_M22_AT_OIL_PRES,     "AT Transmission Oil Pressure",   ""    },
-    // Engine ECU — responses on CAN ID 0x7E8
-    { 0xF300, PID_M22_BOOST_PRES,      "Boost Pressure (turbo)",         ""    },
-    { 0xF301, PID_M22_EGR_VALVE_POS,   "EGR Valve Position",             ""    },
-    { 0xF302, PID_M22_DPF_SOOT,        "DPF Soot Load",                  ""    },
-    { 0xF303, PID_M22_DPF_REGEN,       "DPF Regeneration Status",        ""    },
-    { 0xF304, PID_M22_RAIL_PRES_ACT,   "Fuel Rail Pressure — Actual",    ""    },
-    { 0xF305, PID_M22_RAIL_PRES_DES,   "Fuel Rail Pressure — Desired",   ""    },
-    { 0xF306, PID_M22_INJ_COR_CYL1,    "Injector Correction Cyl 1",      ""    },
-    { 0xF307, PID_M22_INJ_COR_CYL2,    "Injector Correction Cyl 2",      ""    },
-    { 0xF308, PID_M22_INJ_COR_CYL3,    "Injector Correction Cyl 3",      ""    },
-    { 0xF309, PID_M22_INJ_COR_CYL4,    "Injector Correction Cyl 4",      ""    },
+// ---------- Mode 22 advanced-PID table ----------
+// Real, reverse-engineered Mitsubishi advanced PIDs for the Pajero IV 3.2 DI-D
+// (4M41).  Each entry says which ECU to ask, which DID to request, where the
+// useful byte(s) live in the reassembled UDS payload, and how to scale them.
+//
+// `data_index` is the Torque data-byte index: D0 is the first byte *after* the
+// 2-byte DID echo in the reassembled response (`62 DIDhi DIDlo D0 D1 …`).  Bytes
+// at index >= 2 require ISO-TP multi-frame reassembly on the server side.
+typedef enum {
+    M22_U8,    // value = D[i]              * scale + offset
+    M22_U16,   // value = (D[i]<<8 | D[i+1])* scale + offset   (big-endian, unsigned)
+    M22_S16,   // value = SIGNED16(D[i],D[i+1]) * scale + offset
+} Mode22FormulaType;
+
+typedef struct {
+    uint16_t          req_id;        // UDS_REQ_ENGINE / UDS_REQ_TCM
+    uint16_t          did;           // UDS ReadDataByIdentifier DID
+    uint8_t           data_index;    // index of D0 (first data byte after DID echo)
+    Mode22FormulaType formula_type;
+    float             scale;
+    float             offset;
+    uint8_t           slot_id;       // PID_M22_* DataAggregator key
+    const char*       name;
+    const char*       unit;
+    bool              verified;      // confirmed against a raw capture on this vehicle
+} Mode22AdvancedPid;
+
+static const Mode22AdvancedPid MODE22_ADVANCED_PIDS[] = {
+    // --- Engine ECU (0x7E0 → 0x7E8) ---
+    { UDS_REQ_ENGINE, 0x20F2, 4, M22_U8,  1.0f, -40.0f, PID_M22_FUEL_TEMP,       "Fuel Temperature", "C",   false },
+    { UDS_REQ_ENGINE, 0x2151, 1, M22_U8,  1.0f,   0.0f, PID_M22_FAN_DUTY,        "Cooling Fan Duty", "%",   false },
+    // --- Transmission ECU (0x7E1 → 0x7E9) ---
+    // DID 0x20AB carries both speeds: D1,D2 = input shaft, D3,D4 = output shaft.
+    { UDS_REQ_TCM,    0x20AB, 1, M22_U16, 0.5f,   0.0f, PID_M22_AT_INPUT_SPEED,  "Trans Input Speed",  "rpm", false },
+    { UDS_REQ_TCM,    0x20AB, 3, M22_U16, 0.5f,   0.0f, PID_M22_AT_OUTPUT_SPEED, "Trans Output Speed", "rpm", false },
 };
 
-#define MODE22_PID_MAP_SIZE (sizeof(MODE22_PID_MAP) / sizeof(MODE22_PID_MAP[0]))
+#define MODE22_ADVANCED_PIDS_SIZE (sizeof(MODE22_ADVANCED_PIDS) / sizeof(MODE22_ADVANCED_PIDS[0]))

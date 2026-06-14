@@ -1,5 +1,6 @@
 #include "payload_builder.h"
 #include "pid_map.h"
+#include "derived_calculator.h"
 
 Payload PayloadBuilder::build(const DataAggregator& aggregator,
                                const SessionAccumulator& session,
@@ -12,7 +13,7 @@ Payload PayloadBuilder::build(const DataAggregator& aggregator,
     // Core driving data
     p.rpm                      = (uint16_t)aggregator.get(PID_RPM);
     p.speed_kmh                = (uint8_t)aggregator.get(PID_SPEED);
-    p.fuel_rate_l_per_h        = aggregator.get(PID_FUEL_RATE);
+    p.fuel_rate_l_per_h        = DerivedCalculator::computeFuelRate(aggregator);
     p.consumption_km_per_l     = consumption;
     p.avg_consumption_km_per_l = session.getAvgConsumptionKmPerL();
     p.distance_km              = session.getDistanceKm();
@@ -36,6 +37,7 @@ Payload PayloadBuilder::build(const DataAggregator& aggregator,
     p.warmups                  = (uint8_t)aggregator.get(PID_WARMUPS);
     p.dist_cleared_km          = (uint16_t)aggregator.get(PID_DIST_CLEARED);
     p.baro_pressure_kpa        = (uint8_t)aggregator.get(PID_BARO_PRESSURE);
+    p.altitude_m               = DerivedCalculator::computeAltitude(aggregator.get(PID_BARO_PRESSURE));
     p.catalyst_temp_c          = aggregator.get(PID_CATALYST_TEMP);
     p.module_voltage_v         = aggregator.get(PID_MODULE_VOLTAGE);
     p.rel_throttle_pct         = aggregator.get(PID_REL_THROTTLE);
@@ -84,6 +86,10 @@ Payload PayloadBuilder::build(const DataAggregator& aggregator,
     p.inj_cor_cyl2             = aggregator.get(PID_M22_INJ_COR_CYL2);
     p.inj_cor_cyl3             = aggregator.get(PID_M22_INJ_COR_CYL3);
     p.inj_cor_cyl4             = aggregator.get(PID_M22_INJ_COR_CYL4);
+
+    // Mitsubishi advanced PIDs (real DIDs confirmed for the Pajero 4M41)
+    p.fuel_temp_c              = aggregator.get(PID_M22_FUEL_TEMP);
+    p.cooling_fan_duty_pct     = aggregator.get(PID_M22_FAN_DUTY);
 
     p.flags = 0;
     if (aggregator.allRequiredPidsReceived()) {

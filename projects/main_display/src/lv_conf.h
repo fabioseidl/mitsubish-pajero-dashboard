@@ -33,7 +33,7 @@
 #define LV_USE_DRAW_SW 1
 #if LV_USE_DRAW_SW
     #define LV_DRAW_SW_SUPPORT_RGB565           1
-    #define LV_DRAW_SW_SUPPORT_RGB565_SWAPPED   0
+    #define LV_DRAW_SW_SUPPORT_RGB565_SWAPPED   1  /* panel needs byte-swapped RGB565 */
     #define LV_DRAW_SW_SUPPORT_RGB565A8         0
     #define LV_DRAW_SW_SUPPORT_RGB888           0
     #define LV_DRAW_SW_SUPPORT_XRGB8888         0
