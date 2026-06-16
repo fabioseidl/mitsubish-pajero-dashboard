@@ -1,46 +1,24 @@
-# Mitsubishi Advanced OBD-II PIDs — Reverse-Engineering Reference
+# Mitsubishi Advanced OBD-II PIDs — Reverse-Engineering
 
-> Source: reverse-engineering of the Android app **"Advanced LT for MITSUBISHI 2.0"**
-> (`com.ideeo.miadvancedlite`), a Torque Pro plugin.
-> Purpose of this document: provide everything needed to read these manufacturer-specific
-> ("advanced") parameters **directly from an ESP32** (or any UDS-capable device), without
-> Torque Pro and without the original app.
 
 ---
 
-## 1. Background — how the original app works
+## 1. Background — what these parameters are
 
-The APK is **not** a diagnostic tool. It never opens the CAN bus itself. It is a *Torque Pro plugin*
-that does only one thing:
+The "advanced data" is simply a set of **manufacturer-specific UDS PIDs** (UDS Service `0x22`,
+*ReadDataByIdentifier*) sent to specific ECU CAN addresses. To read them on an ESP32 we send the
+UDS requests on the CAN bus directly and apply the equations in §4.
 
-1. Torque broadcasts the intent `org.prowl.torque.PID_QUERY`.
-2. The plugin (`PluginReceiver` → `PluginService`) binds to the Torque service
-   `org.prowl.torque.remote.ITorqueService` and calls **AIDL transaction 42** (`sendPIDData`),
-   handing Torque a list of *custom PID definitions* (name, header, mode+PID, equation, unit, min, max).
-3. Torque then drives the ELM327 adapter, sends the OBD/UDS requests, parses the bytes, and
-   evaluates the equations.
-
-So the "advanced data" is simply a set of **manufacturer-specific UDS PIDs** (UDS Service `0x22`,
-*ReadDataByIdentifier*) sent to specific ECU CAN addresses. To reproduce it on an ESP32 we send the
-exact same UDS requests on the CAN bus and apply the same equations.
-
-### Obfuscation note (for traceability)
-In the APK the PID tables are lightly obfuscated with a **self-inverse ROT13 (letters) + ROT5 (digits)**
-cipher (`com.ideeo.miadvancedlite.c.a(String)`). Equations, units and short names are stored encoded;
-the DID is stored in plaintext in the last column. **All values in this document are already decoded.**
-The cipher is included in the appendix for verification.
-
-Key fact confirmed from the decompiled data: the `startDiagnostic` / `stopDiagnostic` columns are
-**empty** for every PID. → **No diagnostic session (`10 xx`) and no TesterPresent (`3E 00`) are required.**
-You send the `22 xx xx` request directly.
+These reads need **no diagnostic session (`10 xx`) and no TesterPresent (`3E 00`)** — you send the
+`22 xx xx` request and the ECU answers.
 
 ---
 
 ## 2. Bus & protocol parameters
 
 All listed models (2008+) use **ISO 15765-4 CAN, 11-bit IDs, 500 kbit/s**.
-(The app also carries legacy ISO-9141 / ISO-14230 KWP and 29-bit CAN maps for older ECUs, but every
-model in the PID tables below uses 11-bit CAN.)
+(Older ECUs may use legacy ISO-9141 / ISO-14230 KWP or 29-bit CAN, but every model in the PID tables
+below uses 11-bit CAN.)
 
 | Item | Value |
 |------|-------|
@@ -92,11 +70,12 @@ Reassembled UDS response = `62 20 F2 D0 D1 D2 D3 D4 ...`
 
 A **negative** response looks like `7F 22 xx` (`xx` = NRC). Treat it as "not supported / retry".
 
-### Step 5 — Map data bytes to Torque letters and apply the equation
-Torque's equation letters map to the data payload **after** the 2-byte DID echo:
+### Step 5 — Map data bytes to equation letters and apply the equation
+The standard OBD-PID equation letters (A, B, C, …) map to the data payload **after** the 2-byte DID
+echo:
 
-| Torque letter | A | B | C | D | E | F | … | L |
-|---------------|---|---|---|---|---|---|---|---|
+| Letter | A | B | C | D | E | F | … | L |
+|--------|---|---|---|---|---|---|---|---|
 | Reassembled index | `resp[3]` | `resp[4]` | `resp[5]` | `resp[6]` | `resp[7]` | `resp[8]` | … | `resp[14]` |
 | Data byte | D0 | D1 | D2 | D3 | D4 | D5 | … | D11 |
 
@@ -208,10 +187,10 @@ Notation:
 | Input Speed | 0x7E1 | `22 20 AB` | D1,D2 | `(D1×256 + D2) × 0.5` | rpm | 0–7000 |
 | Output Speed | 0x7E1 | `22 20 AB` | D3,D4 | `(D3×256 + D4) × 0.5` | rpm | 0–7000 |
 
-> ⚠ **Clutch 2 byte offset is an inference.** In this *Lite* build, Clutch 1 and Clutch 2 carry an
-> identical decoded formula (the byte-offset selector lives in an obfuscated Torque-internal field that
-> isn't recoverable here). Clutch 1 = bytes D0,D1 is certain; Clutch 2 almost certainly uses the next
-> pair (D2,D3) of the same `0x214F` response. **Verify with a raw capture before trusting Clutch 2.**
+> ⚠ **Clutch 2 byte offset is an inference.** Clutch 1 and Clutch 2 carry an identical decoded formula,
+> and the byte-offset that distinguishes them is not recoverable from the source. Clutch 1 = bytes D0,D1
+> is certain; Clutch 2 almost certainly uses the next pair (D2,D3) of the same `0x214F` response.
+> **Verify with a raw capture before trusting Clutch 2.**
 
 ### Consolidated unique DID list (for quick implementation)
 | DID | ECU | Meaning | Data layout (observed) |
@@ -312,70 +291,20 @@ control automatically — simpler, but slower than native TWAI.
    D2,D3 (assumed) or elsewhere.
 4. If a DID returns `7F 22 31` (requestOutOfRange) or `7F 22 12`, the parameter may not exist on that
    trim — skip it.
-5. Engine must be **running** for most values (the app explicitly warns about this).
+5. Engine must be **running** for most values.
 6. These are **read-only** UDS reads. Do **not** send writes to the TCM.
 
 ---
 
-## 8. Appendix — the de-obfuscation cipher
-
-`com.ideeo.miadvancedlite.c.a(String)` — self-inverse, char-by-char:
-
-| Input range | Transform |
-|-------------|-----------|
-| `a`–`m` | `+13` |
-| `n`–`z` | `−13` |
-| `A`–`M` | `+13` |
-| `N`–`Z` | `−13` |
-| `0`–`4` | `+5` |
-| `5`–`9` | `−5` |
-| other | unchanged |
-
-Python:
-```python
-def ca(s):
-    out=[]
-    for ch in s:
-        o=ord(ch)
-        if   97<=o<=109: o+=13
-        elif 110<=o<=122: o-=13
-        elif 65<=o<=77:  o+=13
-        elif 78<=o<=90:  o-=13
-        elif 48<=o<=52:  o+=5
-        elif 53<=o<=57:  o-=5
-        out.append(chr(o))
-    return ''.join(out)
-```
-
-### Raw → decoded examples (from the APK arrays)
-| Field (raw, obfuscated) | Decoded |
-|-------------------------|---------|
-| equation `((O*701)+P)*5.05` | `((B*256)+C)*0.50` |
-| equation `(R-95)` | `(E-40)` |
-| equation `FVTARQ((N*701)+O)*5.0` | `SIGNED((A*256)+B)*0.5` |
-| equation `(N & 673) > 2` | `(A & 128) > 7` |
-| unit `ecz` | `rpm` |
-| unit `°P` | `°C` |
-| DID column `-20f2,...` | DID is plaintext → `0x20F2` |
-
-### Source-file → model map (APK `com/ideeo/miadvancedlite/`)
-`d.java`=ASX/RVR 2.0 CVT · `e.java`=ASX 2.2 AT · `f.java`=Colt · `g.java`=L200 IV ·
-`h.java`=Lancer 1.5/1.6 · `i.java`=Lancer 2.0/2.4 CVT · `j.java`=Lancer SST ·
-`k.java`=Outlander 2.0/2.4 CVT · `l.java`=Outlander 2.2 DI-D · `m.java`=Outlander 2.3 DI-D ·
-`n.java`=Pajero IV 3.2 DI-D. PID dispatch table & protocol maps live in `c.java`; Torque AIDL in
-`d/a/a/a/a.java`.
-
----
-
-## 9. Second source — igkov `bcomp11` (passive broadcast channels + legacy KWP)
+## 8. Second source — igkov `bcomp11` (passive broadcast channels + legacy KWP)
 
 > Source: <https://github.com/igkov/bcomp11> — an open-source Pajero trip computer
 > (`obd.c` request/ISO-TP, `bcomp.c` decoding). This source is **independent of the
-> Torque plugin above** and contributes two things that table doesn't have: data
+> UDS `0x22` table above** and contributes two things that table doesn't have: data
 > read **passively from free-running broadcast frames** (no request at all), and a
 > **legacy KWP service `0x21`** path for the transmission/odometer.
 
-### 9.1 Free-running broadcast frames (no request needed) — **confirmed on this truck**
+### 8.1 Free-running broadcast frames (no request needed) — **confirmed on this truck**
 
 Both IDs below are already present in `dumps/candump.log` on our Pajero IV (0x608 at
 ~5–10 Hz, 0x218 at ~50 Hz). Because they are broadcast continuously, the sniffer reads
@@ -383,15 +312,31 @@ them in **listen-only** mode — zero bus risk.
 
 | CAN ID | Meaning (bcomp11) | Bytes | Formula | Notes |
 |--------|-------------------|-------|---------|-------|
-| `0x608` | Diesel injected fuel quantity | D5,D6 | `D5×256 + D6` (raw) | bcomp11 `bcomp.raw_fuel`; D0 also tracks load. If this is real injected fuel it **drops to ~0 on overrun** — unlike the MAF estimate. |
-| `0x218` | Transmission status / gear | D2 | `D2 & 0x0F` | bcomp11 `data[2] & 0x0F` = selected gear / PRNDL. |
+| `0x608` | Diesel injected fuel quantity | D5,D6 | `D5×256 + D6` (raw, 16-bit) | bcomp11 `bcomp.raw_fuel`. **CONFIRMED real injected fuel** by a road `FUELLOG`: snaps to a clean **0** during overrun (coast in gear, off throttle, rpm 2400→1800, speed>0), ~310–340 at idle, up to ~4734 under hard accel. Airflow can't read 0 while the engine spins, so this is fuel, not MAF. |
+| `0x218` | Transmission gear / state | D2 | `D2 & 0x0F` = current gear, `D2 >> 4` = target gear | **Confirmed** by a full selector sweep on the 4M41 (see code map below). D2 packs target gear (high nibble) and current gear (low nibble) — equal at rest, differ only mid-shift. |
 
-> ⚠ Byte offsets are **bcomp11's** and **unverified on this exact vehicle**. The sniffer
-> prints the raw bytes alongside the decode so they can be confirmed on a real drive.
-> If `0x608` confirms, it can **replace the MAF→AFR estimate** in
-> `projects/server/src/derived_calculator.cpp` with a real injected-fuel reading.
+**`0x218` D2 gear codes (confirmed on the Pajero IV 4M41):**
 
-### 9.2 Legacy KWP `0x21` ReadDataByLocalIdentifier (TCM)
+| Nibble | Meaning | | Nibble | Meaning |
+|--------|---------|-|--------|---------|
+| `0x0`  | Neutral (N) | | `0x4` | 4th gear |
+| `0x1`  | Drive (stopped) / Manual 1 | | `0x5` | 5th gear |
+| `0x2`  | 2nd gear | | `0xB` | Reverse (R) |
+| `0x3`  | 3rd gear | | `0xD` | Park (P) |
+
+> Verified by sweeping `P→R→N→D→manual 1→2→3→2→D` and reading `D2`: each dwell landed
+> on a clean code, and shifts showed mixed nibbles (e.g. `0xBD` = Park→Reverse, `0x21` = 2→1).
+> `0x5` (5th) is inferred from the 1–4 pattern; confirm on a road drive.
+
+> `0x608` is now **fully confirmed** as injected fuel (D5,D6 location + overrun→0 behaviour,
+> see the table note). The only thing left to nail is the **raw→L/h scale**:
+> `fuel_L_per_h ≈ raw × rpm × K` (raw reads like a per-stroke injection quantity, so it scales
+> with injection frequency ∝ rpm). Solve `K` from one anchor — best a tank-average economy, or
+> idle `raw≈325 @ ~650 rpm` against a known idle figure (~0.85 L/h). Then `0x608` can **replace
+> the MAF→AFR estimate** in `projects/server/src/derived_calculator.cpp`.
+> Note **D0 of `0x608` is a separate slow byte** (≈`0x4D`/`0x7A`, possibly a temperature) — not load.
+
+### 8.2 Legacy KWP `0x21` ReadDataByLocalIdentifier (TCM)
 
 bcomp11 reads the Pajero auto-transmission and odometer with the **older KWP service
 `0x21`** (1-byte local identifier), not UDS `0x22`. Request = `02 21 LID`, positive
@@ -407,7 +352,7 @@ response = `61 LID D0 D1 …` (note: **one** echo byte, so D0 = `resp[2]`).
 > the `0x21` path here is an **alternative to try** if `0x22` is rejected. Verify against a
 > raw capture before trusting either the service or the offsets.
 
-### 9.3 Sniffer commands for verifying all of the above
+### 8.3 Sniffer commands for verifying all of the above
 
 Implemented in `projects/sniffer/src/main.cpp`:
 

@@ -9,6 +9,10 @@
 //                     broadcast frames (default 0x608 diesel fuel-quantity and
 //                     0x218 transmission/gear) into engineering values, rate-
 //                     limited so the fast frames don't flood the console.
+//   DIFF            — listen-only field isolator for ONE noisy frame: learns the
+//                     bytes that churn while an input is held still, then prints
+//                     only when a previously-stable byte changes (used to pin down
+//                     the 0x218 gear nibble against its counter/toggle bytes).
 //   SCAN            — sweeps UDS Mode 22 DIDs on an ECU and logs every positive
 //                     (0x62) response; used to discover undocumented advanced
 //                     PIDs such as the diesel injected-fuel-quantity channel.
@@ -28,6 +32,7 @@
 //   T<unix>                 set wall-clock base for timestamps (e.g. T1716394391)
 //   DUMP                    toggle passive candump printing on/off (default off)
 //   WATCH [id ...]          decode broadcast frames (hex IDs); no args = 608 218
+//   DIFF [id]               isolate a slow field in one frame; no arg = 218 (gear)
 //   OBD                     list standard Mode 01 PIDs the engine ECU supports
 //   SCAN [eng|tcm] [s e] [sess]  sweep DIDs s..e (hex) on an ECU; defaults: both,
 //                                2000 21FF. `sess` opens an extended diagnostic
@@ -38,7 +43,7 @@
 //   RDLI <req> <lid>        KWP ReadDataByLocalIdentifier (service 0x21, 1-byte
 //                           LID) — tests igkov bcomp11's Pajero AT/odometer reads
 //                           (e.g. RDLI 7E1 02 = AT info, RDLI 7E1 03 = odometer)
-//   STOP / PASV             stop SIG/SCAN/WATCH/FUELLOG and return to passive logging
+//   STOP / PASV             stop SIG/SCAN/WATCH/DIFF/FUELLOG; return to passive logging
 
 #include <Arduino.h>
 #include <SPI.h>
@@ -63,7 +68,7 @@ static MCP2515 mcp2515(PIN_MCP2515_CS, 10000000, &SPI);
 static uint64_t unix_base_us   = 0;   // Unix time in microseconds at sync point
 static uint64_t micros_at_sync = 0;   // micros() value when sync was received
 
-enum class Mode { PASSIVE, WATCH, SIG, FUELLOG };
+enum class Mode { PASSIVE, WATCH, DIFF, SIG, FUELLOG };
 static Mode     g_mode = Mode::PASSIVE;
 static uint16_t g_sig_req = UDS_REQ_ENGINE;
 static uint16_t g_sig_did = 0x0000;
@@ -74,9 +79,15 @@ static bool     g_dump    = false;   // passive candump printing; off until DUMP
 // dumps/candump.log: 0x608 ~5-10 Hz, 0x218 ~50 Hz), so WATCH/FUELLOG decode them
 // without transmitting anything.
 //   0x608 — diesel injected fuel-quantity broadcast. bcomp11 reads (D5<<8 | D6)
-//           as the raw injection figure; D0 also tracks and is logged for context.
-//   0x218 — transmission status broadcast. bcomp11 decodes the selected gear /
-//           PRNDL from D2 & 0x0F.
+//           as the raw injection figure. WATCH captures confirm D5,D6 are the ONLY
+//           moving bytes (rest constant 4D 00 FF BF FF .. .. 00); the value idles
+//           ~340, peaks ~999 (≈10-bit) under load. D0 is a separate slow byte
+//           (constant within a drive, ~0x4D; possibly a temperature), logged for
+//           context — it is NOT load.
+//   0x218 — transmission gear broadcast. D2 packs target gear (high nibble) and
+//           current gear (low nibble); equal at rest, differ mid-shift. Codes
+//           confirmed by a selector sweep: 0x0=N, 0x1..0x5=gears, 0xB=R, 0xD=P
+//           (see gearName()). bcomp11's D2 & 0x0F = the current gear/state.
 // If 0x608 really is injected fuel it should collapse to ~0 on overrun (closed
 // throttle, elevated rpm) — exactly what FUELLOG checks — letting it replace the
 // MAF→AFR estimate in projects/server/src/derived_calculator.cpp.
@@ -98,6 +109,21 @@ static constexpr uint32_t WATCH_MIN_INTERVAL_MS = 250;   // per-id print throttl
 static int32_t g_fl_fuel = -1;   // (D5<<8|D6) from 0x608, -1 = not seen yet
 static uint8_t g_fl_fuel_d0 = 0; // D0 of 0x608 (context)
 static int8_t  g_fl_gear = -1;   // D2&0x0F from 0x218, -1 = not seen yet
+
+// --- DIFF mode: isolate a slowly-changing field in one noisy broadcast frame ---
+// Many status frames (e.g. 0x218) mix the field of interest with bytes that churn
+// every frame (counters, alive-toggle bits). DIFF first LEARNS which bytes move
+// while you hold the input still (selector in P), marks them volatile/ignored,
+// then prints only when a previously-STABLE byte changes — so moving the gear
+// selector P→R→N→D makes the gear byte stand out from the noise.
+static constexpr uint32_t DIFF_LEARN_MS = 3000;
+static uint16_t g_diff_id    = BCAST_GEAR;
+static uint8_t  g_diff_last[8];
+static uint8_t  g_diff_dlc   = 0;
+static bool     g_diff_have  = false;        // g_diff_last holds a frame yet?
+static bool     g_diff_vol[8] = { false };   // byte marked noisy during learn → ignored
+static bool     g_diff_learning = true;
+static uint32_t g_diff_learn_start = 0;
 
 // ---------------------------------------------------------------------------
 // MCP2515 bring-up / mode switching
@@ -485,8 +511,26 @@ static void sigTick() {
 // ---------------------------------------------------------------------------
 static int32_t decodeBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc) {
     if (id == BCAST_FUEL && dlc >= 7) return (d[5] << 8) | d[6];   // injected fuel raw
-    if (id == BCAST_GEAR && dlc >= 3) return d[2] & 0x0F;          // gear / PRNDL
+    if (id == BCAST_GEAR && dlc >= 3) return d[2];                 // full gear byte (tgt<<4|cur)
     return 0;
+}
+
+// 0x218 gear code (one nibble of D2). Confirmed on the Pajero IV 4M41 by sweeping
+// the selector P→R→N→D→manual: 0x0=N, 0x1..0x5 = forward gears, 0xB=R, 0xD=P.
+// D2 packs target gear in the high nibble and current gear in the low nibble; they
+// match at rest and differ only mid-shift.
+static const char* gearName(uint8_t nib) {
+    switch (nib) {
+        case 0x0: return "N";
+        case 0x1: return "1";
+        case 0x2: return "2";
+        case 0x3: return "3";
+        case 0x4: return "4";
+        case 0x5: return "5";
+        case 0xB: return "R";
+        case 0xD: return "P";
+        default:  return "?";
+    }
 }
 
 static void printBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc, uint64_t ts) {
@@ -497,7 +541,9 @@ static void printBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc, uint64_t 
     if (id == BCAST_FUEL && dlc >= 7) {
         Serial.printf("  fuel_raw=%d (D5D6)  D0=%u", (d[5] << 8) | d[6], d[0]);
     } else if (id == BCAST_GEAR && dlc >= 3) {
-        Serial.printf("  gear_nib=0x%X (D2&0x0F)", d[2] & 0x0F);
+        uint8_t cur = d[2] & 0x0F, tgt = d[2] >> 4;
+        Serial.printf("  gear=%s", gearName(cur));
+        if (tgt != cur) Serial.printf(" (shifting->%s)", gearName(tgt));
     }
     Serial.println();
 }
@@ -524,6 +570,44 @@ static void watchTick() {
         }
         return;
     }
+}
+
+// ---------------------------------------------------------------------------
+// DIFF — listen-only field isolator (see g_diff_* above). Hold the input still
+// for the first DIFF_LEARN_MS to learn the noisy bytes, then change the input
+// (move the selector) and watch the stable byte(s) change.
+// ---------------------------------------------------------------------------
+static void diffTick() {
+    if (g_diff_learning && (millis() - g_diff_learn_start) >= DIFF_LEARN_MS) {
+        g_diff_learning = false;
+        Serial.print("# DIFF learn done; ignoring volatile bytes:");
+        bool any = false;
+        for (int i = 0; i < 8; ++i) if (g_diff_vol[i]) { Serial.printf(" D%d", i); any = true; }
+        Serial.println(any ? "" : " (none)");
+        Serial.println("# now change the input (move the selector) — stable-byte changes print below");
+    }
+
+    struct can_frame m;
+    if (mcp2515.readMessage(&m) != MCP2515::ERROR_OK) return;
+    if ((m.can_id & 0x7FF) != g_diff_id) return;
+
+    uint8_t dlc = m.can_dlc;
+    if (!g_diff_have) { memcpy(g_diff_last, m.data, 8); g_diff_dlc = dlc; g_diff_have = true; return; }
+
+    uint64_t ts = currentTimestampUs();
+    for (uint8_t i = 0; i < dlc && i < 8; ++i) {
+        if (m.data[i] == g_diff_last[i]) continue;
+        if (g_diff_learning) {
+            g_diff_vol[i] = true;                       // changed while input held still → noise
+        } else if (!g_diff_vol[i]) {
+            Serial.printf("DIFF %lu.%06lu %03X D%u: %02X->%02X  frame=",
+                          (uint32_t)(ts / 1000000ULL), (uint32_t)(ts % 1000000ULL),
+                          g_diff_id, i, g_diff_last[i], m.data[i]);
+            for (uint8_t k = 0; k < dlc; ++k) Serial.printf("%02X", m.data[k]);
+            Serial.println();
+        }
+    }
+    memcpy(g_diff_last, m.data, 8); g_diff_dlc = dlc;
 }
 
 // ---------------------------------------------------------------------------
@@ -681,6 +765,20 @@ static void handleSerial() {
         return;
     }
 
+    if (cmd.startsWith("DIFF")) {
+        // DIFF [id] — isolate a slow field in one noisy frame (default 0x218).
+        long id = 0;
+        g_diff_id = (sscanf(line.c_str() + 4, " %lx", &id) == 1) ? ((uint16_t)id & 0x7FF)
+                                                                 : BCAST_GEAR;
+        g_diff_have = false; g_diff_learning = true; g_diff_learn_start = millis();
+        for (int k = 0; k < 8; ++k) g_diff_vol[k] = false;
+        mcp2515.setListenOnlyMode();                // listen-only; never TX
+        g_mode = Mode::DIFF;
+        Serial.printf("# mode=DIFF id=%03X — hold the input STILL ~%lus while it learns noisy bytes...\n",
+                      g_diff_id, (unsigned long)(DIFF_LEARN_MS / 1000));
+        return;
+    }
+
     if (cmd == "FUELLOG") {
         enterActive();
         g_mode = Mode::FUELLOG;
@@ -755,8 +853,8 @@ void setup() {
     delay(400);
     canReset();
     enterPassive();
-    Serial.println("# sniffer ready (quiet) — commands: T<unix> | DUMP | WATCH [id..] | OBD | "
-                   "VERIFY [m01|m22] | SCAN [eng|tcm] [s e] [sess] | SIG <req> <did> | "
+    Serial.println("# sniffer ready (quiet) — commands: T<unix> | DUMP | WATCH [id..] | DIFF [id] | "
+                   "OBD | VERIFY [m01|m22] | SCAN [eng|tcm] [s e] [sess] | SIG <req> <did> | "
                    "FUELLOG | RDLI <req> <lid> | STOP");
 }
 
@@ -766,6 +864,7 @@ void loop() {
         case Mode::SIG:     sigTick();     break;
         case Mode::FUELLOG: fuelLogTick(); break;
         case Mode::WATCH:   watchTick();   break;
+        case Mode::DIFF:    diffTick();    break;
         default:            passiveTick(); break;
     }
 }

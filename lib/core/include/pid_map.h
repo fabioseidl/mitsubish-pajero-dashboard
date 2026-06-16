@@ -105,6 +105,24 @@ typedef struct {
 #define PID_M22_FUEL_TEMP        0xBAu  // Fuel temperature (°C), DID 0x20F2
 #define PID_M22_FAN_DUTY         0xBBu  // Cooling fan duty (%),  DID 0x2151
 
+// ---------- Free-running broadcast frames (no request / response) ----------
+// Confirmed on the Pajero IV 4M41 bus by passive capture (projects/sniffer):
+//   CAN 0x608 — injected fuel quantity in D5,D6 (raw 16-bit); reads 0 on overrun.
+//   CAN 0x218 — gear in D2: low nibble = current gear, high nibble = target.
+//               Codes: 0x0=N, 0x1..0x5 = forward gears, 0xB=R, 0xD=P.
+// The gear feeds the existing AT slots PID_M22_AT_GEAR_POS / _TARGET_GEAR; the
+// fuel quantity gets its own slot below and drives DerivedCalculator.
+#define CAN_BCAST_FUEL   0x608u
+#define CAN_BCAST_GEAR   0x218u
+#define PID_BCAST_FUEL_RAW       0xBCu  // CAN 0x608 (D5<<8|D6), raw injected fuel
+
+// 0x218 gear codes (one nibble of D2). Forward gears are their own value 1..5;
+// the non-driving states use these. Shared by the server decode, the emulator
+// and clients so they all agree on the encoding carried in at_gear_pos.
+#define GEAR_CODE_NEUTRAL  0x0u
+#define GEAR_CODE_REVERSE  0xBu
+#define GEAR_CODE_PARK     0xDu
+
 static const PidDefinition PID_MAP[] = {
     { PID_MONITOR_STATUS,  "Monitor Status",                   "",      4,     FORMULA_BITMASK, 0.0f,    0.0f,    0.0f,           0.0f,     0.0f,      0.0f,      true  },
     { PID_ENGINE_LOAD,     "Calculated Engine Load",           "%",     1,     FORMULA_LINEAR,  1.0f,    0.0f,    0.392157f,      0.0f,     0.0f,      100.0f,    true  },

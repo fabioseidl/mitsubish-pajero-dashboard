@@ -65,7 +65,8 @@ typedef struct __attribute__((packed)) {
     // input/output shaft speeds are now read from the real Mitsubishi advanced
     // DID 0x20AB (TCM); the remaining fields are legacy speculative slots that
     // stay 0 on the real vehicle until confirmed DIDs are found.
-    float    at_gear_pos;               // (legacy) current gear position
+    float    at_gear_pos;               // CAN 0x218 D2 low nibble — current gear:
+                                        //   0=N, 1..5=forward, 0xB(11)=R, 0xD(13)=P
     float    at_gear_ratio;             // (legacy) gear ratio
     float    at_input_speed_rpm;        // DID 0x20AB D1,D2  input shaft speed  (rpm)
     float    at_output_speed_rpm;       // DID 0x20AB D3,D4  output shaft speed (rpm)
@@ -74,7 +75,8 @@ typedef struct __attribute__((packed)) {
     float    at_shift_sol_status;       // F106  shift solenoid status (bitmask)
     float    at_lockup_status;          // F107  lock-up engaged (0/1)
     float    at_prndl;                  // F108  gear selector position (PRNDL)
-    float    at_target_gear;            // F109  target gear
+    float    at_target_gear;            // CAN 0x218 D2 high nibble — target gear
+                                        //   (same codes as at_gear_pos)
     float    at_oil_pres;               // F10A  transmission oil pressure
 
     // --- Mode 22 — Engine ECU (0x7E8), real PIDs 0xF300–0xF309 ---

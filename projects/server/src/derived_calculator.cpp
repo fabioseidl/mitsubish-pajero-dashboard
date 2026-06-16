@@ -78,7 +78,26 @@ static constexpr float FUEL_CUT_LOAD_MAX_PCT  = 25.0f;   // % calc load; above t
 // the broadcast loop smooths the stepping but cannot add real resolution.
 static constexpr float ALTITUDE_SEA_LEVEL_REF_KPA = 102.0f;
 
+// CAN 0x608 injected-fuel scale. The broadcast carries a raw per-stroke injection
+// quantity (confirmed by FUELLOG: idle ~318 @ ~650 rpm, exactly 0 on overrun, up to
+// ~4700 under hard accel), so the rate scales with injection frequency (∝ rpm):
+//        fuel(L/h) = raw * rpm * FUEL_RAW_K
+// CALIBRATION: the default is anchored to a warm idle of ~0.85 L/h at raw≈318,
+// rpm≈650 → K = 0.85 / (318 * 650) ≈ 4.1e-6. For best accuracy, refine K against a
+// tank-average economy (raise K to increase reported L/h), exactly like the AFR
+// knobs below. raw == 0 (overrun) yields 0 with no special-casing.
+static constexpr float FUEL_RAW_K = 4.1e-6f;
+
 float DerivedCalculator::computeFuelRate(const DataAggregator& aggregator) {
+    // Preferred: the real injected-fuel broadcast (CAN 0x608). It is the actual
+    // ECU fuelling figure — including a true zero during deceleration fuel cut-off
+    // — so it supersedes both the direct PID and the MAF estimate when present.
+    if (aggregator.isValid(PID_BCAST_FUEL_RAW)) {
+        float raw = aggregator.get(PID_BCAST_FUEL_RAW);
+        float rpm = aggregator.get(PID_RPM);
+        return raw * rpm * FUEL_RAW_K;
+    }
+
     // Use the direct reading when the ECU actually answers PID 0x5E.
     float direct = aggregator.get(PID_FUEL_RATE);
     if (direct > 0.0f) return direct;
