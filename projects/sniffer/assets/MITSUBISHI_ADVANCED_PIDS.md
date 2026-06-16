@@ -359,6 +359,7 @@ Implemented in `projects/sniffer/src/main.cpp`:
 | Command | Mode | What it does |
 |---------|------|--------------|
 | `WATCH [id …]` | listen-only | Decode broadcast frames live (default `0x608` + `0x218`), rate-limited. Zero-risk confirmation of §9.1. |
+| `ADIFF` | listen-only | Whole-bus DIFF: hold everything still ~3 s to learn each ID's noisy bytes, then toggle one input (4WD dial, diff lock, handbrake). The ID/byte that changes is printed — finds an **unknown** discrete-state frame without knowing its ID first. The path that found `0x218` gear, generalised to the whole bus. |
 | `FUELLOG` | active | CSV row/cycle: `0x608` fuel + `0x218` gear vs polled rpm / accel / speed. Look for `accel≈0 & rpm>1100 & speed>0` → fuel should collapse to ~0 (the overrun test). |
 | `RDLI <req> <lid>` | active | KWP `0x21` read (§9.2), e.g. `RDLI 7E1 02` (AT) / `RDLI 7E1 03` (odometer). Prints raw bytes + bcomp11's candidate decode. |
 | `VERIFY [m01\|m22]` | active | Polls **every `verified=false` PID** in `pid_map.h` (Mode 01 and the Mode 22 advanced table) and reports which ones this vehicle actually answers — the shortlist for flipping `verified` to `true`. |

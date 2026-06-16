@@ -27,7 +27,7 @@
 #include "espnow_receiver.h"
 #include "server_connection_monitor.h"
 #include "security_config.h"   // PMK_KEY (gitignored — created from .example)
-#include "dashboard_ui.h"
+#include "app_ui.h"            // SquareLine Studio UI bridge (src/ui/, LVGL 9 export)
 
 // ─────────────────────────────────────────────────────────────
 //  Debug macro — routes to UART0 (Serial on this build)
@@ -199,7 +199,7 @@ static LGFX lcd;
 //
 //  Data flow (mirrors projects/client_simple_hud):
 //    ESP-NOW recv (WiFi task) → on_payload() buffers under a critical section
-//    → loop() drains it and calls dashboard::update() (LVGL — loop task only).
+//    → loop() drains it and calls app_ui::update() (LVGL — loop task only).
 //  ServerConnectionMonitor flips an ONLINE/OFFLINE indicator when packets stop.
 // ─────────────────────────────────────────────────────────────
 static ESPNowReceiver          g_receiver;
@@ -273,8 +273,8 @@ static void app_init() {
   lv_display_set_flush_cb(disp, lvgl_flush_cb);
   lv_display_set_buffers(disp, buf1, buf2, kBufBytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
 
-  dashboard::create();
-  DBG("[lvgl] dashboard created (1024x600)");
+  app_ui::create();
+  DBG("[lvgl] SquareLine UI created (1024x600)");
 
   // ── ESP-NOW link to the server ──
   g_conn_monitor.setStatusChangeCallback(on_status_change);
@@ -347,13 +347,13 @@ void loop() {
     local                 = g_pending_payload;
     g_has_pending_payload = false;
     portEXIT_CRITICAL(&g_payload_mux);
-    dashboard::update(local);
+    app_ui::update(local);
   }
 
   // ── Apply a buffered connection-status change ──
   if (g_status_dirty) {
     g_status_dirty = false;
-    dashboard::set_server_status(g_status_online);
+    app_ui::set_server_status(g_status_online);
   }
 
   // ── Drive LVGL ──

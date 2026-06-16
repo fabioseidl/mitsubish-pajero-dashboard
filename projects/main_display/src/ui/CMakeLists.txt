@@ -1,0 +1,10 @@
+SET(SOURCES ui_main.c
+    ui.c
+    ui_comp_hook.c
+    ui_helpers.c
+    fonts/ui_font_roboto150.c
+    fonts/ui_font_robotobold60.c
+    fonts/ui_font_robotoregular20.c
+    fonts/ui_font_robotoregular28.c)
+
+add_library(ui ${SOURCES})
