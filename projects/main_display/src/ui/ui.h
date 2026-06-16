@@ -33,13 +33,11 @@ extern "C" {
 // EVENTS
 extern lv_obj_t *ui____initial_actions0;
 
-// IMAGES AND IMAGE SETS
-LV_IMG_DECLARE( ui_img_background_png);   // assets/background.png
-LV_IMG_DECLARE( ui_img_mitsubishi_logo_png);   // assets/mitsubishi_logo.png
-
 // FONTS
 LV_FONT_DECLARE( ui_font_roboto150);
 LV_FONT_DECLARE( ui_font_robotobold60);
+LV_FONT_DECLARE( ui_font_robotoregular20);
+LV_FONT_DECLARE( ui_font_robotoregular28);
 
 // UI INIT
 void ui_init(void);

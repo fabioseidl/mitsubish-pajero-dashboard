@@ -2,9 +2,9 @@ SET(SOURCES ui_main.c
     ui.c
     ui_comp_hook.c
     ui_helpers.c
-    ui_img_background_png.c
-    ui_img_mitsubishi_logo_png.c
     fonts/ui_font_roboto150.c
-    fonts/ui_font_robotobold60.c)
+    fonts/ui_font_robotobold60.c
+    fonts/ui_font_robotoregular20.c
+    fonts/ui_font_robotoregular28.c)
 
 add_library(ui ${SOURCES})

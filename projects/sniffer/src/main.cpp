@@ -13,6 +13,11 @@
 //                     bytes that churn while an input is held still, then prints
 //                     only when a previously-stable byte changes (used to pin down
 //                     the 0x218 gear nibble against its counter/toggle bytes).
+//   ADIFF           — listen-only DIFF across the WHOLE bus at once: learns the
+//                     stable bytes of every ID while everything is held still, then
+//                     prints any stable byte on any ID that later changes. Finds an
+//                     UNKNOWN discrete-state frame (e.g. 4WD mode dial, diff lock)
+//                     in one toggle sweep without knowing its ID in advance.
 //   SCAN            — sweeps UDS Mode 22 DIDs on an ECU and logs every positive
 //                     (0x62) response; used to discover undocumented advanced
 //                     PIDs such as the diesel injected-fuel-quantity channel.
@@ -33,6 +38,8 @@
 //   DUMP                    toggle passive candump printing on/off (default off)
 //   WATCH [id ...]          decode broadcast frames (hex IDs); no args = 608 218
 //   DIFF [id]               isolate a slow field in one frame; no arg = 218 (gear)
+//   ADIFF                   whole-bus DIFF: hold still to learn, then toggle an
+//                           input; the changed ID/byte is printed (unknown frames)
 //   OBD                     list standard Mode 01 PIDs the engine ECU supports
 //   SCAN [eng|tcm] [s e] [sess]  sweep DIDs s..e (hex) on an ECU; defaults: both,
 //                                2000 21FF. `sess` opens an extended diagnostic
@@ -68,7 +75,7 @@ static MCP2515 mcp2515(PIN_MCP2515_CS, 10000000, &SPI);
 static uint64_t unix_base_us   = 0;   // Unix time in microseconds at sync point
 static uint64_t micros_at_sync = 0;   // micros() value when sync was received
 
-enum class Mode { PASSIVE, WATCH, DIFF, SIG, FUELLOG };
+enum class Mode { PASSIVE, WATCH, DIFF, ADIFF, SIG, FUELLOG };
 static Mode     g_mode = Mode::PASSIVE;
 static uint16_t g_sig_req = UDS_REQ_ENGINE;
 static uint16_t g_sig_did = 0x0000;
@@ -124,6 +131,36 @@ static bool     g_diff_have  = false;        // g_diff_last holds a frame yet?
 static bool     g_diff_vol[8] = { false };   // byte marked noisy during learn → ignored
 static bool     g_diff_learning = true;
 static uint32_t g_diff_learn_start = 0;
+
+// --- ADIFF mode: DIFF across every ID on the bus at once -------------------
+// Same idea as DIFF, but instead of tracking one known frame it keeps a small
+// per-ID table. During the learn window it records each ID's bytes and marks any
+// byte that churns (counters, alive bits) as volatile; afterwards it prints when a
+// previously-stable byte on ANY ID changes. Used to FIND an unknown discrete-state
+// frame (4WD mode dial, diff lock, handbrake...) by toggling the input once.
+static constexpr uint8_t  ADIFF_MAX = 64;        // distinct IDs tracked (bus has ~14)
+struct AdiffEntry {
+    uint16_t id;
+    uint8_t  last[8];
+    uint8_t  dlc;
+    bool     vol[8];     // byte churned during learn → ignored afterwards
+};
+static AdiffEntry g_adiff[ADIFF_MAX];
+static uint8_t    g_adiff_n = 0;
+static bool       g_adiff_learning = true;
+static uint32_t   g_adiff_learn_start = 0;
+
+// Find the table slot for an ID, allocating a new one (with the current frame as
+// its baseline) on first sight. Returns -1 only if the table is full.
+static int adiffSlot(uint16_t id, const uint8_t* data, uint8_t dlc) {
+    for (uint8_t i = 0; i < g_adiff_n; ++i) if (g_adiff[i].id == id) return i;
+    if (g_adiff_n >= ADIFF_MAX) return -1;
+    AdiffEntry& e = g_adiff[g_adiff_n];
+    e.id = id; e.dlc = dlc;
+    memcpy(e.last, data, 8);
+    for (int k = 0; k < 8; ++k) e.vol[k] = false;
+    return g_adiff_n++;
+}
 
 // ---------------------------------------------------------------------------
 // MCP2515 bring-up / mode switching
@@ -611,6 +648,48 @@ static void diffTick() {
 }
 
 // ---------------------------------------------------------------------------
+// ADIFF — whole-bus DIFF (see g_adiff_* above). Hold everything still for the
+// first DIFF_LEARN_MS so each ID's churning bytes get marked volatile, then toggle
+// the input you're hunting (turn the 4WD dial, pull the diff-lock switch) and the
+// ID/byte that carries it prints — even though its frame ID was unknown up front.
+// ---------------------------------------------------------------------------
+static void adiffTick() {
+    if (g_adiff_learning && (millis() - g_adiff_learn_start) >= DIFF_LEARN_MS) {
+        g_adiff_learning = false;
+        uint16_t vol_total = 0;
+        for (uint8_t i = 0; i < g_adiff_n; ++i)
+            for (int k = 0; k < 8; ++k) if (g_adiff[i].vol[k]) ++vol_total;
+        Serial.printf("# ADIFF learn done: %u IDs, %u volatile bytes ignored\n",
+                      g_adiff_n, vol_total);
+        Serial.println("# now toggle the input (4WD dial / diff lock / switch) — changes print below");
+    }
+
+    struct can_frame m;
+    if (mcp2515.readMessage(&m) != MCP2515::ERROR_OK) return;
+    uint16_t id  = m.can_id & 0x7FF;
+    uint8_t  dlc = m.can_dlc;
+
+    int s = adiffSlot(id, m.data, dlc);
+    if (s < 0) return;                         // table full: ignore new IDs
+    AdiffEntry& e = g_adiff[s];
+
+    uint64_t ts = currentTimestampUs();
+    for (uint8_t i = 0; i < dlc && i < 8; ++i) {
+        if (m.data[i] == e.last[i]) continue;
+        if (g_adiff_learning) {
+            e.vol[i] = true;                   // changed while still → noise
+        } else if (!e.vol[i]) {
+            Serial.printf("ADIFF %lu.%06lu %03X D%u: %02X->%02X  frame=",
+                          (uint32_t)(ts / 1000000ULL), (uint32_t)(ts % 1000000ULL),
+                          id, i, e.last[i], m.data[i]);
+            for (uint8_t k = 0; k < dlc; ++k) Serial.printf("%02X", m.data[k]);
+            Serial.println();
+        }
+    }
+    memcpy(e.last, m.data, 8); e.dlc = dlc;
+}
+
+// ---------------------------------------------------------------------------
 // FUELLOG — active. Refresh the cached 0x608 fuel / 0x218 gear from any pending
 // broadcast frames, then poll rpm / accelerator / speed and print one CSV row.
 // The row to look for: accel≈0 & rpm>1100 & speed>0 (overrun) — a real injected-
@@ -779,6 +858,19 @@ static void handleSerial() {
         return;
     }
 
+    if (cmd == "ADIFF") {
+        // Whole-bus DIFF — no ID argument; learns every frame, then flags the one
+        // that moves when you toggle an input (4WD dial, diff lock, ...).
+        g_adiff_n = 0;
+        g_adiff_learning = true;
+        g_adiff_learn_start = millis();
+        mcp2515.setListenOnlyMode();                // listen-only; never TX
+        g_mode = Mode::ADIFF;
+        Serial.printf("# mode=ADIFF — hold EVERYTHING still ~%lus while it learns the whole bus...\n",
+                      (unsigned long)(DIFF_LEARN_MS / 1000));
+        return;
+    }
+
     if (cmd == "FUELLOG") {
         enterActive();
         g_mode = Mode::FUELLOG;
@@ -854,7 +946,7 @@ void setup() {
     canReset();
     enterPassive();
     Serial.println("# sniffer ready (quiet) — commands: T<unix> | DUMP | WATCH [id..] | DIFF [id] | "
-                   "OBD | VERIFY [m01|m22] | SCAN [eng|tcm] [s e] [sess] | SIG <req> <did> | "
+                   "ADIFF | OBD | VERIFY [m01|m22] | SCAN [eng|tcm] [s e] [sess] | SIG <req> <did> | "
                    "FUELLOG | RDLI <req> <lid> | STOP");
 }
 
@@ -865,6 +957,7 @@ void loop() {
         case Mode::FUELLOG: fuelLogTick(); break;
         case Mode::WATCH:   watchTick();   break;
         case Mode::DIFF:    diffTick();    break;
+        case Mode::ADIFF:   adiffTick();   break;
         default:            passiveTick(); break;
     }
 }
