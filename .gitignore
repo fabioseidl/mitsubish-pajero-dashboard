@@ -11,3 +11,6 @@ lib/core/include/security_config.h
 
 # Build Artifacts
 build/
+
+# logs
+logs/

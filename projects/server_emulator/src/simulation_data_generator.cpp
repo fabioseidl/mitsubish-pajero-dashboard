@@ -108,7 +108,13 @@ Payload SimulationDataGenerator::getPayload() const {
                             : 0.0f;                                             // locked up at highway
     bool  lockup            = (speed > 60.0f && gear >= 4);
 
-    p.at_gear_pos            = (float)gear;
+    // Gear *code* carried in at_gear_pos uses the real 0x218 encoding (see
+    // GEAR_CODE_* in pid_map.h): Park while idle/stationary, else the forward
+    // gear number 1..5. `gear` (1..5) stays the physical index for the ratio and
+    // shaft-speed math above.
+    float gear_code          = (profile_ == DrivingProfile::IDLE)
+                               ? (float)GEAR_CODE_PARK : (float)gear;
+    p.at_gear_pos            = gear_code;
     p.at_gear_ratio          = gear_ratio;
     p.at_input_speed_rpm     = rpm;
     p.at_output_speed_rpm    = output_speed_rpm;
@@ -120,7 +126,7 @@ Payload SimulationDataGenerator::getPayload() const {
                                        (gear == 2 || gear == 4) ? 0x02 : 0x04);
     p.at_lockup_status       = lockup ? 1.0f : 0.0f;
     p.at_prndl               = (profile_ == DrivingProfile::IDLE) ? 1.0f : 4.0f; // 1=P, 4=D
-    p.at_target_gear         = (float)gear;   // stable — no shift in progress
+    p.at_target_gear         = gear_code;     // stable — no shift in progress
     // Transmission line pressure roughly tracks engine load and RPM
     p.at_oil_pres            = 400.0f + (load_pct / 100.0f) * 800.0f
                                + 50.0f * sinf(t * 0.3f);   // kPa (arbitrary scale)

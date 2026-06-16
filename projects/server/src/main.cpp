@@ -268,6 +268,21 @@ static void can_rx_task(void* /*param*/) {
                     Serial.println("Connected to vehicle CAN bus");
                 }
 
+                // --- Free-running broadcast frames (passive; no request sent) ---
+                // The 4M41 broadcasts injected fuel (0x608) and gear (0x218)
+                // continuously. Capture them here before the request/response
+                // filter below. See projects/sniffer/assets/MITSUBISHI_ADVANCED_PIDS.md.
+                if (frame.id == CAN_BCAST_FUEL && frame.dlc >= 7) {
+                    float raw = (float)(((uint16_t)frame.data[5] << 8) | frame.data[6]);
+                    aggregator.update(PID_BCAST_FUEL_RAW, raw);
+                    continue;
+                }
+                if (frame.id == CAN_BCAST_GEAR && frame.dlc >= 3) {
+                    aggregator.update(PID_M22_AT_GEAR_POS,    (float)(frame.data[2] & 0x0F));
+                    aggregator.update(PID_M22_AT_TARGET_GEAR, (float)(frame.data[2] >> 4));
+                    continue;
+                }
+
                 // Accept responses from engine ECU (0x7E8) and AT ECU (0x7E9).
                 if (frame.id != 0x7E8 && frame.id != 0x7E9) {
                     // Serial.printf("SKIP CAN ID=0x%03X DLC=%d data=%02X %02X %02X %02X %02X %02X %02X %02X\n",
