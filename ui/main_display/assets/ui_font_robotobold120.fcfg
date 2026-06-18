@@ -1,0 +1,16 @@
+{
+  "codename": "robotobold120",
+  "ttf_path": "/assets/Roboto-Bold.ttf",
+  "bin_path": "/assets/ui_font_robotobold120.bin",
+  "c_path": "/assets/ui_font_robotobold120.c",
+  "cfg_path": "/assets/ui_font_robotobold120.fcfg",
+  "size": 120,
+  "bpp": 4,
+  "letters": 0,
+  "ranges": [
+    "0x20-0x7f"
+  ],
+  "symbols": "0-9",
+  "customparams": "--no-compress --no-prefilter",
+  "uploaded": false
+}

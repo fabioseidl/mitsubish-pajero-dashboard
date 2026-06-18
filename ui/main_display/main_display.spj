@@ -27,7 +27,7 @@
     "saved_objtypeKey": "STARTEVENTS"
   },
   "animations": [],
-  "selected_theme": "Default",
+  "selected_theme": "MainDisplay",
   "selected_screen": "GUID73479866-887386S2805146",
   "info": {
     "name": "main_display.spj",
@@ -57,9 +57,9 @@
     "separate_screen_save": true,
     "hierarchy_state_save": false,
     "reverse_event_order": false,
-    "backup_cnt": 43,
+    "backup_cnt": 108,
     "autosave_cnt": 0,
-    "group_color_cnt": 0,
+    "group_color_cnt": 1,
     "imagebytearrayprefix": "",
     "lvgl_version": "9.3",
     "callfuncsexport": "C_FILE",
@@ -68,7 +68,7 @@
     "naming": "Name",
     "naming_force_lowercase": false,
     "naming_add_subcomponent": false,
-    "nidcnt": 1001260,
+    "nidcnt": 1001266,
     "BitDepth": 16,
     "Name": "main_display"
   }

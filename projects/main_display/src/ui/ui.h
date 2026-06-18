@@ -23,7 +23,11 @@ extern "C" {
 #endif
 
 #include "ui_helpers.h"
+#include "ui_comp.h"
+#include "ui_comp_hook.h"
 #include "ui_events.h"
+#include "ui_theme_manager.h"
+#include "ui_themes.h"
 
 ///////////////////// SCREENS ////////////////////
 #include "ui_main.h"
@@ -33,11 +37,17 @@ extern "C" {
 // EVENTS
 extern lv_obj_t *ui____initial_actions0;
 
+// IMAGES AND IMAGE SETS
+LV_IMG_DECLARE( ui_img_background_png);   // assets/background.png
+
 // FONTS
 LV_FONT_DECLARE( ui_font_roboto150);
+LV_FONT_DECLARE( ui_font_robotobold120);
 LV_FONT_DECLARE( ui_font_robotobold60);
 LV_FONT_DECLARE( ui_font_robotoregular20);
 LV_FONT_DECLARE( ui_font_robotoregular28);
+LV_FONT_DECLARE( ui_font_robotobold80);
+LV_FONT_DECLARE( ui_font_robotoregular50);
 
 // UI INIT
 void ui_init(void);

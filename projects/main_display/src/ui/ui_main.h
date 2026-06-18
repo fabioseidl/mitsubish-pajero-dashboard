@@ -14,17 +14,8 @@ extern "C" {
 extern void ui_main_screen_init(void);
 extern void ui_main_screen_destroy(void);
 extern lv_obj_t *ui_main;
-extern lv_obj_t *ui_lbbrand;
 extern lv_obj_t *ui_lbstatus;
-extern lv_obj_t *ui_lvtitlespeed;
-extern lv_obj_t *ui_lbspeed;
-extern lv_obj_t *ui_lbunitspeed;
-extern lv_obj_t *ui_lbtitlegear;
-extern lv_obj_t *ui_lbatgearposition;
-extern lv_obj_t *ui_lbtitletarget;
-extern lv_obj_t *ui_lbgearposition;
 extern lv_obj_t *ui_lbtitlerpm;
-extern lv_obj_t *ui_lbrpm;
 extern lv_obj_t *ui_lbtitleboost;
 extern lv_obj_t *ui_lbboostpressure;
 extern lv_obj_t *ui_lbtitleload;
@@ -55,6 +46,14 @@ extern lv_obj_t *ui_lbtitleamb;
 extern lv_obj_t *ui_lbambientetemperature;
 extern lv_obj_t *ui_lbtitlebatt;
 extern lv_obj_t *ui_lbvoltage;
+extern lv_obj_t *ui_lbatgearposition;
+extern lv_obj_t *ui_lbgearposition;
+extern lv_obj_t *ui_lbspeed;
+extern lv_obj_t *ui_lbrpm;
+extern lv_obj_t *ui_lbunitspeed;
+extern lv_obj_t *ui_lvtitlespeed;
+extern lv_obj_t *ui_lbbrand;
+extern lv_obj_t *ui_background;
 // CUSTOM VARIABLES
 
 #ifdef __cplusplus
