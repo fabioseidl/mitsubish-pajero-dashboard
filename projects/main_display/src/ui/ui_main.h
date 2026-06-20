@@ -14,7 +14,7 @@ extern "C" {
 extern void ui_main_screen_init(void);
 extern void ui_main_screen_destroy(void);
 extern lv_obj_t *ui_main;
-extern lv_obj_t *ui_lbstatus;
+extern lv_obj_t *ui_lbserverstatus;
 extern lv_obj_t *ui_lbtitlerpm;
 extern lv_obj_t *ui_lbtitleboost;
 extern lv_obj_t *ui_lbboostpressure;

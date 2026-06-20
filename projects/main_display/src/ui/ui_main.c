@@ -5,7 +5,7 @@
 
 #include "ui.h"
 
-lv_obj_t *ui_main = NULL;lv_obj_t *ui_lbstatus = NULL;lv_obj_t *ui_lbtitlerpm = NULL;lv_obj_t *ui_lbtitleboost = NULL;lv_obj_t *ui_lbboostpressure = NULL;lv_obj_t *ui_lbtitleload = NULL;lv_obj_t *ui_lbengineload = NULL;lv_obj_t *ui_lbtitlethr = NULL;lv_obj_t *ui_lbthrottle = NULL;lv_obj_t *ui_lbtitlefuel = NULL;lv_obj_t *ui_lbfuelrate = NULL;lv_obj_t *ui_lbtitleecon = NULL;lv_obj_t *ui_lbconsumptionkml = NULL;lv_obj_t *ui_lbtitleavg = NULL;lv_obj_t *ui_lbavgconsumptionkml = NULL;lv_obj_t *ui_lbtitletrip = NULL;lv_obj_t *ui_lbdistancekm = NULL;lv_obj_t *ui_lbtitlecool = NULL;lv_obj_t *ui_lbcoolanttemp = NULL;lv_obj_t *ui_lbtitleoil = NULL;lv_obj_t *ui_lboiltemp = NULL;lv_obj_t *ui_lbtitleatf = NULL;lv_obj_t *ui_lbatftemp = NULL;lv_obj_t *ui_lbtitledpf = NULL;lv_obj_t *ui_lbdpfsoot = NULL;lv_obj_t *ui_lbtitlealt = NULL;lv_obj_t *ui_lbaltitude = NULL;lv_obj_t *ui_lbtitlebaro = NULL;lv_obj_t *ui_lbbarometerpressure = NULL;lv_obj_t *ui_lbtitleamb = NULL;lv_obj_t *ui_lbambientetemperature = NULL;lv_obj_t *ui_lbtitlebatt = NULL;lv_obj_t *ui_lbvoltage = NULL;lv_obj_t *ui_lbatgearposition = NULL;lv_obj_t *ui_lbgearposition = NULL;lv_obj_t *ui_lbspeed = NULL;lv_obj_t *ui_lbrpm = NULL;lv_obj_t *ui_lbunitspeed = NULL;lv_obj_t *ui_lvtitlespeed = NULL;lv_obj_t *ui_lbbrand = NULL;lv_obj_t *ui_background = NULL;
+lv_obj_t *ui_main = NULL;lv_obj_t *ui_lbserverstatus = NULL;lv_obj_t *ui_lbtitlerpm = NULL;lv_obj_t *ui_lbtitleboost = NULL;lv_obj_t *ui_lbboostpressure = NULL;lv_obj_t *ui_lbtitleload = NULL;lv_obj_t *ui_lbengineload = NULL;lv_obj_t *ui_lbtitlethr = NULL;lv_obj_t *ui_lbthrottle = NULL;lv_obj_t *ui_lbtitlefuel = NULL;lv_obj_t *ui_lbfuelrate = NULL;lv_obj_t *ui_lbtitleecon = NULL;lv_obj_t *ui_lbconsumptionkml = NULL;lv_obj_t *ui_lbtitleavg = NULL;lv_obj_t *ui_lbavgconsumptionkml = NULL;lv_obj_t *ui_lbtitletrip = NULL;lv_obj_t *ui_lbdistancekm = NULL;lv_obj_t *ui_lbtitlecool = NULL;lv_obj_t *ui_lbcoolanttemp = NULL;lv_obj_t *ui_lbtitleoil = NULL;lv_obj_t *ui_lboiltemp = NULL;lv_obj_t *ui_lbtitleatf = NULL;lv_obj_t *ui_lbatftemp = NULL;lv_obj_t *ui_lbtitledpf = NULL;lv_obj_t *ui_lbdpfsoot = NULL;lv_obj_t *ui_lbtitlealt = NULL;lv_obj_t *ui_lbaltitude = NULL;lv_obj_t *ui_lbtitlebaro = NULL;lv_obj_t *ui_lbbarometerpressure = NULL;lv_obj_t *ui_lbtitleamb = NULL;lv_obj_t *ui_lbambientetemperature = NULL;lv_obj_t *ui_lbtitlebatt = NULL;lv_obj_t *ui_lbvoltage = NULL;lv_obj_t *ui_lbatgearposition = NULL;lv_obj_t *ui_lbgearposition = NULL;lv_obj_t *ui_lbspeed = NULL;lv_obj_t *ui_lbrpm = NULL;lv_obj_t *ui_lbunitspeed = NULL;lv_obj_t *ui_lvtitlespeed = NULL;lv_obj_t *ui_lbbrand = NULL;lv_obj_t *ui_background = NULL;
 // event funtions
 
 // build funtions
@@ -17,15 +17,14 @@ lv_obj_remove_flag( ui_main, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
 lv_obj_set_style_bg_color(ui_main, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
 lv_obj_set_style_bg_opa(ui_main, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
 
-ui_lbstatus = lv_label_create(ui_main);
-lv_obj_set_width( ui_lbstatus, LV_SIZE_CONTENT);  /// 1
-lv_obj_set_height( ui_lbstatus, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbstatus, 373 );
-lv_obj_set_y( ui_lbstatus, -274 );
-lv_obj_set_align( ui_lbstatus, LV_ALIGN_CENTER );
-lv_label_set_text(ui_lbstatus,"ONLINE");
-lv_obj_add_flag( ui_lbstatus, LV_OBJ_FLAG_HIDDEN );   /// Flags
-lv_obj_set_style_text_font(ui_lbstatus, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
+ui_lbserverstatus = lv_label_create(ui_main);
+lv_obj_set_width( ui_lbserverstatus, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_lbserverstatus, LV_SIZE_CONTENT);   /// 1
+lv_obj_set_x( ui_lbserverstatus, 366 );
+lv_obj_set_y( ui_lbserverstatus, -274 );
+lv_obj_set_align( ui_lbserverstatus, LV_ALIGN_CENTER );
+lv_label_set_text(ui_lbserverstatus,"ONLINE");
+lv_obj_set_style_text_font(ui_lbserverstatus, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_lbtitlerpm = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbtitlerpm, LV_SIZE_CONTENT);  /// 1
@@ -39,42 +38,38 @@ lv_obj_set_style_text_font(ui_lbtitlerpm, &ui_font_robotoregular20, LV_PART_MAIN
 ui_lbtitleboost = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbtitleboost, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbtitleboost, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbtitleboost, -107 );
-lv_obj_set_y( ui_lbtitleboost, -108 );
+lv_obj_set_x( ui_lbtitleboost, 130 );
+lv_obj_set_y( ui_lbtitleboost, 8 );
 lv_obj_set_align( ui_lbtitleboost, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbtitleboost,"BOOST bar");
-lv_obj_add_flag( ui_lbtitleboost, LV_OBJ_FLAG_HIDDEN );   /// Flags
 lv_obj_set_style_text_font(ui_lbtitleboost, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_lbboostpressure = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbboostpressure, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbboostpressure, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbboostpressure, -107 );
-lv_obj_set_y( ui_lbboostpressure, -58 );
+lv_obj_set_x( ui_lbboostpressure, 127 );
+lv_obj_set_y( ui_lbboostpressure, 57 );
 lv_obj_set_align( ui_lbboostpressure, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbboostpressure,"1.2");
-lv_obj_add_flag( ui_lbboostpressure, LV_OBJ_FLAG_HIDDEN );   /// Flags
-lv_obj_set_style_text_font(ui_lbboostpressure, &ui_font_robotobold60, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_lbboostpressure, &ui_font_robotoregular50, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_lbtitleload = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbtitleload, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbtitleload, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbtitleload, -107 );
-lv_obj_set_y( ui_lbtitleload, 18 );
+lv_obj_set_x( ui_lbtitleload, 385 );
+lv_obj_set_y( ui_lbtitleload, 11 );
 lv_obj_set_align( ui_lbtitleload, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbtitleload,"LOAD %");
-lv_obj_add_flag( ui_lbtitleload, LV_OBJ_FLAG_HIDDEN );   /// Flags
 lv_obj_set_style_text_font(ui_lbtitleload, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_lbengineload = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbengineload, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbengineload, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbengineload, -107 );
-lv_obj_set_y( ui_lbengineload, 68 );
+lv_obj_set_x( ui_lbengineload, 379 );
+lv_obj_set_y( ui_lbengineload, 55 );
 lv_obj_set_align( ui_lbengineload, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbengineload,"47");
-lv_obj_add_flag( ui_lbengineload, LV_OBJ_FLAG_HIDDEN );   /// Flags
-lv_obj_set_style_text_font(ui_lbengineload, &ui_font_robotoregular28, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_lbengineload, &ui_font_robotoregular50, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_lbtitlethr = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbtitlethr, LV_SIZE_CONTENT);  /// 1
@@ -154,62 +149,56 @@ lv_obj_set_style_text_font(ui_lbavgconsumptionkml, &ui_font_robotoregular50, LV_
 ui_lbtitletrip = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbtitletrip, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbtitletrip, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbtitletrip, 63 );
-lv_obj_set_y( ui_lbtitletrip, 144 );
+lv_obj_set_x( ui_lbtitletrip, -376 );
+lv_obj_set_y( ui_lbtitletrip, 214 );
 lv_obj_set_align( ui_lbtitletrip, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbtitletrip,"TRIP km");
-lv_obj_add_flag( ui_lbtitletrip, LV_OBJ_FLAG_HIDDEN );   /// Flags
 lv_obj_set_style_text_font(ui_lbtitletrip, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_lbdistancekm = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbdistancekm, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbdistancekm, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbdistancekm, 63 );
-lv_obj_set_y( ui_lbdistancekm, 194 );
+lv_obj_set_x( ui_lbdistancekm, -378 );
+lv_obj_set_y( ui_lbdistancekm, 260 );
 lv_obj_set_align( ui_lbdistancekm, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbdistancekm,"182.5");
-lv_obj_add_flag( ui_lbdistancekm, LV_OBJ_FLAG_HIDDEN );   /// Flags
-lv_obj_set_style_text_font(ui_lbdistancekm, &ui_font_robotoregular28, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_lbdistancekm, &ui_font_robotoregular50, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_lbtitlecool = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbtitlecool, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbtitlecool, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbtitlecool, 233 );
-lv_obj_set_y( ui_lbtitlecool, -234 );
+lv_obj_set_x( ui_lbtitlecool, -382 );
+lv_obj_set_y( ui_lbtitlecool, 111 );
 lv_obj_set_align( ui_lbtitlecool, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbtitlecool,"COOLANT C");
-lv_obj_add_flag( ui_lbtitlecool, LV_OBJ_FLAG_HIDDEN );   /// Flags
 lv_obj_set_style_text_font(ui_lbtitlecool, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_lbcoolanttemp = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbcoolanttemp, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbcoolanttemp, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbcoolanttemp, 233 );
-lv_obj_set_y( ui_lbcoolanttemp, -184 );
+lv_obj_set_x( ui_lbcoolanttemp, -383 );
+lv_obj_set_y( ui_lbcoolanttemp, 157 );
 lv_obj_set_align( ui_lbcoolanttemp, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbcoolanttemp,"89");
-lv_obj_add_flag( ui_lbcoolanttemp, LV_OBJ_FLAG_HIDDEN );   /// Flags
-lv_obj_set_style_text_font(ui_lbcoolanttemp, &ui_font_robotobold60, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_lbcoolanttemp, &ui_font_robotoregular50, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_lbtitleoil = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbtitleoil, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbtitleoil, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbtitleoil, 233 );
-lv_obj_set_y( ui_lbtitleoil, -108 );
+lv_obj_set_x( ui_lbtitleoil, -127 );
+lv_obj_set_y( ui_lbtitleoil, 110 );
 lv_obj_set_align( ui_lbtitleoil, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbtitleoil,"OIL C");
-lv_obj_add_flag( ui_lbtitleoil, LV_OBJ_FLAG_HIDDEN );   /// Flags
 lv_obj_set_style_text_font(ui_lbtitleoil, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_lboiltemp = lv_label_create(ui_main);
 lv_obj_set_width( ui_lboiltemp, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lboiltemp, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lboiltemp, 233 );
-lv_obj_set_y( ui_lboiltemp, -58 );
+lv_obj_set_x( ui_lboiltemp, -123 );
+lv_obj_set_y( ui_lboiltemp, 157 );
 lv_obj_set_align( ui_lboiltemp, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lboiltemp,"104");
-lv_obj_add_flag( ui_lboiltemp, LV_OBJ_FLAG_HIDDEN );   /// Flags
-lv_obj_set_style_text_font(ui_lboiltemp, &ui_font_robotoregular28, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_lboiltemp, &ui_font_robotoregular50, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_lbtitleatf = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbtitleatf, LV_SIZE_CONTENT);  /// 1
@@ -410,7 +399,7 @@ void ui_main_screen_destroy(void)
 
 // NULL screen variables
 ui_main= NULL;
-ui_lbstatus= NULL;
+ui_lbserverstatus= NULL;
 ui_lbtitlerpm= NULL;
 ui_lbtitleboost= NULL;
 ui_lbboostpressure= NULL;

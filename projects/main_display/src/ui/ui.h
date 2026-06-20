@@ -44,9 +44,9 @@ LV_IMG_DECLARE( ui_img_background_png);   // assets/background.png
 LV_FONT_DECLARE( ui_font_roboto150);
 LV_FONT_DECLARE( ui_font_robotobold120);
 LV_FONT_DECLARE( ui_font_robotobold60);
+LV_FONT_DECLARE( ui_font_robotobold80);
 LV_FONT_DECLARE( ui_font_robotoregular20);
 LV_FONT_DECLARE( ui_font_robotoregular28);
-LV_FONT_DECLARE( ui_font_robotobold80);
 LV_FONT_DECLARE( ui_font_robotoregular50);
 
 // UI INIT

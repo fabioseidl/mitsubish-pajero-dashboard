@@ -7,7 +7,7 @@
         {
           "nid": 10,
           "strtype": "OBJECT/Name",
-          "strval": "lbstatus",
+          "strval": "lbserverstatus",
           "InheritedType": 10
         },
         {
@@ -31,7 +31,6 @@
         },
         {
           "nid": 40,
-          "flags": 1048576,
           "strtype": "OBJECT/Transform",
           "InheritedType": 1
         },
@@ -40,7 +39,7 @@
           "flags": 17,
           "strtype": "OBJECT/Position",
           "intarray": [
-            373,
+            366,
             -274
           ],
           "InheritedType": 7
@@ -70,12 +69,6 @@
           "nid": 90,
           "strtype": "OBJECT/Flags",
           "InheritedType": 1
-        },
-        {
-          "nid": 100,
-          "strtype": "OBJECT/Hidden",
-          "strval": "True",
-          "InheritedType": 2
         },
         {
           "nid": 110,
@@ -364,8 +357,8 @@
           "flags": 17,
           "strtype": "OBJECT/Position",
           "intarray": [
-            -107,
-            -108
+            130,
+            8
           ],
           "InheritedType": 7
         },
@@ -394,12 +387,6 @@
           "nid": 90,
           "strtype": "OBJECT/Flags",
           "InheritedType": 1
-        },
-        {
-          "nid": 100,
-          "strtype": "OBJECT/Hidden",
-          "strval": "True",
-          "InheritedType": 2
         },
         {
           "nid": 110,
@@ -529,8 +516,8 @@
           "flags": 17,
           "strtype": "OBJECT/Position",
           "intarray": [
-            -107,
-            -58
+            127,
+            57
           ],
           "InheritedType": 7
         },
@@ -559,12 +546,6 @@
           "nid": 90,
           "strtype": "OBJECT/Flags",
           "InheritedType": 1
-        },
-        {
-          "nid": 100,
-          "strtype": "OBJECT/Hidden",
-          "strval": "True",
-          "InheritedType": 2
         },
         {
           "nid": 110,
@@ -640,7 +621,7 @@
                 {
                   "nid": 10450,
                   "strtype": "_style/Text_Font",
-                  "strval": "robotobold60",
+                  "strval": "robotoregular50",
                   "InheritedType": 3
                 }
               ],
@@ -694,8 +675,8 @@
           "flags": 17,
           "strtype": "OBJECT/Position",
           "intarray": [
-            -107,
-            18
+            385,
+            11
           ],
           "InheritedType": 7
         },
@@ -724,12 +705,6 @@
           "nid": 90,
           "strtype": "OBJECT/Flags",
           "InheritedType": 1
-        },
-        {
-          "nid": 100,
-          "strtype": "OBJECT/Hidden",
-          "strval": "True",
-          "InheritedType": 2
         },
         {
           "nid": 110,
@@ -850,7 +825,6 @@
         },
         {
           "nid": 40,
-          "flags": 1048576,
           "strtype": "OBJECT/Transform",
           "InheritedType": 1
         },
@@ -859,8 +833,8 @@
           "flags": 17,
           "strtype": "OBJECT/Position",
           "intarray": [
-            -107,
-            68
+            379,
+            55
           ],
           "InheritedType": 7
         },
@@ -889,12 +863,6 @@
           "nid": 90,
           "strtype": "OBJECT/Flags",
           "InheritedType": 1
-        },
-        {
-          "nid": 100,
-          "strtype": "OBJECT/Hidden",
-          "strval": "True",
-          "InheritedType": 2
         },
         {
           "nid": 110,
@@ -970,7 +938,7 @@
                 {
                   "nid": 10450,
                   "strtype": "_style/Text_Font",
-                  "strval": "robotoregular28",
+                  "strval": "robotoregular50",
                   "InheritedType": 3
                 }
               ],
@@ -2143,7 +2111,6 @@
         },
         {
           "nid": 40,
-          "flags": 1048576,
           "strtype": "OBJECT/Transform",
           "InheritedType": 1
         },
@@ -2311,8 +2278,8 @@
           "flags": 17,
           "strtype": "OBJECT/Position",
           "intarray": [
-            63,
-            144
+            -376,
+            214
           ],
           "InheritedType": 7
         },
@@ -2341,12 +2308,6 @@
           "nid": 90,
           "strtype": "OBJECT/Flags",
           "InheritedType": 1
-        },
-        {
-          "nid": 100,
-          "strtype": "OBJECT/Hidden",
-          "strval": "True",
-          "InheritedType": 2
         },
         {
           "nid": 110,
@@ -2476,8 +2437,8 @@
           "flags": 17,
           "strtype": "OBJECT/Position",
           "intarray": [
-            63,
-            194
+            -378,
+            260
           ],
           "InheritedType": 7
         },
@@ -2506,12 +2467,6 @@
           "nid": 90,
           "strtype": "OBJECT/Flags",
           "InheritedType": 1
-        },
-        {
-          "nid": 100,
-          "strtype": "OBJECT/Hidden",
-          "strval": "True",
-          "InheritedType": 2
         },
         {
           "nid": 110,
@@ -2587,7 +2542,7 @@
                 {
                   "nid": 10450,
                   "strtype": "_style/Text_Font",
-                  "strval": "robotoregular28",
+                  "strval": "robotoregular50",
                   "InheritedType": 3
                 }
               ],
@@ -2641,8 +2596,8 @@
           "flags": 17,
           "strtype": "OBJECT/Position",
           "intarray": [
-            233,
-            -234
+            -382,
+            111
           ],
           "InheritedType": 7
         },
@@ -2671,12 +2626,6 @@
           "nid": 90,
           "strtype": "OBJECT/Flags",
           "InheritedType": 1
-        },
-        {
-          "nid": 100,
-          "strtype": "OBJECT/Hidden",
-          "strval": "True",
-          "InheritedType": 2
         },
         {
           "nid": 110,
@@ -2797,7 +2746,6 @@
         },
         {
           "nid": 40,
-          "flags": 1048576,
           "strtype": "OBJECT/Transform",
           "InheritedType": 1
         },
@@ -2806,8 +2754,8 @@
           "flags": 17,
           "strtype": "OBJECT/Position",
           "intarray": [
-            233,
-            -184
+            -383,
+            157
           ],
           "InheritedType": 7
         },
@@ -2836,12 +2784,6 @@
           "nid": 90,
           "strtype": "OBJECT/Flags",
           "InheritedType": 1
-        },
-        {
-          "nid": 100,
-          "strtype": "OBJECT/Hidden",
-          "strval": "True",
-          "InheritedType": 2
         },
         {
           "nid": 110,
@@ -2917,7 +2859,7 @@
                 {
                   "nid": 10450,
                   "strtype": "_style/Text_Font",
-                  "strval": "robotobold60",
+                  "strval": "robotoregular50",
                   "InheritedType": 3
                 }
               ],
@@ -2971,8 +2913,8 @@
           "flags": 17,
           "strtype": "OBJECT/Position",
           "intarray": [
-            233,
-            -108
+            -127,
+            110
           ],
           "InheritedType": 7
         },
@@ -3001,12 +2943,6 @@
           "nid": 90,
           "strtype": "OBJECT/Flags",
           "InheritedType": 1
-        },
-        {
-          "nid": 100,
-          "strtype": "OBJECT/Hidden",
-          "strval": "True",
-          "InheritedType": 2
         },
         {
           "nid": 110,
@@ -3136,8 +3072,8 @@
           "flags": 17,
           "strtype": "OBJECT/Position",
           "intarray": [
-            233,
-            -58
+            -123,
+            157
           ],
           "InheritedType": 7
         },
@@ -3166,12 +3102,6 @@
           "nid": 90,
           "strtype": "OBJECT/Flags",
           "InheritedType": 1
-        },
-        {
-          "nid": 100,
-          "strtype": "OBJECT/Hidden",
-          "strval": "True",
-          "InheritedType": 2
         },
         {
           "nid": 110,
@@ -3247,7 +3177,7 @@
                 {
                   "nid": 10450,
                   "strtype": "_style/Text_Font",
-                  "strval": "robotoregular28",
+                  "strval": "robotoregular50",
                   "InheritedType": 3
                 }
               ],

@@ -63,6 +63,14 @@ void update(const Payload& p) {
     set_if_changed(ui_lbbarometerpressure,  "%u",   (unsigned)p.baro_pressure_kpa);
     set_if_changed(ui_lbambientetemperature,"%.0f", p.ambient_temp_c);
     set_if_changed(ui_lbboostpressure,      "%.1f", p.boost_pres);
+    set_if_changed(ui_lbengineload,         "%.0f", p.engine_load_pct);
+    set_if_changed(ui_lbthrottle,           "%.0f", p.throttle_pct);
+    set_if_changed(ui_lbcoolanttemp,        "%.0f", p.coolant_temp_c);
+    set_if_changed(ui_lboiltemp,            "%.0f", p.oil_temp_c);
+    set_if_changed(ui_lbatftemp,            "%.0f", p.at_atf_temp_c);
+    set_if_changed(ui_lbdpfsoot,            "%.0f", p.dpf_soot_load);
+    set_if_changed(ui_lbaltitude,           "%.0f", p.altitude_m);
+    set_if_changed(ui_lbvoltage,            "%.1f", p.module_voltage_v);
 
     // Two gear readouts on the new screen: current AT gear and AT target gear.
     // Both decode with the same gear table — swap the sources here if the labels
