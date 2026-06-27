@@ -20,4 +20,12 @@ void create();
 void update(const Payload& p);
 void set_server_status(bool online);
 
+// Push the GPS data onto the dedicated SquareLine labels.
+void set_gps_datetime(const char* text);   // UTC-3 date/time    -> ui_lbdatetime
+void set_gps_altitude(const char* text);   // altitude MSL (m)   -> ui_lbaltitude
+void set_gps_compass(const char* text);    // course (degrees)   -> ui_lbcompass
+
+// Trip time (HH:MM:SS since boot) -> ui_lbtriptime.
+void set_trip_time(const char* text);
+
 }  // namespace app_ui

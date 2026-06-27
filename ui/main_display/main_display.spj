@@ -57,7 +57,7 @@
     "separate_screen_save": true,
     "hierarchy_state_save": false,
     "reverse_event_order": false,
-    "backup_cnt": 116,
+    "backup_cnt": 139,
     "autosave_cnt": 0,
     "group_color_cnt": 1,
     "imagebytearrayprefix": "",
@@ -68,7 +68,7 @@
     "naming": "Name",
     "naming_force_lowercase": false,
     "naming_add_subcomponent": false,
-    "nidcnt": 1001266,
+    "nidcnt": 1001270,
     "BitDepth": 16,
     "Name": "main_display"
   }

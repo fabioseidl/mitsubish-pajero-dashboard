@@ -95,7 +95,7 @@
 #define LV_USE_ANIMIMG   0
 #define LV_USE_BTN       0
 #define LV_USE_BTNMATRIX 0
-#define LV_USE_BAR       0
+#define LV_USE_BAR       1
 #define LV_USE_SLIDER    0
 #define LV_USE_TABLE     0
 #define LV_USE_CHECKBOX  0

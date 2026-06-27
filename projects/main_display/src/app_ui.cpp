@@ -67,9 +67,9 @@ void update(const Payload& p) {
     set_if_changed(ui_lbthrottle,           "%.0f", p.throttle_pct);
     set_if_changed(ui_lbcoolanttemp,        "%.0f", p.coolant_temp_c);
     set_if_changed(ui_lboiltemp,            "%.0f", p.oil_temp_c);
-    set_if_changed(ui_lbatftemp,            "%.0f", p.at_atf_temp_c);
     set_if_changed(ui_lbdpfsoot,            "%.0f", p.dpf_soot_load);
-    set_if_changed(ui_lbaltitude,           "%.0f", p.altitude_m);
+    // ui_lbaltitude is driven by GPS altitude (set_gps_altitude), not the OBD
+    // barometric altitude — see set_gps_* below.
     set_if_changed(ui_lbvoltage,            "%.1f", p.module_voltage_v);
 
     // Two gear readouts on the new screen: current AT gear and AT target gear.
@@ -80,10 +80,27 @@ void update(const Payload& p) {
     set_if_changed(ui_lbgearposition,   "%s", gear_text(p.at_target_gear, gbuf, sizeof(gbuf)));
 }
 
-void set_server_status(bool /*online*/) {
-    // The SquareLine screen has no server-status widget yet. Kept so main.cpp's
-    // ServerConnectionMonitor wiring stays intact; add a status label in
-    // SquareLine and surface it here to get an ONLINE/OFFLINE indicator back.
+// Set a label from a pre-formatted string, skipping no-op writes (every redraw
+// on the single-framebuffer RGB panel is a potential tear).
+static void set_text(lv_obj_t* label, const char* text) {
+    if (label == nullptr || text == nullptr) return;
+    if (strcmp(lv_label_get_text(label), text) != 0) {
+        lv_label_set_text(label, text);
+    }
+}
+
+void set_gps_datetime(const char* text) { set_text(ui_lbdatetime, text); }
+void set_gps_altitude(const char* text) { set_text(ui_lbaltitude, text); }
+void set_gps_compass(const char* text)  { set_text(ui_lbcompass,  text); }
+void set_trip_time(const char* text)    { set_text(ui_lbtriptime, text); }
+
+void set_server_status(bool online) {
+    if (ui_lbserverstatus == nullptr) return;
+    set_text(ui_lbserverstatus, online ? "ONLINE" : "OFFLINE");
+    lv_obj_set_style_text_color(
+        ui_lbserverstatus,
+        online ? lv_color_hex(0x29CC5B) : lv_color_hex(0xE03B3B),
+        LV_PART_MAIN | LV_STATE_DEFAULT);
 }
 
 }  // namespace app_ui

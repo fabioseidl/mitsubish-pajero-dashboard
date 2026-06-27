@@ -28,6 +28,7 @@
 #include "server_connection_monitor.h"
 #include "security_config.h"   // PMK_KEY (gitignored — created from .example)
 #include "app_ui.h"            // SquareLine Studio UI bridge (src/ui/, LVGL 9 export)
+#include "gps.h"               // u-blox NEO-6M on UART2 (NMEA → serial console)
 
 // ─────────────────────────────────────────────────────────────
 //  Debug macro — routes to UART0 (Serial on this build)
@@ -274,6 +275,7 @@ static void app_init() {
   lv_display_set_buffers(disp, buf1, buf2, kBufBytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
 
   app_ui::create();
+  app_ui::set_server_status(false);   // start OFFLINE until the first payload
   DBG("[lvgl] SquareLine UI created (1024x600)");
 
   // ── ESP-NOW link to the server ──
@@ -309,17 +311,17 @@ void setup() {
   pcf8574_write(0x00);
   delay(100);
 
-  DBG("[DIAG] === PCF8574 bit scan (8 janelas de 2 s) ===");
-  DBG("[DIAG] Observe a tela: qual bit acende o backlight?");
+  // DBG("[DIAG] === PCF8574 bit scan (8 janelas de 2 s) ===");
+  // DBG("[DIAG] Observe a tela: qual bit acende o backlight?");
   for (uint8_t b = 0; b < 8; b++) {
     uint8_t val = (uint8_t)(1u << b);
-    DBG("[DIAG] bit %d → 0x%02X  HIGH agora...", b, val);
+    // DBG("[DIAG] bit %d → 0x%02X  HIGH agora...", b, val);
     pcf8574_write(val);
     pcf8574_write(0x00);
     // delay(300);
   }
   // Tenta tudo HIGH como fallback antes do lcd.init()
-  DBG("[DIAG] Scan completo. Escrevendo 0xFF (todos HIGH) antes do lcd.init().");
+  // DBG("[DIAG] Scan completo. Escrevendo 0xFF (todos HIGH) antes do lcd.init().");
   pcf8574_write(0xFF);
   // delay(200);
 
@@ -335,6 +337,9 @@ void setup() {
 
   // ── 4. LVGL dashboard + ESP-NOW link ──────────────────────
   app_init();
+
+  // ── 5. GPS (u-blox NEO-6M on UART2) ───────────────────────
+  gps::begin();
 
   DBG("[setup] complete");
 }
@@ -366,6 +371,25 @@ void loop() {
 
   // ── Connection timeout → fires OFFLINE if packets stop arriving ──
   g_conn_monitor.tick(t);
+
+  // ── GPS: drain UART2, parse NMEA, refresh status ~1 Hz (non-blocking) ──
+  gps::update(t);
+  if (gps::takeDirty()) {                        // LVGL calls: loop task only
+    app_ui::set_gps_datetime(gps::dateTimeText());
+    app_ui::set_gps_altitude(gps::altitudeText());
+    app_ui::set_gps_compass(gps::compassText());
+  }
+
+  // ── Trip time: HH:MM:SS since boot (resets on restart, like TRIP km) ──
+  static uint32_t last_trip_ms = 0;
+  if (t - last_trip_ms >= 1000) {
+    last_trip_ms = t;
+    uint32_t s = t / 1000;
+    char buf[12];
+    snprintf(buf, sizeof(buf), "%02u:%02u:%02u",
+             (unsigned)(s / 3600), (unsigned)((s % 3600) / 60), (unsigned)(s % 60));
+    app_ui::set_trip_time(buf);
+  }
 
   // ── Hold the backlight ON ──────────────────────────────────
   // The backlight is armed by the 0xFF PCF8574 write in setup(); re-assert it

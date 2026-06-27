@@ -14,6 +14,7 @@ extern "C" {
 extern void ui_main_screen_init(void);
 extern void ui_main_screen_destroy(void);
 extern lv_obj_t *ui_main;
+extern lv_obj_t *ui_background;
 extern lv_obj_t *ui_lbserverstatus;
 extern lv_obj_t *ui_lbtitlerpm;
 extern lv_obj_t *ui_lbtitleboost;
@@ -35,8 +36,8 @@ extern lv_obj_t *ui_lbcoolanttemp;
 extern lv_obj_t *ui_lbtitleoil;
 extern lv_obj_t *ui_lboiltemp;
 extern lv_obj_t *ui_lbtitleatf;
-extern lv_obj_t *ui_lbatftemp;
-extern lv_obj_t *ui_lbtitledpf;
+extern lv_obj_t *ui_lbcompass;
+extern lv_obj_t *ui_lbtitlecompass;
 extern lv_obj_t *ui_lbdpfsoot;
 extern lv_obj_t *ui_lbtitlealt;
 extern lv_obj_t *ui_lbaltitude;
@@ -52,8 +53,10 @@ extern lv_obj_t *ui_lbspeed;
 extern lv_obj_t *ui_lbrpm;
 extern lv_obj_t *ui_lbunitspeed;
 extern lv_obj_t *ui_lvtitlespeed;
+extern lv_obj_t *ui_lbdatetime;
+extern lv_obj_t *ui_lbtitletriptime;
+extern lv_obj_t *ui_lbtriptime;
 extern lv_obj_t *ui_lbbrand;
-extern lv_obj_t *ui_background;
 // CUSTOM VARIABLES
 
 #ifdef __cplusplus

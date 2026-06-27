@@ -124,6 +124,39 @@ This mapping matches the working LovyanGFX configuration and produces correct RG
 
 ---
 
+## 3.5 GPS on the "UART2" Connector (UART0 / GPIO44)
+
+The GPS (ATGM336H, NMEA 0183, 9600 8N1) is wired to the board's **"UART2"
+connector** (Header P1, pins: `3v3, gnd, rx, tx`). Per Waveshare's FAQ, **both
+the "UART1" and "UART2" connectors are physically the ESP32-S3 UART0 (GPIO43/44)**
+— a **UART-selection DIP switch** routes UART0 to the USB-C console *or* to the
+external connector, never both. We read GPIO44 with the UART2 *peripheral*
+(input-only), so the GPS fix is rendered on the **LCD** (the USB console is gone
+while the switch is on UART2).
+
+| Signal | GPIO    | Direction      | Notes                                   |
+| ------ | ------- | -------------- | --------------------------------------- |
+| RX     | GPIO 44 | ESP32-S3 ← GPS | UART0 RXD; GPS **TX** wires to conn. `rx` |
+| —      | GPIO 43 | —              | UART0 TXD (shared w/ console) — not driven |
+| Baud   | 9600    | —              | ATGM336H default, 8N1, no flow          |
+
+> **Workflow:** flash with the switch on **USB** (the CH343 download circuit
+> needs UART0), then flip the switch to **UART2** to connect the GPS. The board
+> stays powered over USB; the running firmware reads GPIO44 and updates the LCD.
+> Flipping to UART2 drops the PC serial console — that is expected and
+> unavoidable (shared UART0).
+>
+> **Power:** the ATGM336H is a 3.3 V module — VCC from the connector's `3v3`,
+> share GND.
+>
+> **Other connectors are not plain TTL UART:** `GPIO15/16` = RS-485 transceiver,
+> `GPIO19/20` = CAN transceiver. The only free native GPIOs (6/11/12/13) aren't
+> wired to this connector.
+>
+> Pins defined in `src/gps.h` (`GPS_RX_PIN`) — single source of truth.
+
+---
+
 # 4. PSRAM Configuration
 
 The 1024×600 RGB565 framebuffer requires approximately 1.2 MB per frame.
