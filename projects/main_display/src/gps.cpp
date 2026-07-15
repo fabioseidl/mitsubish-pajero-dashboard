@@ -173,7 +173,7 @@ void refreshStatus(uint32_t now_ms) {
                (!everRx ? "  [NO DATA]" : (stale ? "  [STALLED]" : "")));
 
   statusDirty = true;
-  Serial.println(statusBuf);   // visible if a console is attached (switch on USB)
+  // Serial.println(statusBuf);   // console log muted — still shown on the LCD label
 }
 
 }  // namespace
@@ -186,8 +186,8 @@ void begin() {
   // Receive-only (TX unmapped): never drive the shared UART0 TX (GPIO43).
   gpsSerial.end();
   gpsSerial.begin(GPS_BAUD, SERIAL_8N1, activeRxPin, /*tx=*/-1);
-  Serial.printf("[gps] UART%d init  RX=GPIO%d  %d 8N1 (rx-only)\n",
-                GPS_UART_NUM, activeRxPin, GPS_BAUD);
+  // Serial.printf("[gps] UART%d init  RX=GPIO%d  %d 8N1 (rx-only)\n",
+  //               GPS_UART_NUM, activeRxPin, GPS_BAUD);   // console log muted
 }
 
 void update(uint32_t now_ms) {

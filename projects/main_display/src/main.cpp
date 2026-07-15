@@ -29,6 +29,8 @@
 #include "security_config.h"   // PMK_KEY (gitignored — created from .example)
 #include "app_ui.h"            // SquareLine Studio UI bridge (src/ui/, LVGL 9 export)
 #include "gps.h"               // u-blox NEO-6M on UART2 (NMEA → serial console)
+#include "mpu6050.h"           // MPU6050 6-axis IMU on the shared I2C bus (0x68)
+#include "aht20_bmp280.h"      // AHT20 (0x38) + BMP280 (0x76/0x77) on the shared I2C bus
 
 // ─────────────────────────────────────────────────────────────
 //  Debug macro — routes to UART0 (Serial on this build)
@@ -341,6 +343,14 @@ void setup() {
   // ── 5. GPS (u-blox NEO-6M on UART2) ───────────────────────
   gps::begin();
 
+  // ── 6. MPU6050 IMU (shared I2C bus, 0x68) ─────────────────
+  // Uses the Wire bus already brought up in step 1 — non-fatal if absent.
+  mpu6050::begin();
+
+  // ── 7. AHT20 + BMP280 env sensor (shared I2C bus, 0x38 / 0x76) ──
+  // Uses the Wire bus already brought up in step 1 — non-fatal per chip.
+  aht20_bmp280::begin();
+
   DBG("[setup] complete");
 }
 
@@ -379,6 +389,12 @@ void loop() {
     app_ui::set_gps_altitude(gps::altitudeText());
     app_ui::set_gps_compass(gps::compassText());
   }
+
+  // ── MPU6050: read accel/gyro/temp, print every 500 ms (non-blocking) ──
+  mpu6050::update(t);
+
+  // ── AHT20 + BMP280: read temp/humidity/pressure, print every 500 ms (non-blocking) ──
+  aht20_bmp280::update(t);
 
   // ── Trip time: HH:MM:SS since boot (resets on restart, like TRIP km) ──
   static uint32_t last_trip_ms = 0;
