@@ -28,4 +28,7 @@ void set_gps_compass(const char* text);    // course (degrees)   -> ui_lbcompass
 // Trip time (HH:MM:SS since boot) -> ui_lbtriptime.
 void set_trip_time(const char* text);
 
+// AHT20 ambient temperature (pre-formatted "XX.X °C") -> ui_lbambienttemperature.
+void set_ambient_temperature(const char* text);
+
 }  // namespace app_ui

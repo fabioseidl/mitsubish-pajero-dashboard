@@ -5,7 +5,7 @@
 
 #include "ui.h"
 
-lv_obj_t *ui_main = NULL;lv_obj_t *ui_background = NULL;lv_obj_t *ui_lbserverstatus = NULL;lv_obj_t *ui_lbtitlerpm = NULL;lv_obj_t *ui_lbtitleboost = NULL;lv_obj_t *ui_lbboostpressure = NULL;lv_obj_t *ui_lbtitleload = NULL;lv_obj_t *ui_lbengineload = NULL;lv_obj_t *ui_lbtitlethr = NULL;lv_obj_t *ui_lbthrottle = NULL;lv_obj_t *ui_lbtitlefuel = NULL;lv_obj_t *ui_lbfuelrate = NULL;lv_obj_t *ui_lbtitleecon = NULL;lv_obj_t *ui_lbconsumptionkml = NULL;lv_obj_t *ui_lbtitleavg = NULL;lv_obj_t *ui_lbavgconsumptionkml = NULL;lv_obj_t *ui_lbtitletrip = NULL;lv_obj_t *ui_lbdistancekm = NULL;lv_obj_t *ui_lbtitlecool = NULL;lv_obj_t *ui_lbcoolanttemp = NULL;lv_obj_t *ui_lbtitleoil = NULL;lv_obj_t *ui_lboiltemp = NULL;lv_obj_t *ui_lbtitleatf = NULL;lv_obj_t *ui_lbcompass = NULL;lv_obj_t *ui_lbtitlecompass = NULL;lv_obj_t *ui_lbdpfsoot = NULL;lv_obj_t *ui_lbtitlealt = NULL;lv_obj_t *ui_lbaltitude = NULL;lv_obj_t *ui_lbtitlebaro = NULL;lv_obj_t *ui_lbbarometerpressure = NULL;lv_obj_t *ui_lbtitleamb = NULL;lv_obj_t *ui_lbambientetemperature = NULL;lv_obj_t *ui_lbtitlebatt = NULL;lv_obj_t *ui_lbvoltage = NULL;lv_obj_t *ui_lbatgearposition = NULL;lv_obj_t *ui_lbgearposition = NULL;lv_obj_t *ui_lbspeed = NULL;lv_obj_t *ui_lbrpm = NULL;lv_obj_t *ui_lbunitspeed = NULL;lv_obj_t *ui_lvtitlespeed = NULL;lv_obj_t *ui_lbdatetime = NULL;lv_obj_t *ui_lbtitletriptime = NULL;lv_obj_t *ui_lbtriptime = NULL;lv_obj_t *ui_lbbrand = NULL;
+lv_obj_t *ui_main = NULL;lv_obj_t *ui_background = NULL;lv_obj_t *ui_lbserverstatus = NULL;lv_obj_t *ui_lbtitlerpm = NULL;lv_obj_t *ui_lbtitleboost = NULL;lv_obj_t *ui_lbboostpressure = NULL;lv_obj_t *ui_lbtitleload = NULL;lv_obj_t *ui_lbengineload = NULL;lv_obj_t *ui_lbtitlethr = NULL;lv_obj_t *ui_lbthrottle = NULL;lv_obj_t *ui_lbtitlefuel = NULL;lv_obj_t *ui_lbfuelrate = NULL;lv_obj_t *ui_lbtitleecon = NULL;lv_obj_t *ui_lbconsumptionkml = NULL;lv_obj_t *ui_lbtitleavg = NULL;lv_obj_t *ui_lbavgconsumptionkml = NULL;lv_obj_t *ui_lbtitletrip = NULL;lv_obj_t *ui_lbdistancekm = NULL;lv_obj_t *ui_lbtitlecool = NULL;lv_obj_t *ui_lbcoolanttemp = NULL;lv_obj_t *ui_lbtitleoil = NULL;lv_obj_t *ui_lboiltemp = NULL;lv_obj_t *ui_lbtitleatf = NULL;lv_obj_t *ui_lbcompass = NULL;lv_obj_t *ui_lbtitlecompass = NULL;lv_obj_t *ui_lbdpfsoot = NULL;lv_obj_t *ui_lbaltitude = NULL;lv_obj_t *ui_lbtitlebaro = NULL;lv_obj_t *ui_lbbarometerpressure = NULL;lv_obj_t *ui_lbtitleamb = NULL;lv_obj_t *ui_lbambientetemperature = NULL;lv_obj_t *ui_lbvoltage = NULL;lv_obj_t *ui_lbatgearposition = NULL;lv_obj_t *ui_lbgearposition = NULL;lv_obj_t *ui_lbrpm = NULL;lv_obj_t *ui_lbdatetime = NULL;lv_obj_t *ui_lbtitletriptime = NULL;lv_obj_t *ui_lbtriptime = NULL;lv_obj_t *ui_lbbrand = NULL;lv_obj_t *ui_lbtitlebatteryvoltage = NULL;lv_obj_t *ui_lbambienttemperature = NULL;lv_obj_t *ui_lbtitlebatteryvoltage1 = NULL;lv_obj_t *ui_iconaltitude = NULL;lv_obj_t *ui_icontemperature = NULL;lv_obj_t *ui_icongpsarrow = NULL;
 // event funtions
 
 // build funtions
@@ -28,11 +28,11 @@ lv_obj_remove_flag( ui_background, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
 ui_lbserverstatus = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbserverstatus, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbserverstatus, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbserverstatus, 366 );
-lv_obj_set_y( ui_lbserverstatus, -274 );
+lv_obj_set_x( ui_lbserverstatus, 482 );
+lv_obj_set_y( ui_lbserverstatus, -303 );
 lv_obj_set_align( ui_lbserverstatus, LV_ALIGN_CENTER );
-lv_label_set_text(ui_lbserverstatus,"--");
-lv_obj_set_style_text_font(ui_lbserverstatus, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_label_set_text(ui_lbserverstatus,".");
+lv_obj_set_style_text_font(ui_lbserverstatus, &ui_font_robotobold120, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_lbtitlerpm = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbtitlerpm, LV_SIZE_CONTENT);  /// 1
@@ -175,8 +175,8 @@ lv_obj_set_style_text_font(ui_lbdistancekm, &ui_font_robotoregular50, LV_PART_MA
 ui_lbtitlecool = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbtitlecool, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbtitlecool, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbtitlecool, -382 );
-lv_obj_set_y( ui_lbtitlecool, 111 );
+lv_obj_set_x( ui_lbtitlecool, 382 );
+lv_obj_set_y( ui_lbtitlecool, 213 );
 lv_obj_set_align( ui_lbtitlecool, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbtitlecool,"COOLANT C");
 lv_obj_set_style_text_font(ui_lbtitlecool, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
@@ -184,8 +184,8 @@ lv_obj_set_style_text_font(ui_lbtitlecool, &ui_font_robotoregular20, LV_PART_MAI
 ui_lbcoolanttemp = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbcoolanttemp, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbcoolanttemp, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbcoolanttemp, -383 );
-lv_obj_set_y( ui_lbcoolanttemp, 160 );
+lv_obj_set_x( ui_lbcoolanttemp, 376 );
+lv_obj_set_y( ui_lbcoolanttemp, 260 );
 lv_obj_set_align( ui_lbcoolanttemp, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbcoolanttemp,"0");
 lv_obj_set_style_text_font(ui_lbcoolanttemp, &ui_font_robotoregular50, LV_PART_MAIN| LV_STATE_DEFAULT);
@@ -221,11 +221,11 @@ lv_obj_set_style_text_font(ui_lbtitleatf, &ui_font_robotoregular20, LV_PART_MAIN
 ui_lbcompass = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbcompass, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbcompass, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbcompass, 380 );
-lv_obj_set_y( ui_lbcompass, 160 );
+lv_obj_set_x( ui_lbcompass, -254 );
+lv_obj_set_y( ui_lbcompass, -61 );
 lv_obj_set_align( ui_lbcompass, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbcompass,"0");
-lv_obj_set_style_text_font(ui_lbcompass, &ui_font_robotoregular50, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_lbcompass, &ui_font_robotoregular28, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_lbtitlecompass = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbtitlecompass, LV_SIZE_CONTENT);  /// 1
@@ -246,23 +246,14 @@ lv_label_set_text(ui_lbdpfsoot,"12");
 lv_obj_add_flag( ui_lbdpfsoot, LV_OBJ_FLAG_HIDDEN );   /// Flags
 lv_obj_set_style_text_font(ui_lbdpfsoot, &ui_font_robotoregular28, LV_PART_MAIN| LV_STATE_DEFAULT);
 
-ui_lbtitlealt = lv_label_create(ui_main);
-lv_obj_set_width( ui_lbtitlealt, LV_SIZE_CONTENT);  /// 1
-lv_obj_set_height( ui_lbtitlealt, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbtitlealt, 128 );
-lv_obj_set_y( ui_lbtitlealt, 109 );
-lv_obj_set_align( ui_lbtitlealt, LV_ALIGN_CENTER );
-lv_label_set_text(ui_lbtitlealt,"ALT m");
-lv_obj_set_style_text_font(ui_lbtitlealt, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
-
 ui_lbaltitude = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbaltitude, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbaltitude, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbaltitude, 129 );
-lv_obj_set_y( ui_lbaltitude, 160 );
+lv_obj_set_x( ui_lbaltitude, 144 );
+lv_obj_set_y( ui_lbaltitude, -272 );
 lv_obj_set_align( ui_lbaltitude, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbaltitude,"0");
-lv_obj_set_style_text_font(ui_lbaltitude, &ui_font_robotoregular50, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_lbaltitude, &ui_font_robotoregular28, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_lbtitlebaro = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbtitlebaro, LV_SIZE_CONTENT);  /// 1
@@ -304,23 +295,14 @@ lv_label_set_text(ui_lbambientetemperature,"21");
 lv_obj_add_flag( ui_lbambientetemperature, LV_OBJ_FLAG_HIDDEN );   /// Flags
 lv_obj_set_style_text_font(ui_lbambientetemperature, &ui_font_robotoregular28, LV_PART_MAIN| LV_STATE_DEFAULT);
 
-ui_lbtitlebatt = lv_label_create(ui_main);
-lv_obj_set_width( ui_lbtitlebatt, LV_SIZE_CONTENT);  /// 1
-lv_obj_set_height( ui_lbtitlebatt, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbtitlebatt, 493 );
-lv_obj_set_y( ui_lbtitlebatt, -271 );
-lv_obj_set_align( ui_lbtitlebatt, LV_ALIGN_CENTER );
-lv_label_set_text(ui_lbtitlebatt,"v");
-lv_obj_set_style_text_font(ui_lbtitlebatt, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
-
 ui_lbvoltage = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbvoltage, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbvoltage, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbvoltage, 454 );
-lv_obj_set_y( ui_lbvoltage, -274 );
+lv_obj_set_x( ui_lbvoltage, 128 );
+lv_obj_set_y( ui_lbvoltage, 261 );
 lv_obj_set_align( ui_lbvoltage, LV_ALIGN_CENTER );
-lv_label_set_text(ui_lbvoltage,"14.2");
-lv_obj_set_style_text_font(ui_lbvoltage, &ui_font_robotoregular28, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_label_set_text(ui_lbvoltage,"0");
+lv_obj_set_style_text_font(ui_lbvoltage, &ui_font_robotoregular50, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_lbatgearposition = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbatgearposition, LV_SIZE_CONTENT);  /// 1
@@ -340,16 +322,6 @@ lv_obj_set_align( ui_lbgearposition, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbgearposition,"-");
 lv_obj_set_style_text_font(ui_lbgearposition, &ui_font_robotoregular50, LV_PART_MAIN| LV_STATE_DEFAULT);
 
-ui_lbspeed = lv_label_create(ui_main);
-lv_obj_set_width( ui_lbspeed, LV_SIZE_CONTENT);  /// 1
-lv_obj_set_height( ui_lbspeed, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbspeed, -255 );
-lv_obj_set_y( ui_lbspeed, -128 );
-lv_obj_set_align( ui_lbspeed, LV_ALIGN_CENTER );
-lv_label_set_text(ui_lbspeed,"0");
-lv_obj_set_style_text_align(ui_lbspeed, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN| LV_STATE_DEFAULT);
-lv_obj_set_style_text_font(ui_lbspeed, &ui_font_robotobold120, LV_PART_MAIN| LV_STATE_DEFAULT);
-
 ui_lbrpm = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbrpm, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbrpm, LV_SIZE_CONTENT);   /// 1
@@ -360,41 +332,21 @@ lv_label_set_text(ui_lbrpm,"0");
 lv_obj_set_style_text_align(ui_lbrpm, LV_TEXT_ALIGN_AUTO, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_font(ui_lbrpm, &ui_font_robotobold60, LV_PART_MAIN| LV_STATE_DEFAULT);
 
-ui_lbunitspeed = lv_label_create(ui_main);
-lv_obj_set_width( ui_lbunitspeed, LV_SIZE_CONTENT);  /// 1
-lv_obj_set_height( ui_lbunitspeed, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbunitspeed, -255 );
-lv_obj_set_y( ui_lbunitspeed, -62 );
-lv_obj_set_align( ui_lbunitspeed, LV_ALIGN_CENTER );
-lv_label_set_text(ui_lbunitspeed,"km/h");
-ui_object_set_themeable_style_property(ui_lbunitspeed, LV_PART_MAIN| LV_STATE_DEFAULT, LV_STYLE_TEXT_COLOR, _ui_theme_color_secondarycolor);
-ui_object_set_themeable_style_property(ui_lbunitspeed, LV_PART_MAIN| LV_STATE_DEFAULT, LV_STYLE_TEXT_OPA, _ui_theme_alpha_secondarycolor);
-lv_obj_set_style_text_font(ui_lbunitspeed, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
-
-ui_lvtitlespeed = lv_label_create(ui_main);
-lv_obj_set_width( ui_lvtitlespeed, LV_SIZE_CONTENT);  /// 1
-lv_obj_set_height( ui_lvtitlespeed, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lvtitlespeed, -461 );
-lv_obj_set_y( ui_lvtitlespeed, -181 );
-lv_obj_set_align( ui_lvtitlespeed, LV_ALIGN_CENTER );
-lv_label_set_text(ui_lvtitlespeed,"SPEED");
-lv_obj_set_style_text_font(ui_lvtitlespeed, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
-
 ui_lbdatetime = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbdatetime, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbdatetime, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbdatetime, -408 );
-lv_obj_set_y( ui_lbdatetime, -228 );
+lv_obj_set_x( ui_lbdatetime, 394 );
+lv_obj_set_y( ui_lbdatetime, -273 );
 lv_obj_set_align( ui_lbdatetime, LV_ALIGN_CENTER );
-lv_label_set_text(ui_lbdatetime,"1999-01-01 00:00:00");
+lv_label_set_text(ui_lbdatetime,"00:00");
 lv_obj_set_style_text_align(ui_lbdatetime, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN| LV_STATE_DEFAULT);
-lv_obj_set_style_text_font(ui_lbdatetime, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_lbdatetime, &ui_font_robotoregular28, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_lbtitletriptime = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbtitletriptime, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbtitletriptime, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbtitletriptime, -129 );
-lv_obj_set_y( ui_lbtitletriptime, 213 );
+lv_obj_set_x( ui_lbtitletriptime, -381 );
+lv_obj_set_y( ui_lbtitletriptime, 110 );
 lv_obj_set_align( ui_lbtitletriptime, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbtitletriptime,"TRIP Time");
 lv_obj_set_style_text_font(ui_lbtitletriptime, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
@@ -402,8 +354,8 @@ lv_obj_set_style_text_font(ui_lbtitletriptime, &ui_font_robotoregular20, LV_PART
 ui_lbtriptime = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbtriptime, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbtriptime, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbtriptime, -128 );
-lv_obj_set_y( ui_lbtriptime, 260 );
+lv_obj_set_x( ui_lbtriptime, -378 );
+lv_obj_set_y( ui_lbtriptime, 156 );
 lv_obj_set_align( ui_lbtriptime, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbtriptime,"0");
 lv_obj_set_style_text_font(ui_lbtriptime, &ui_font_robotoregular50, LV_PART_MAIN| LV_STATE_DEFAULT);
@@ -411,11 +363,69 @@ lv_obj_set_style_text_font(ui_lbtriptime, &ui_font_robotoregular50, LV_PART_MAIN
 ui_lbbrand = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbbrand, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbbrand, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbbrand, -360 );
-lv_obj_set_y( ui_lbbrand, -271 );
+lv_obj_set_x( ui_lbbrand, -333 );
+lv_obj_set_y( ui_lbbrand, -272 );
 lv_obj_set_align( ui_lbbrand, LV_ALIGN_CENTER );
-lv_label_set_text(ui_lbbrand,"PAJERO IV 3.2 DI-D");
+lv_label_set_text(ui_lbbrand,"PAJERO DAKAR 3.2 DI-D");
 lv_obj_set_style_text_font(ui_lbbrand, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_lbtitlebatteryvoltage = lv_label_create(ui_main);
+lv_obj_set_width( ui_lbtitlebatteryvoltage, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_lbtitlebatteryvoltage, LV_SIZE_CONTENT);   /// 1
+lv_obj_set_x( ui_lbtitlebatteryvoltage, 132 );
+lv_obj_set_y( ui_lbtitlebatteryvoltage, 213 );
+lv_obj_set_align( ui_lbtitlebatteryvoltage, LV_ALIGN_CENTER );
+lv_label_set_text(ui_lbtitlebatteryvoltage,"BATTERY");
+lv_obj_set_style_text_font(ui_lbtitlebatteryvoltage, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_lbambienttemperature = lv_label_create(ui_main);
+lv_obj_set_width( ui_lbambienttemperature, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_lbambienttemperature, LV_SIZE_CONTENT);   /// 1
+lv_obj_set_x( ui_lbambienttemperature, 282 );
+lv_obj_set_y( ui_lbambienttemperature, -272 );
+lv_obj_set_align( ui_lbambienttemperature, LV_ALIGN_CENTER );
+lv_label_set_text(ui_lbambienttemperature,"0 C");
+lv_obj_set_style_text_align(ui_lbambienttemperature, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_lbambienttemperature, &ui_font_robotoregular28, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_lbtitlebatteryvoltage1 = lv_label_create(ui_main);
+lv_obj_set_width( ui_lbtitlebatteryvoltage1, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_lbtitlebatteryvoltage1, LV_SIZE_CONTENT);   /// 1
+lv_obj_set_x( ui_lbtitlebatteryvoltage1, -119 );
+lv_obj_set_y( ui_lbtitlebatteryvoltage1, 213 );
+lv_obj_set_align( ui_lbtitlebatteryvoltage1, LV_ALIGN_CENTER );
+lv_label_set_text(ui_lbtitlebatteryvoltage1,"BATTERY");
+lv_obj_set_style_text_font(ui_lbtitlebatteryvoltage1, &ui_font_robotoregular20, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_iconaltitude = lv_image_create(ui_main);
+lv_image_set_src(ui_iconaltitude, &ui_img_icon_altitude_png);
+lv_obj_set_width( ui_iconaltitude, LV_SIZE_CONTENT);  /// 50
+lv_obj_set_height( ui_iconaltitude, LV_SIZE_CONTENT);   /// 50
+lv_obj_set_x( ui_iconaltitude, 65 );
+lv_obj_set_y( ui_iconaltitude, -274 );
+lv_obj_set_align( ui_iconaltitude, LV_ALIGN_CENTER );
+lv_obj_add_flag( ui_iconaltitude, LV_OBJ_FLAG_CLICKABLE );   /// Flags
+lv_obj_remove_flag( ui_iconaltitude, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+
+ui_icontemperature = lv_image_create(ui_main);
+lv_image_set_src(ui_icontemperature, &ui_img_icon_temperature_png);
+lv_obj_set_width( ui_icontemperature, LV_SIZE_CONTENT);  /// 32
+lv_obj_set_height( ui_icontemperature, LV_SIZE_CONTENT);   /// 32
+lv_obj_set_x( ui_icontemperature, 195 );
+lv_obj_set_y( ui_icontemperature, -273 );
+lv_obj_set_align( ui_icontemperature, LV_ALIGN_CENTER );
+lv_obj_add_flag( ui_icontemperature, LV_OBJ_FLAG_CLICKABLE );   /// Flags
+lv_obj_remove_flag( ui_icontemperature, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+
+ui_icongpsarrow = lv_image_create(ui_main);
+lv_image_set_src(ui_icongpsarrow, &ui_img_icon_gps_arrowpng_png);
+lv_obj_set_width( ui_icongpsarrow, LV_SIZE_CONTENT);  /// 80
+lv_obj_set_height( ui_icongpsarrow, LV_SIZE_CONTENT);   /// 80
+lv_obj_set_x( ui_icongpsarrow, -371 );
+lv_obj_set_y( ui_icongpsarrow, -119 );
+lv_obj_set_align( ui_icongpsarrow, LV_ALIGN_CENTER );
+lv_obj_add_flag( ui_icongpsarrow, LV_OBJ_FLAG_CLICKABLE );   /// Flags
+lv_obj_remove_flag( ui_icongpsarrow, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
 
 }
 
@@ -450,23 +460,24 @@ ui_lbtitleatf= NULL;
 ui_lbcompass= NULL;
 ui_lbtitlecompass= NULL;
 ui_lbdpfsoot= NULL;
-ui_lbtitlealt= NULL;
 ui_lbaltitude= NULL;
 ui_lbtitlebaro= NULL;
 ui_lbbarometerpressure= NULL;
 ui_lbtitleamb= NULL;
 ui_lbambientetemperature= NULL;
-ui_lbtitlebatt= NULL;
 ui_lbvoltage= NULL;
 ui_lbatgearposition= NULL;
 ui_lbgearposition= NULL;
-ui_lbspeed= NULL;
 ui_lbrpm= NULL;
-ui_lbunitspeed= NULL;
-ui_lvtitlespeed= NULL;
 ui_lbdatetime= NULL;
 ui_lbtitletriptime= NULL;
 ui_lbtriptime= NULL;
 ui_lbbrand= NULL;
+ui_lbtitlebatteryvoltage= NULL;
+ui_lbambienttemperature= NULL;
+ui_lbtitlebatteryvoltage1= NULL;
+ui_iconaltitude= NULL;
+ui_icontemperature= NULL;
+ui_icongpsarrow= NULL;
 
 }

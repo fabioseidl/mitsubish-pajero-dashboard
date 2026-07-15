@@ -396,6 +396,19 @@ void loop() {
   // ── AHT20 + BMP280: read temp/humidity/pressure, print every 500 ms (non-blocking) ──
   aht20_bmp280::update(t);
 
+  // ── Ambient temp (AHT20) → dashboard label, refresh ~1 Hz ──
+  static uint32_t last_amb_ms = 0;
+  if (t - last_amb_ms >= 1000) {
+    last_amb_ms = t;
+    float tc = aht20_bmp280::ambientTemperatureC();
+    char buf[12];
+    if (isnan(tc)) snprintf(buf, sizeof(buf), "--");
+    else           snprintf(buf, sizeof(buf), "%.1f C", tc);  // "XX.X C" — ° glyph
+                                                              // not in ui_font_robotoregular28
+
+    app_ui::set_ambient_temperature(buf);
+  }
+
   // ── Trip time: HH:MM:SS since boot (resets on restart, like TRIP km) ──
   static uint32_t last_trip_ms = 0;
   if (t - last_trip_ms >= 1000) {

@@ -39,24 +39,25 @@ extern lv_obj_t *ui_lbtitleatf;
 extern lv_obj_t *ui_lbcompass;
 extern lv_obj_t *ui_lbtitlecompass;
 extern lv_obj_t *ui_lbdpfsoot;
-extern lv_obj_t *ui_lbtitlealt;
 extern lv_obj_t *ui_lbaltitude;
 extern lv_obj_t *ui_lbtitlebaro;
 extern lv_obj_t *ui_lbbarometerpressure;
 extern lv_obj_t *ui_lbtitleamb;
 extern lv_obj_t *ui_lbambientetemperature;
-extern lv_obj_t *ui_lbtitlebatt;
 extern lv_obj_t *ui_lbvoltage;
 extern lv_obj_t *ui_lbatgearposition;
 extern lv_obj_t *ui_lbgearposition;
-extern lv_obj_t *ui_lbspeed;
 extern lv_obj_t *ui_lbrpm;
-extern lv_obj_t *ui_lbunitspeed;
-extern lv_obj_t *ui_lvtitlespeed;
 extern lv_obj_t *ui_lbdatetime;
 extern lv_obj_t *ui_lbtitletriptime;
 extern lv_obj_t *ui_lbtriptime;
 extern lv_obj_t *ui_lbbrand;
+extern lv_obj_t *ui_lbtitlebatteryvoltage;
+extern lv_obj_t *ui_lbambienttemperature;
+extern lv_obj_t *ui_lbtitlebatteryvoltage1;
+extern lv_obj_t *ui_iconaltitude;
+extern lv_obj_t *ui_icontemperature;
+extern lv_obj_t *ui_icongpsarrow;
 // CUSTOM VARIABLES
 
 #ifdef __cplusplus

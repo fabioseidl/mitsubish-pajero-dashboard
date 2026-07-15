@@ -53,4 +53,8 @@ void update(uint32_t now_ms);
 bool aht20Ready();
 bool bmp280Ready();
 
+// Latest AHT20 ambient temperature in °C (NAN until the first read, or if the
+// AHT20 is absent). Refreshed by update() at the module's read cadence.
+float ambientTemperatureC();
+
 }  // namespace aht20_bmp280

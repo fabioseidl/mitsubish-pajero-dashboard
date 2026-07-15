@@ -51,13 +51,16 @@ void create() {
 }
 
 void update(const Payload& p) {
-    if (ui_lbspeed == nullptr) return;                 // create() not called yet
+    if (ui_lbrpm == nullptr) return;                   // create() not called yet
     if (!(p.flags & PAYLOAD_FLAG_DATA_VALID)) return;
 
-    set_if_changed(ui_lbspeed,              "%u",   (unsigned)p.speed_kmh);
     set_if_changed(ui_lbrpm,                "%u",   (unsigned)p.rpm);
     set_if_changed(ui_lbfuelrate,           "%.1f", p.fuel_rate_l_per_h);
-    set_if_changed(ui_lbconsumptionkml,     "%.1f", p.consumption_km_per_l);
+    // Economy readout is capped at 99 km/l — anything higher shows "99+".
+    if (p.consumption_km_per_l > 99.0f)
+        set_if_changed(ui_lbconsumptionkml, "99+");
+    else
+        set_if_changed(ui_lbconsumptionkml, "%.1f", p.consumption_km_per_l);
     set_if_changed(ui_lbavgconsumptionkml,  "%.1f", p.avg_consumption_km_per_l);
     set_if_changed(ui_lbdistancekm,         "%.1f", p.distance_km);
     set_if_changed(ui_lbbarometerpressure,  "%u",   (unsigned)p.baro_pressure_kpa);
@@ -89,14 +92,24 @@ static void set_text(lv_obj_t* label, const char* text) {
     }
 }
 
-void set_gps_datetime(const char* text) { set_text(ui_lbdatetime, text); }
+void set_gps_datetime(const char* text) {
+    // GPS supplies "YYYY-MM-DD HH:MM:SS" (UTC-3); the label shows only "HH:MM".
+    char hhmm[6] = "--";
+    if (text != nullptr && strlen(text) >= 16) {
+        memcpy(hhmm, text + 11, 5);   // chars 11..15 = "HH:MM"
+        hhmm[5] = '\0';
+    }
+    set_text(ui_lbdatetime, hhmm);
+}
 void set_gps_altitude(const char* text) { set_text(ui_lbaltitude, text); }
 void set_gps_compass(const char* text)  { set_text(ui_lbcompass,  text); }
 void set_trip_time(const char* text)    { set_text(ui_lbtriptime, text); }
+void set_ambient_temperature(const char* text) { set_text(ui_lbambienttemperature, text); }
 
 void set_server_status(bool online) {
     if (ui_lbserverstatus == nullptr) return;
-    set_text(ui_lbserverstatus, online ? "ONLINE" : "OFFLINE");
+    // Only recolour the status indicator (its text is left as designed):
+    // green when ONLINE, red when OFFLINE.
     lv_obj_set_style_text_color(
         ui_lbserverstatus,
         online ? lv_color_hex(0x29CC5B) : lv_color_hex(0xE03B3B),
