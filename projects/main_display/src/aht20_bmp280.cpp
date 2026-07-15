@@ -77,18 +77,18 @@ void update(uint32_t now_ms) {
   lastReadMs = now_ms;
 
   // AHT20: temperature (°C) + relative humidity (%RH).
-  if (ahtReady) {
-    sensors_event_t humidity, temp;
-    aht.getEvent(&humidity, &temp);
-    Serial.printf("[aht20_bmp280] AHT20  temp=%.2fC  humidity=%.1f%%RH\n",
-                  temp.temperature, humidity.relative_humidity);
-  }
+  // if (ahtReady) {
+  //   sensors_event_t humidity, temp;
+  //   aht.getEvent(&humidity, &temp);
+  //   Serial.printf("[aht20_bmp280] AHT20  temp=%.2fC  humidity=%.1f%%RH\n",
+  //                 temp.temperature, humidity.relative_humidity);
+  // }
 
   // BMP280: temperature (°C) + pressure (Pa → hPa).
-  if (bmpReady) {
-    Serial.printf("[aht20_bmp280] BMP280 temp=%.2fC  pressure=%.2fhPa\n",
-                  bmp.readTemperature(), bmp.readPressure() * kPaToHpa);
-  }
+  // if (bmpReady) {
+  //   Serial.printf("[aht20_bmp280] BMP280 temp=%.2fC  pressure=%.2fhPa\n",
+  //                 bmp.readTemperature(), bmp.readPressure() * kPaToHpa);
+  // }
 }
 
 bool aht20Ready()  { return ahtReady; }

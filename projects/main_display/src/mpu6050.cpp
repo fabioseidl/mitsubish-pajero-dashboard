@@ -57,15 +57,15 @@ void update(uint32_t now_ms) {
   lastReadMs = now_ms;
 
   // Driver units: accel in g, gyro in deg/s, temp in °C. Convert to SI below.
-  xyzFloat g    = sensor.getGValues();
-  xyzFloat gyr  = sensor.getGyrValues();
-  float    tempC = sensor.getTemperature();
+  // xyzFloat g    = sensor.getGValues();
+  // xyzFloat gyr  = sensor.getGyrValues();
+  // float    tempC = sensor.getTemperature();
 
-  Serial.printf("[mpu6050] accel[m/s^2] x=%.2f y=%.2f z=%.2f  "
-                "gyro[rad/s] x=%.2f y=%.2f z=%.2f  temp=%.2fC\n",
-                g.x * kGravityMs2, g.y * kGravityMs2, g.z * kGravityMs2,
-                gyr.x * kDegToRad, gyr.y * kDegToRad, gyr.z * kDegToRad,
-                tempC);
+  // Serial.printf("[mpu6050] accel[m/s^2] x=%.2f y=%.2f z=%.2f  "
+  //               "gyro[rad/s] x=%.2f y=%.2f z=%.2f  temp=%.2fC\n",
+  //               g.x * kGravityMs2, g.y * kGravityMs2, g.z * kGravityMs2,
+  //               gyr.x * kDegToRad, gyr.y * kDegToRad, gyr.z * kDegToRad,
+  //               tempC);
 }
 
 bool isReady() { return ready; }
