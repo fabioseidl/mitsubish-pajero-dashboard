@@ -440,7 +440,7 @@ lv_obj_set_style_text_font(ui_lbaceleration, &ui_font_robotoregular50, LV_PART_M
 ui_lbxaxis = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbxaxis, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbxaxis, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbxaxis, 349 );
+lv_obj_set_x( ui_lbxaxis, 346 );
 lv_obj_set_y( ui_lbxaxis, 55 );
 lv_obj_set_align( ui_lbxaxis, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbxaxis,"0");
@@ -458,7 +458,7 @@ lv_obj_set_style_text_font(ui_lbyaxis, &ui_font_robotoregular28, LV_PART_MAIN| L
 ui_lbzaxis = lv_label_create(ui_main);
 lv_obj_set_width( ui_lbzaxis, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_lbzaxis, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_lbzaxis, 459 );
+lv_obj_set_x( ui_lbzaxis, 462 );
 lv_obj_set_y( ui_lbzaxis, 55 );
 lv_obj_set_align( ui_lbzaxis, LV_ALIGN_CENTER );
 lv_label_set_text(ui_lbzaxis,"0");

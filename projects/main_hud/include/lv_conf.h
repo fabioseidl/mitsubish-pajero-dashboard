@@ -149,11 +149,12 @@
 #define LV_FONT_UNSCII_16       0
 #define LV_FONT_DEFAULT         &lv_font_montserrat_14
 
-/* Image */
-#define LV_USE_IMAGE    0
+/* Image — this UI draws no images, but lv_animimg #errors without LV_USE_IMAGE
+ * and lvgl.h pulls it in unconditionally, so it has to stay on. */
+#define LV_USE_IMAGE    1
 #define LV_USE_IMAGEBUTTON 0
 #define LV_USE_CANVAS   0
-#define LV_USE_LINE     0
+#define LV_USE_LINE     1  /* required by lv_scale, which the default theme compiles in */
 #define LV_USE_OBJ_ID   0
 
 /* Theme */

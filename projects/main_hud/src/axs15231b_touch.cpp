@@ -49,6 +49,14 @@ bool AXS15231BTouch::read(uint16_t* x, uint16_t* y) {
         buf[i] = Wire.read();
     }
 
+    // buf[1] = fingers down. The controller interrupts on finger-LIFT as well as
+    // on touch, and that report carries zero fingers and stale coordinates.
+    // Reporting it as a touch fed LVGL a bogus point mid-press, which LVGL reads
+    // as the pointer leaving the button — and a pointer that leaves cancels the
+    // click. That is what made the buttons feel locked and need several presses.
+    const uint8_t fingers = buf[1] & 0x0F;
+    if (fingers == 0) return false;
+
     // 12-bit coordinates: low nibble of the first byte is the high 4 bits.
     uint16_t raw_x = ((uint16_t)(buf[2] & 0x0F) << 8) | buf[3];
     uint16_t raw_y = ((uint16_t)(buf[4] & 0x0F) << 8) | buf[5];

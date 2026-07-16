@@ -1,5 +1,6 @@
 #include "app_ui.h"
 
+#include <Arduino.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -10,7 +11,137 @@
 // and the ui_lb* label handles used below.
 #include "ui/ui.h"
 
+#include "i_display.h"
+#include "step_brightness.h"
+
 namespace app_ui {
+namespace {
+
+// ── Backlight control ────────────────────────────────────────────────────────
+//
+// This board CANNOT dim its backlight. It is PCF8574 pin P1 — a digital latch,
+// HIGH = ON (BOARD_SPEC §5.2), with no PWM path and no backlight GPIO on the
+// ESP32 at all. (GPIO 0 is not an option either: it is RGB Green 3, so the BOOT
+// button cannot be read while the panel runs.) So unlike main_hud, where the
+// identical 10-step cycle drives LEDC PWM on GPIO 1, "brightness" here is the
+// opacity of a black layer drawn over the UI: perceived brightness follows the
+// same 10 steps, actual backlight power does not change. Software-PWM'ing P1 was
+// rejected — it would flicker under LVGL/WiFi load and fight for the I2C bus
+// shared with the GT911 touch, MPU6050 and AHT20/BMP280.
+//
+// The backlight itself stays latched ON; main.cpp's 1 s 0xFF re-assert is
+// untouched and nothing here contends with it.
+//
+// The button is built here rather than in SquareLine on purpose. It used to bind
+// to an exported `ui_btnbacklight`, which silently disappeared on a re-export and
+// broke the build — a generated symbol is not a stable contract. Owning the
+// widget keeps this feature working no matter what the next export contains.
+// Both widgets live on lv_layer_top() so they survive a screen load; the button
+// is created *before* the dim overlay so the overlay covers it and it dims along
+// with everything else, rather than staying glaringly lit at night.
+
+// Matches the geometry of the old SquareLine button (171x32, near the top-left).
+constexpr int16_t BL_BTN_W = 171;
+constexpr int16_t BL_BTN_H = 32;
+constexpr int16_t BL_BTN_X = 13;
+constexpr int16_t BL_BTN_Y = 52;
+
+// The readout hides this long after the last press, leaving the dashboard clean.
+// Shown at boot so the current level can be seen without pressing anything.
+constexpr uint32_t BL_IDLE_HIDE_MS = 3000;
+
+lv_obj_t*   s_dim_overlay     = nullptr;
+lv_obj_t*   s_backlight_btn   = nullptr;
+lv_obj_t*   s_backlight_label = nullptr;
+lv_timer_t* s_hide_timer      = nullptr;
+
+class OverlayDimmer : public IDisplay {
+public:
+    bool begin() override { return true; }
+
+    void setBacklightPercent(uint8_t percent) override {
+        if (s_dim_overlay == nullptr) return;
+        if (percent > 100) percent = 100;
+        // 100% → fully transparent (nothing over the UI); 10% → nearly opaque.
+        const uint8_t alpha = (uint8_t)(((100 - (uint16_t)percent) * 255) / 100);
+        lv_obj_set_style_bg_opa(s_dim_overlay, alpha, LV_PART_MAIN);
+        Serial.printf("[BACKLIGHT] %3u%%  overlay alpha=%u\n", percent, alpha);
+    }
+};
+
+OverlayDimmer  s_dimmer;
+StepBrightness s_brightness(s_dimmer);
+
+void refresh_backlight_label() {
+    if (s_backlight_label == nullptr) return;
+    lv_label_set_text_fmt(s_backlight_label, "%u%%", s_brightness.getCurrentPercent());
+}
+
+// Fires once BL_IDLE_HIDE_MS after the last press, then parks itself. A repeating
+// timer that pauses is used rather than a one-shot: LVGL deletes a one-shot after
+// it runs, and this one has to be reusable for every future press.
+void hide_timer_cb(lv_timer_t* t) {
+    if (s_backlight_btn) lv_obj_add_flag(s_backlight_btn, LV_OBJ_FLAG_HIDDEN);
+    lv_timer_pause(t);
+}
+
+void show_backlight_btn() {
+    if (s_backlight_btn == nullptr) return;
+    lv_obj_remove_flag(s_backlight_btn, LV_OBJ_FLAG_HIDDEN);
+    if (s_hide_timer) {
+        lv_timer_reset(s_hide_timer);   // restart the countdown on every press
+        lv_timer_resume(s_hide_timer);
+    }
+}
+
+void on_backlight_clicked(lv_event_t* e) {
+    LV_UNUSED(e);
+    cycle_backlight();
+}
+
+void build_backlight_control() {
+    // Button first — see the note above: the overlay is added after so that it
+    // sits on top and dims the button too.
+    s_backlight_btn = lv_button_create(lv_layer_top());
+    lv_obj_set_size(s_backlight_btn, BL_BTN_W, BL_BTN_H);
+    lv_obj_align(s_backlight_btn, LV_ALIGN_TOP_LEFT, BL_BTN_X, BL_BTN_Y);
+    lv_obj_set_style_bg_color(s_backlight_btn, lv_color_hex(0x202020), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_backlight_btn, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_backlight_btn, lv_color_hex(0x606060), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_backlight_btn, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_backlight_btn, 6, LV_PART_MAIN);
+    lv_obj_add_event_cb(s_backlight_btn, on_backlight_clicked, LV_EVENT_CLICKED, NULL);
+
+    s_backlight_label = lv_label_create(s_backlight_btn);
+    lv_obj_set_style_text_font(s_backlight_label, &lv_font_montserrat_16, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_backlight_label, lv_color_hex(0xC0C0C0), LV_PART_MAIN);
+    lv_obj_center(s_backlight_label);
+
+    // The dim layer lives on lv_layer_top() rather than on ui_main: the top
+    // layer sits above every screen and survives a screen load, so the chosen
+    // level cannot be undone by the UI being rebuilt. It is click-through, so
+    // it never swallows a touch meant for the button or the widgets underneath.
+    s_dim_overlay = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(s_dim_overlay);
+    lv_obj_set_size(s_dim_overlay,
+                    lv_display_get_horizontal_resolution(NULL),
+                    lv_display_get_vertical_resolution(NULL));
+    lv_obj_set_pos(s_dim_overlay, 0, 0);
+    lv_obj_set_style_bg_color(s_dim_overlay, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_dim_overlay, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_remove_flag(s_dim_overlay, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(s_dim_overlay, LV_OBJ_FLAG_SCROLLABLE);
+
+    s_brightness.applyCurrent();  // 50% at boot
+    refresh_backlight_label();
+
+    // Visible at boot, then hidden 3 s later — same as show_backlight_btn() does
+    // after every press.
+    s_hide_timer = lv_timer_create(hide_timer_cb, BL_IDLE_HIDE_MS, NULL);
+    show_backlight_btn();
+}
+
+}  // namespace
 
 // Update a label only when its rendered text actually changes. Every redraw on
 // the single-framebuffer RGB panel is a potential tear, so skipping no-op writes
@@ -44,10 +175,19 @@ static const char* gear_text(float raw, char* buf, size_t n) {
     }
 }
 
+void cycle_backlight() {
+    s_brightness.next();
+    refresh_backlight_label();
+    show_backlight_btn();  // reveal the readout and restart the 3 s countdown
+}
+
 void create() {
     // Builds the widget tree and loads ui_main as the active screen.
     // Must run after lv_init() and after the LVGL display is registered.
     ui_init();
+
+    // After ui_init(): ui_btnbacklight does not exist until the export has run.
+    build_backlight_control();
 }
 
 void update(const Payload& p) {

@@ -10,11 +10,11 @@
 #include "security_config.h"
 #include "pin_config.h"
 #include "hud_display.h"
-#include "hud_brightness.h"
+#include "step_brightness.h"
 #include "hud_screen_controller.h"
 
 static HudDisplay              display(GPIO_BACKLIGHT_PIN);
-static HudBrightness           brightness(display);
+static StepBrightness           brightness(display);
 static ESPNowReceiver          receiver;
 static ServerConnectionMonitor connection_monitor;
 static HudScreenController     screen(brightness);
@@ -24,14 +24,24 @@ void setup() {
     delay(1500);  // let the serial monitor attach before the first prints
     Serial.println("=== main_hud SETUP START ===");
 
-    // Order matters: Arduino_GFX reconfigures GPIOs during init, so the LEDC
-    // backlight is attached only after the panel is up.
-    if (!screen.begin()) {
-        Serial.println("[MAIN] screen init failed — halting");
-        return;
-    }
+    // Backlight first, and unconditionally. GPIO_BACKLIGHT_PIN is not part of
+    // the QSPI bus, so Arduino_GFX's init cannot disturb it — and lighting it
+    // up front means a later failure shows a lit (if blank) panel instead of a
+    // dead-looking board, which is the difference between a diagnosable fault
+    // and a mystery.
     display.begin();
     brightness.applyCurrent();
+
+    // PSRAM carries the 307 KB canvas framebuffer; without it the panel cannot
+    // come up at all, so say so plainly rather than failing later in the dark.
+    Serial.printf("[MAIN] PSRAM: %s (%u bytes free)\n",
+                  psramFound() ? "found" : "NOT FOUND — canvas alloc will fail",
+                  (unsigned)ESP.getFreePsram());
+
+    if (!screen.begin()) {
+        Serial.println("[MAIN] screen init failed — backlight is on, panel stays blank");
+        return;
+    }
 
     connection_monitor.setStatusChangeCallback([](bool online) {
         screen.onServerStatusChanged(online);

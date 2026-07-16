@@ -29,6 +29,7 @@
 #include "security_config.h"   // PMK_KEY (gitignored — created from .example)
 #include "app_ui.h"            // SquareLine Studio UI bridge (src/ui/, LVGL 9 export)
 #include "gps.h"               // u-blox NEO-6M on UART2 (NMEA → serial console)
+#include "gt911.h"             // GT911 capacitive touch on the shared I2C bus
 #include "mpu6050.h"           // MPU6050 6-axis IMU on the shared I2C bus (0x68)
 #include "aht20_bmp280.h"      // AHT20 (0x38) + BMP280 (0x76/0x77) on the shared I2C bus
 
@@ -49,10 +50,19 @@
 // ─────────────────────────────────────────────────────────────
 #define PCF8574_ADDR   0x24
 
-// Placeholders — serão confirmados pelo scan em setup()
-#define LCD_RST_BIT  (1 << 3)   // TBD — guess P3
-#define BL_BIT       (1 << 2)   // TBD — guess P2
-#define TP_BIT       (1 << 1)   // TBD — guess P1
+// STALE GUESSES — kept only because nothing reads them any more. They predate
+// the bit-scan and disagree with the verified mapping in BOARD_SPEC §5.2
+// (P0 = LCD_RST 0x01, P1 = LCD_BL 0x02, P2 = TP_RST 0x04); TP_BIT below is in
+// fact the backlight. Use the PCF_* constants underneath instead.
+#define LCD_RST_BIT  (1 << 3)   // WRONG — do not use
+#define BL_BIT       (1 << 2)   // WRONG — do not use
+#define TP_BIT       (1 << 1)   // WRONG — this is the backlight
+
+// Verified mapping (BOARD_SPEC §5.2). Only P1 was ever confirmed empirically by
+// the backlight bit-scan; P0/P2 come from the spec text.
+static constexpr uint8_t PCF_LCD_RST = 0x01;  // P0
+static constexpr uint8_t PCF_LCD_BL  = 0x02;  // P1 — confirmed by bit-scan
+static constexpr uint8_t PCF_TP_RST  = 0x04;  // P2
 
 // I2C pins — don't use I2C_SDA / I2C_SCL: esp32s3box/pins_arduino.h
 // already defines those as SCL=18, SDA=8, causing a redefinition.
@@ -85,6 +95,134 @@ static void pcf8574_set_bit(uint8_t mask, bool high) {
   if (high) g_pcf8574 |=  mask;
   else      g_pcf8574 &= ~mask;
   pcf8574_write(g_pcf8574);
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Backlight button — GPIO 6 (the PH2.0 "ADC" sensor connector)
+//
+//  GPIO 6 is one of the few pins the RGB bus leaves free, and it is broken out
+//  on a 3-pin PH2.0 header, so a sensor/button module plugs straight in.
+//
+//  This is NOT the BOOT button: BOOT is GPIO 0, which on this board is RGB
+//  Green 3 (see the LGFX config) and is driven by the LCD peripheral at pixel
+//  rate — unreadable while the panel runs, and shorted to GND if pressed.
+//
+//  Polarity is detected at boot rather than assumed: 3-pin modules differ in
+//  whether the switch pulls the signal to GND or to VCC, and some carry their
+//  own pull resistor. Whatever level the pin idles at is taken as "released".
+//  (So do not hold the button while booting.)
+// ─────────────────────────────────────────────────────────────
+#define BL_BTN_PIN            6
+static constexpr uint32_t BL_BTN_DEBOUNCE_MS = 30;
+
+static int g_btn_pressed_level = LOW;
+
+static void backlight_button_init() {
+  pinMode(BL_BTN_PIN, INPUT_PULLUP);
+  delay(10);                                   // let the pull settle
+  const int idle = digitalRead(BL_BTN_PIN);
+  g_btn_pressed_level = (idle == HIGH) ? LOW : HIGH;
+  DBG("[button] GPIO%d idles %s → pressed = %s",
+      BL_BTN_PIN, idle == HIGH ? "HIGH" : "LOW",
+      g_btn_pressed_level == LOW ? "LOW" : "HIGH");
+}
+
+static void backlight_button_tick(uint32_t now) {
+  static bool     raw_prev    = false;
+  static bool     stable      = false;
+  static uint32_t last_edge   = 0;
+
+  const bool raw = (digitalRead(BL_BTN_PIN) == g_btn_pressed_level);
+
+  if (raw != raw_prev) {              // bouncing — restart the settle timer
+    raw_prev  = raw;
+    last_edge = now;
+    return;
+  }
+  if (raw == stable) return;                       // nothing new
+  if (now - last_edge < BL_BTN_DEBOUNCE_MS) return; // not settled yet
+
+  stable = raw;
+  if (stable) {                        // act on press, ignore release
+    app_ui::cycle_backlight();
+    DBG("[button] press → backlight step");
+  }
+}
+
+static void i2c_scan();  // defined below
+
+// ─────────────────────────────────────────────────────────────
+//  GT911 bring-up
+//
+//  The GT911 does not simply answer once reset is released: it samples its INT
+//  pin as reset rises to choose its I2C address (INT low → 0x5D, high → 0x14),
+//  and stays silent if that never happens properly. BOARD_SPEC §6 lists the INT
+//  pin as "project-dependent" and it is not identified for this board, so try
+//  the GPIOs the RGB bus and the I2C/UART pins leave free — the same empirical
+//  bit-scan approach §5.2 used to find the backlight.
+//
+//  Runs before lcd.init(), so pulsing PCF_TP_RST is harmless even if the spec's
+//  P2 mapping is wrong and the pulse lands on something else.
+// ─────────────────────────────────────────────────────────────
+// Release TP_RST assuming the expander is a CH422G rather than a PCF8574.
+// The two are indistinguishable by an I2C scan (both ACK 0x24) but are driven
+// completely differently: a PCF8574 takes the output byte at 0x24, whereas on a
+// CH422G 0x24 is the *config* register (bit0 = enable IO outputs) and the output
+// byte goes to 0x38. If this board is really a CH422G, every raw 0x24 write we
+// do lands in its config register and the IO pins — including TP_RST — are never
+// driven, which would explain the GT911 being absent from the bus.
+static void ch422g_release_tp_rst(bool high) {
+  Wire.beginTransmission(0x24);
+  Wire.write(0x01);            // WR_SET: IO_OE — enable the IO outputs
+  Wire.endTransmission();
+  Wire.beginTransmission(0x38);
+  Wire.write(high ? 0xFF : 0x00);  // WR_IO: all outputs high / low
+  Wire.endTransmission();
+}
+
+static bool gt911_try(int pin, bool use_ch422g) {
+  pinMode(pin, OUTPUT);
+  digitalWrite(pin, LOW);              // LOW as reset rises → address 0x5D
+
+  if (use_ch422g) {
+    ch422g_release_tp_rst(false);
+    delay(20);
+    ch422g_release_tp_rst(true);       // release reset, INT still held low
+  } else {
+    pcf8574_set_bit(PCF_TP_RST, false);
+    delay(20);
+    pcf8574_set_bit(PCF_TP_RST, true);
+  }
+  delay(20);
+  pinMode(pin, INPUT);                 // hand INT back to the controller
+  delay(60);                           // GT911 needs ~50 ms to boot
+  return gt911::detect();
+}
+
+static bool gt911_bringup() {
+  // Free after RGB (0,1,2,3,5,7,10,14,17,18,21,38..48), I2C (8,9), GPS RX (44)
+  // and UART0 TX (43). 35/36/37 are the OPI PSRAM pins — never touch those.
+  static const int kIntCandidates[] = {4, 6, 15, 16, 11, 12, 13};
+
+  for (int use_ch422g = 0; use_ch422g <= 1; ++use_ch422g) {
+    for (int pin : kIntCandidates) {
+      if (gt911_try(pin, use_ch422g != 0)) {
+        DBG("[touch] GT911 up at 0x%02X — INT=GPIO%d, expander driven as %s",
+            gt911::address(), pin, use_ch422g ? "CH422G (0x24 cfg + 0x38 out)"
+                                              : "PCF8574 (0x24 out)");
+        return true;
+      }
+    }
+  }
+
+  DBG("[touch] GT911 absent: no answer at 0x5D/0x14 for INT in {4,6,15,16,11,12,13}");
+  DBG("[touch] tried releasing TP_RST both as PCF8574 and as CH422G — neither worked");
+  i2c_scan();
+
+  // Leave the panel lit: the CH422G attempt above may have left the expander in
+  // a different state than the 0xFF the rest of the code assumes.
+  pcf8574_write(0xFF);
+  return false;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -217,6 +355,21 @@ static volatile bool g_status_online = false;
 
 static inline uint32_t now_ms() { return (uint32_t)(esp_timer_get_time() / 1000); }
 
+// LVGL 9 input — poll the GT911 and hand LVGL the current finger position.
+// Runs on the LVGL thread, so it shares Wire with the sensor reads in loop()
+// without contention (there is no second task touching I2C).
+static void lvgl_touch_read_cb(lv_indev_t* indev, lv_indev_data_t* data) {
+  LV_UNUSED(indev);
+  uint16_t x = 0, y = 0;
+  if (gt911::read(&x, &y)) {
+    data->point.x = x;
+    data->point.y = y;
+    data->state   = LV_INDEV_STATE_PRESSED;
+  } else {
+    data->state = LV_INDEV_STATE_RELEASED;
+  }
+}
+
 // LVGL 9 flush — push the rendered strip into the LovyanGFX RGB framebuffer.
 static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
   const int32_t w = area->x2 - area->x1 + 1;
@@ -276,6 +429,13 @@ static void app_init() {
   lv_display_set_flush_cb(disp, lvgl_flush_cb);
   lv_display_set_buffers(disp, buf1, buf2, kBufBytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
 
+  // ── Touch input ──
+  // Registered even if the GT911 was not found: the read callback then simply
+  // never reports a press, and the dashboard renders exactly as before.
+  lv_indev_t* indev = lv_indev_create();
+  lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+  lv_indev_set_read_cb(indev, lvgl_touch_read_cb);
+
   app_ui::create();
   app_ui::set_server_status(false);   // start OFFLINE until the first payload
   DBG("[lvgl] SquareLine UI created (1024x600)");
@@ -327,6 +487,18 @@ void setup() {
   pcf8574_write(0xFF);
   // delay(200);
 
+  // ── 2b. Touch ─────────────────────────────────────────────
+  // Only now is TP_RST high, so only now can the GT911 answer — the i2c_scan()
+  // above runs while it is still held in reset, which is why it never appears
+  // there. The chip needs a moment to boot after reset release.
+  //
+  // BOARD_SPEC §5.2 maps P2 to TP_RST, but only P1 (backlight) was ever actually
+  // verified by bit-scan; P0/P2 are unconfirmed guesses. So re-scan here: if the
+  // GT911 shows up now, the mapping holds and any failure is in our driver; if it
+  // does not, the chip is still in reset and the reset line is not where we think.
+  delay(200);
+  gt911_bringup();
+
   // ── 3. Display init ───────────────────────────────────────
   // DBG("[LGFX] calling lcd.init() ...");
   bool ok = lcd.init();
@@ -350,6 +522,8 @@ void setup() {
   // ── 7. AHT20 + BMP280 env sensor (shared I2C bus, 0x38 / 0x76) ──
   // Uses the Wire bus already brought up in step 1 — non-fatal per chip.
   aht20_bmp280::begin();
+
+  backlight_button_init();
 
   DBG("[setup] complete");
 }
@@ -378,6 +552,10 @@ void loop() {
   lv_tick_inc(t - last_tick);
   last_tick = t;
   lv_timer_handler();
+
+  // ── Physical backlight button (GPIO 6) ──
+  // Polled on the LVGL thread so cycle_backlight() touches widgets safely.
+  backlight_button_tick(t);
 
   // ── Connection timeout → fires OFFLINE if packets stop arriving ──
   g_conn_monitor.tick(t);

@@ -27,7 +27,7 @@ static uint16_t s_mirror_row[SCREEN_W];
 
 HudScreenController* HudScreenController::instance_ = nullptr;
 
-HudScreenController::HudScreenController(HudBrightness& brightness)
+HudScreenController::HudScreenController(StepBrightness& brightness)
     : brightness_(brightness),
       touch_(GPIO_TOUCH_SCL, GPIO_TOUCH_SDA, GPIO_TOUCH_INT, TOUCH_I2C_ADDR) {}
 
@@ -37,28 +37,48 @@ bool HudScreenController::begin() {
     instance_ = this;
 
     if (!initDisplay()) return false;
+
+    // Touch is not load-bearing: without it you lose the two buttons, but the
+    // speed readout — the reason the device exists — still works. Don't let a
+    // touch fault take the display down with it.
     if (!touch_.begin()) {
-        Serial.println("[SCREEN] touch init failed");
-        return false;
+        Serial.println("[SCREEN] touch init failed — buttons disabled, speed still shown");
     }
+
+    Serial.println("[SCREEN] init LVGL...");
     if (!initLvgl()) return false;
+    Serial.println("[SCREEN] LVGL OK — building UI");
 
     buildUi();
+
+    // Start the auto-hide countdown from when the UI actually appears, not from
+    // boot: setup() spends ~2 s before this point, which would eat most of the
+    // window and hide the buttons before they had been seen.
+    last_touch_ms_ = millis();
     return true;
 }
 
 bool HudScreenController::initDisplay() {
+    Serial.println("[SCREEN] creating QSPI bus...");
     s_bus = new Arduino_ESP32QSPI(GPIO_LCD_CS, GPIO_LCD_SCK,
                                   GPIO_LCD_D0, GPIO_LCD_D1, GPIO_LCD_D2, GPIO_LCD_D3);
+
+    Serial.println("[SCREEN] creating AXS15231B panel...");
     // No reset line is broken out on this board, and the glass is not IPS-inverted.
     s_panel  = new Arduino_AXS15231B(s_bus, GFX_NOT_DEFINED, 0, false,
                                      PANEL_NATIVE_W, PANEL_NATIVE_H);
+
+    Serial.println("[SCREEN] creating canvas...");
     s_canvas = new Arduino_Canvas(PANEL_NATIVE_W, PANEL_NATIVE_H, s_panel, 0, 0, SCREEN_ROTATION);
 
+    Serial.println("[SCREEN] canvas->begin() — QSPI init + 307 KB framebuffer alloc...");
+    // Fails either because the panel didn't answer on QSPI, or because the
+    // 307 KB framebuffer couldn't be allocated (i.e. PSRAM is missing).
     if (!s_canvas->begin(40000000UL)) {
-        Serial.println("[SCREEN] display init failed");
+        Serial.println("[SCREEN] canvas/panel init failed (QSPI init or 307 KB framebuffer alloc)");
         return false;
     }
+    Serial.println("[SCREEN] canvas->begin() OK");
     s_canvas->fillScreen(BLACK);
     s_canvas->flush();
 
@@ -93,11 +113,28 @@ bool HudScreenController::initLvgl() {
 
 // ── UI ───────────────────────────────────────────────────────────────────────
 
-static lv_obj_t* makeButton(lv_obj_t* parent, lv_align_t align, int16_t x, int16_t y,
-                            lv_event_cb_t cb, lv_obj_t** out_label) {
+static constexpr int16_t BTN_MARGIN = 8;
+
+// Places a button at a corner described in *physical* terms — the corner the
+// driver sees — and cancels out whatever flip the current mode applies. In HUD
+// mode the frame is transformed on its way to the panel, so a widget LVGL puts
+// at the top-right would surface at the physical bottom-left; asking for the
+// opposite corner in LVGL's space undoes that, and the buttons stay put across
+// a mode switch.
+static void alignPhysicalCorner(lv_obj_t* obj, bool want_top, bool want_right,
+                                bool flip_x, bool flip_y) {
+    const bool top   = want_top   != flip_y;
+    const bool right = want_right != flip_x;
+
+    const lv_align_t align = top ? (right ? LV_ALIGN_TOP_RIGHT    : LV_ALIGN_TOP_LEFT)
+                                 : (right ? LV_ALIGN_BOTTOM_RIGHT : LV_ALIGN_BOTTOM_LEFT);
+    lv_obj_align(obj, align, right ? -BTN_MARGIN : BTN_MARGIN,
+                             top   ?  BTN_MARGIN : -BTN_MARGIN);
+}
+
+static lv_obj_t* makeButton(lv_obj_t* parent, lv_event_cb_t cb, lv_obj_t** out_label) {
     lv_obj_t* btn = lv_button_create(parent);
     lv_obj_set_size(btn, 74, 62);
-    lv_obj_align(btn, align, x, y);
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x202020), LV_PART_MAIN);
     lv_obj_set_style_border_color(btn, lv_color_hex(0x606060), LV_PART_MAIN);
     lv_obj_set_style_border_width(btn, 1, LV_PART_MAIN);
@@ -117,21 +154,20 @@ void HudScreenController::buildUi() {
     lv_obj_set_style_bg_color(scr, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
 
-    // Speed — the point of the whole device. Sits left of the button column.
+    // Speed — the point of the whole device. Centred on the screen, deliberately
+    // ignoring the buttons: they overlay it and spend most of their time hidden,
+    // so letting them shift the number would leave it off-centre in the state
+    // the display is normally in.
     speed_label_ = lv_label_create(scr);
     lv_obj_set_style_text_font(speed_label_, &ui_font_roboto_bold_200, LV_PART_MAIN);
 
-    unit_label_ = lv_label_create(scr);
-    lv_obj_set_style_text_font(unit_label_, &ui_font_roboto_bold_28, LV_PART_MAIN);
-    lv_obj_set_style_text_color(unit_label_, lv_color_hex(0x808080), LV_PART_MAIN);
-    lv_label_set_text(unit_label_, "km/h");
+    mode_btn_   = makeButton(scr, onModeButton,       &mode_btn_label_);
+    bright_btn_ = makeButton(scr, onBrightnessButton, &bright_btn_label_);
 
-    makeButton(scr, LV_ALIGN_TOP_RIGHT,    -8,  8, onModeButton,       &mode_btn_label_);
-    makeButton(scr, LV_ALIGN_BOTTOM_RIGHT, -8, -8, onBrightnessButton, &bright_btn_label_);
-
+    positionButtons();
     refreshModeButton();
     refreshBrightnessButton();
-    repaint();  // establishes the "--" offline placeholder and both alignments
+    repaint();  // establishes the "--" offline placeholder and centres the label
 }
 
 void HudScreenController::refreshModeButton() {
@@ -143,10 +179,35 @@ void HudScreenController::refreshBrightnessButton() {
     lv_label_set_text_fmt(bright_btn_label_, "%u%%", brightness_.getCurrentPercent());
 }
 
+// Physical layout, identical in both modes: mode button top-right, brightness
+// button bottom-right, as seen by the driver.
+void HudScreenController::positionButtons() {
+    const bool flip_x = (mode_ == Mode::HUD) && MIRROR_HORIZONTAL;
+    const bool flip_y = (mode_ == Mode::HUD) && MIRROR_VERTICAL;
+
+    alignPhysicalCorner(mode_btn_,   /*top=*/true,  /*right=*/true, flip_x, flip_y);
+    alignPhysicalCorner(bright_btn_, /*top=*/false, /*right=*/true, flip_x, flip_y);
+}
+
+void HudScreenController::setButtonsVisible(bool visible) {
+    if (buttons_visible_ == visible) return;
+    buttons_visible_ = visible;
+
+    // LVGL invalidates the area itself, so the speed underneath repaints.
+    if (visible) {
+        lv_obj_clear_flag(mode_btn_,   LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(bright_btn_, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(mode_btn_,   LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(bright_btn_, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 void HudScreenController::setMode(Mode mode) {
     if (mode_ == mode) return;
     mode_ = mode;
     refreshModeButton();
+    positionButtons();  // re-anchor so both buttons stay put on the glass
 
     // The mirror only takes effect as areas are re-flushed, so force a full
     // redraw — otherwise the un-mirrored frame stays on screen until something
@@ -189,6 +250,7 @@ void HudScreenController::flushCb(lv_display_t* disp, const lv_area_t* area, uin
         }
     }
 
+    instance_->canvas_dirty_ = true;
     lv_display_flush_ready(disp);
 }
 
@@ -198,6 +260,13 @@ void HudScreenController::touchReadCb(lv_indev_t* indev, lv_indev_data_t* data) 
 
     uint16_t x, y;
     if (self->touch_.read(&x, &y)) {
+        // A lapsed hold window means the finger had lifted, so this report
+        // starts a new gesture. Decide once, here, whether it is a wake-up tap:
+        // deciding per-report would flip mid-gesture as the buttons appear.
+        if (now >= self->touch_until_ms_) {
+            self->wake_only_ = !self->buttons_visible_;
+        }
+
         // LVGL laid the buttons out un-mirrored, but HUD mode paints them
         // mirrored, so a finger on the glass has to be reflected back into
         // LVGL's coordinate space.
@@ -206,12 +275,17 @@ void HudScreenController::touchReadCb(lv_indev_t* indev, lv_indev_data_t* data) 
         self->touch_x_ = x;
         self->touch_y_ = y;
         self->touch_until_ms_ = now + TOUCH_HOLD_MS;
+        self->last_touch_ms_  = now;  // tick() uses this to time the auto-hide
     }
+
+    const bool pressed = now < self->touch_until_ms_;
 
     data->point.x = self->touch_x_;
     data->point.y = self->touch_y_;
-    data->state = (now < self->touch_until_ms_) ? LV_INDEV_STATE_PRESSED
-                                                : LV_INDEV_STATE_RELEASED;
+    // A wake-up gesture is swallowed entirely: it brings the buttons back but
+    // must not click the one it landed on.
+    data->state = (pressed && !self->wake_only_) ? LV_INDEV_STATE_PRESSED
+                                                 : LV_INDEV_STATE_RELEASED;
 }
 
 void HudScreenController::onModeButton(lv_event_t* e) {
@@ -250,8 +324,9 @@ void HudScreenController::repaint() {
         lv_label_set_text(speed_label_, "--");
         lv_obj_set_style_text_color(speed_label_, lv_color_hex(0x505050), LV_PART_MAIN);
     }
-    lv_obj_align(speed_label_, LV_ALIGN_CENTER, -40, -18);
-    lv_obj_align_to(unit_label_, speed_label_, LV_ALIGN_OUT_BOTTOM_MID, 0, -6);
+    // Re-centre after every text change: the label auto-sizes, so "9" and "120"
+    // would otherwise sit at different offsets.
+    lv_obj_align(speed_label_, LV_ALIGN_CENTER, 0, 0);
 }
 
 void HudScreenController::tick() {
@@ -264,8 +339,17 @@ void HudScreenController::tick() {
         repaint();
     }
 
-    lv_task_handler();
-    s_canvas->flush();
+    // Auto-hide the buttons once the screen has been left alone, so normal
+    // driving shows nothing but the speed. Evaluated before lv_task_handler()
+    // so the visibility LVGL hit-tests against is the one the user can see.
+    setButtonsVisible((millis() - last_touch_ms_) < BUTTONS_IDLE_HIDE_MS);
+
+    lv_task_handler();  // may call flushCb, which raises canvas_dirty_
+
+    if (canvas_dirty_) {
+        s_canvas->flush();
+        canvas_dirty_ = false;
+    }
 }
 
 #endif // UNIT_TEST
