@@ -31,4 +31,11 @@ void set_trip_time(const char* text);
 // AHT20 ambient temperature (pre-formatted "XX.X °C") -> ui_lbambienttemperature.
 void set_ambient_temperature(const char* text);
 
+// AHT20 relative humidity (pre-formatted, e.g. "62 %") -> ui_lbhumidity.
+void set_humidity(const char* text);
+
+// MPU6050/6500 IMU readings -> ui_lbxaxis/yaxis/zaxis (accel, m/s^2),
+// ui_lbgyroxaxis/yaxis/zaxis (gyro, rad/s) and ui_lbaceleration (|accel| m/s^2).
+void set_imu(float ax, float ay, float az, float gx, float gy, float gz);
+
 }  // namespace app_ui

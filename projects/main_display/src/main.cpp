@@ -396,7 +396,15 @@ void loop() {
   // ── AHT20 + BMP280: read temp/humidity/pressure, print every 500 ms (non-blocking) ──
   aht20_bmp280::update(t);
 
-  // ── Ambient temp (AHT20) → dashboard label, refresh ~1 Hz ──
+  // ── MPU6050 IMU → dashboard labels, refresh ~2 Hz (matches sensor cadence) ──
+  static uint32_t last_imu_ms = 0;
+  if (mpu6050::isReady() && t - last_imu_ms >= 500) {
+    last_imu_ms = t;
+    app_ui::set_imu(mpu6050::accelX(), mpu6050::accelY(), mpu6050::accelZ(),
+                    mpu6050::gyroX(),  mpu6050::gyroY(),  mpu6050::gyroZ());
+  }
+
+  // ── Ambient temp + humidity (AHT20) → dashboard labels, refresh ~1 Hz ──
   static uint32_t last_amb_ms = 0;
   if (t - last_amb_ms >= 1000) {
     last_amb_ms = t;
@@ -405,8 +413,12 @@ void loop() {
     if (isnan(tc)) snprintf(buf, sizeof(buf), "--");
     else           snprintf(buf, sizeof(buf), "%.1f C", tc);  // "XX.X C" — ° glyph
                                                               // not in ui_font_robotoregular28
-
     app_ui::set_ambient_temperature(buf);
+
+    float rh = aht20_bmp280::ambientHumidity();
+    if (isnan(rh)) snprintf(buf, sizeof(buf), "--");
+    else           snprintf(buf, sizeof(buf), "%.0f %%", rh);  // "XX %"
+    app_ui::set_humidity(buf);
   }
 
   // ── Trip time: HH:MM:SS since boot (resets on restart, like TRIP km) ──

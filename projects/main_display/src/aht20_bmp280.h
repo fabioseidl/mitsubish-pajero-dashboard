@@ -57,4 +57,7 @@ bool bmp280Ready();
 // AHT20 is absent). Refreshed by update() at the module's read cadence.
 float ambientTemperatureC();
 
+// Latest AHT20 relative humidity in %RH (NAN until the first read, or absent).
+float ambientHumidity();
+
 }  // namespace aht20_bmp280

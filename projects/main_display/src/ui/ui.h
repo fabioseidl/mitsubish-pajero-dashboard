@@ -41,7 +41,8 @@ extern lv_obj_t *ui____initial_actions0;
 LV_IMG_DECLARE( ui_img_background_png);   // assets/background.png
 LV_IMG_DECLARE( ui_img_icon_altitude_png);   // assets/icon_altitude.png
 LV_IMG_DECLARE( ui_img_icon_temperature_png);   // assets/icon_temperature.png
-LV_IMG_DECLARE( ui_img_icon_gps_arrowpng_png);   // assets/icon_gps_arrowpng.png
+LV_IMG_DECLARE( ui_img_icon_gps_arrow_png);   // assets/icon_gps_arrow.png
+LV_IMG_DECLARE( ui_img_icon_humidity_png);   // assets/icon_humidity.png
 
 // FONTS
 LV_FONT_DECLARE( ui_font_roboto150);

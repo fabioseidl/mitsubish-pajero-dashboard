@@ -16,4 +16,5 @@ build/
 logs/
 
 # backups
-ui/maindisplay/backup/
+
+ui/main_display/backup/

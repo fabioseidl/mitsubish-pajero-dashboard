@@ -69,7 +69,21 @@ void update(const Payload& p) {
     set_if_changed(ui_lbengineload,         "%.0f", p.engine_load_pct);
     set_if_changed(ui_lbthrottle,           "%.0f", p.throttle_pct);
     set_if_changed(ui_lbcoolanttemp,        "%.0f", p.coolant_temp_c);
-    set_if_changed(ui_lboiltemp,            "%.0f", p.oil_temp_c);
+    // Coolant status dot: blue < 70 °C (cold), green 70–90 °C (normal),
+    // red > 90 °C (hot). Only restyle on a bucket change to avoid needless
+    // redraws (flicker) on the single-framebuffer panel.
+    if (ui_iconcoolantstatus != nullptr) {
+        int bucket = (p.coolant_temp_c < 70.0f) ? 0
+                   : (p.coolant_temp_c > 90.0f) ? 2
+                                                : 1;
+        static int last_bucket = -1;
+        if (bucket != last_bucket) {
+            last_bucket = bucket;
+            static const uint32_t kColors[3] = { 0x3B8EE0, 0x29CC5B, 0xE03B3B };
+            lv_obj_set_style_text_color(ui_iconcoolantstatus, lv_color_hex(kColors[bucket]),
+                                        LV_PART_MAIN | LV_STATE_DEFAULT);
+        }
+    }
     set_if_changed(ui_lbdpfsoot,            "%.0f", p.dpf_soot_load);
     // ui_lbaltitude is driven by GPS altitude (set_gps_altitude), not the OBD
     // barometric altitude — see set_gps_* below.
@@ -102,9 +116,43 @@ void set_gps_datetime(const char* text) {
     set_text(ui_lbdatetime, hhmm);
 }
 void set_gps_altitude(const char* text) { set_text(ui_lbaltitude, text); }
-void set_gps_compass(const char* text)  { set_text(ui_lbcompass,  text); }
+void set_gps_compass(const char* text) {
+    set_text(ui_lbcompass, text);
+
+    // Derive the 16-point cardinal from the course-over-ground value shown in
+    // ui_lbcompass ("--" when there is no fix). The arrow icon stays static.
+    float deg = 0.0f;
+    if (text == nullptr || sscanf(text, "%f", &deg) != 1) {
+        set_text(ui_lbcompasscardial, "--");
+        return;
+    }
+    deg = fmodf(deg, 360.0f);                   // normalise to [0, 360)
+    if (deg < 0.0f) deg += 360.0f;
+
+    // 16-point cardinal: each sector spans 22.5°, centred on its bearing.
+    static const char* const kCardinals[16] = {
+        "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+        "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW" };
+    int idx = ((int)lroundf(deg / 22.5f)) % 16;
+    set_text(ui_lbcompasscardial, kCardinals[idx]);
+}
 void set_trip_time(const char* text)    { set_text(ui_lbtriptime, text); }
 void set_ambient_temperature(const char* text) { set_text(ui_lbambienttemperature, text); }
+void set_humidity(const char* text) { set_text(ui_lbhumidity, text); }
+
+void set_imu(float ax, float ay, float az, float gx, float gy, float gz) {
+    if (ui_lbxaxis == nullptr) return;   // create() not called yet
+    set_if_changed(ui_lbxaxis,       "%.1f", ax);
+    set_if_changed(ui_lbyaxis,       "%.1f", ay);
+    set_if_changed(ui_lbzaxis,       "%.1f", az);
+    set_if_changed(ui_lbgyroxaxis,   "%.1f", gx);
+    set_if_changed(ui_lbgyroyaxis,   "%.1f", gy);
+    set_if_changed(ui_lbgyrozaxis,   "%.1f", gz);
+    // Net linear acceleration magnitude (m/s^2). The axes are already gravity-
+    // corrected in the MPU module, so this reads ~0 at rest and rises only under
+    // real acceleration/braking/cornering.
+    set_if_changed(ui_lbaceleration, "%.1f", sqrtf(ax * ax + ay * ay + az * az));
+}
 
 void set_server_status(bool online) {
     if (ui_lbserverstatus == nullptr) return;

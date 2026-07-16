@@ -27,6 +27,7 @@ bool            ahtReady    = false;
 bool            bmpReady    = false;
 uint32_t        lastReadMs  = 0;
 float           ahtTempC    = NAN;   // latest AHT20 temperature, °C (NAN until read)
+float           ahtHumidity = NAN;   // latest AHT20 relative humidity, %RH
 
 constexpr uint32_t kReadIntervalMs = AHT20_BMP280_READ_INTERVAL_MS;  // ~2 Hz
 
@@ -77,12 +78,13 @@ void update(uint32_t now_ms) {
   if (now_ms - lastReadMs < kReadIntervalMs) return;
   lastReadMs = now_ms;
 
-  // AHT20: cache the ambient temperature (°C) for the dashboard. Humidity is
-  // returned in the same transaction but currently unused.
+  // AHT20: cache the ambient temperature (°C) and relative humidity (%RH),
+  // both returned in the same transaction.
   if (ahtReady) {
     sensors_event_t humidity, temp;
     aht.getEvent(&humidity, &temp);
-    ahtTempC = temp.temperature;
+    ahtTempC     = temp.temperature;
+    ahtHumidity  = humidity.relative_humidity;
   }
 
   // BMP280: temperature (°C) + pressure (Pa → hPa).
@@ -96,5 +98,6 @@ bool aht20Ready()  { return ahtReady; }
 bool bmp280Ready() { return bmpReady; }
 
 float ambientTemperatureC() { return ahtTempC; }
+float ambientHumidity()     { return ahtHumidity; }
 
 }  // namespace aht20_bmp280

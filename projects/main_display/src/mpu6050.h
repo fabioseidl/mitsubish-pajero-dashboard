@@ -45,4 +45,13 @@ void update(uint32_t now_ms);
 // True once begin() detected the chip on the bus.
 bool isReady();
 
+// Latest cached readings (NAN until the first read, or if the chip is absent).
+float accelX();          // acceleration X, m/s^2
+float accelY();          // acceleration Y, m/s^2
+float accelZ();          // acceleration Z, m/s^2
+float accelMagnitude();  // |acceleration| vector, m/s^2 (~9.8 at rest)
+float gyroX();           // angular rate X, rad/s
+float gyroY();           // angular rate Y, rad/s
+float gyroZ();           // angular rate Z, rad/s
+
 }  // namespace mpu6050
