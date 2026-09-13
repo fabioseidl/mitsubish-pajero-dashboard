@@ -171,6 +171,33 @@ float DerivedCalculator::computeConsumption(const DataAggregator& aggregator) {
     return speed / fuel_rate;
 }
 
+// Boost is a GAUGE pressure: manifold absolute pressure minus ambient. OBD gives
+// both as whole kPa, so resolution is 1 kPa (0.01 bar) — ample for a dash readout.
+//
+// If the ambient PID is unsupported we fall back to ISA sea-level pressure rather
+// than reporting nothing; that biases boost by however far local pressure sits from
+// 101.3 kPa (≈0.01 bar per kPa), which is far better than a permanently dead gauge.
+static constexpr float BOOST_FALLBACK_BARO_KPA = 101.3f;
+static constexpr float KPA_PER_BAR             = 100.0f;
+
+float DerivedCalculator::computeBoostBar(const DataAggregator& aggregator) {
+    // Without a manifold-pressure reading there is nothing to derive.
+    if (!aggregator.isValid(PID_MAP_PRESSURE)) return 0.0f;
+
+    float map_kpa  = aggregator.get(PID_MAP_PRESSURE);
+    float baro_kpa = aggregator.isValid(PID_BARO_PRESSURE)
+                         ? aggregator.get(PID_BARO_PRESSURE)
+                         : BOOST_FALLBACK_BARO_KPA;
+
+    float boost_bar = (map_kpa - baro_kpa) / KPA_PER_BAR;
+
+    // Clamp at zero. A diesel has no throttle plate, so off-boost the manifold sits
+    // at roughly ambient; the small negative readings that come from intake
+    // restriction and whole-kPa rounding would otherwise show as "-0.1" on a gauge
+    // whose whole point is boost.
+    return (boost_bar < 0.0f) ? 0.0f : boost_bar;
+}
+
 float DerivedCalculator::computeAltitude(float baro_kpa) {
     // International barometric formula (troposphere):
     //   h = 44330 * (1 - (P / P0)^(1/5.255))

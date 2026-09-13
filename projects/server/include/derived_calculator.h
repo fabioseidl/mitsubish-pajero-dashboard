@@ -16,4 +16,12 @@ public:
     // Altitude (m) above sea level from absolute barometric pressure (kPa),
     // using the international barometric formula.
     static float computeAltitude(float baro_kpa);
+
+    // Turbo boost (bar, GAUGE pressure — 0 = no boost).
+    //
+    // This vehicle has no dedicated boost PID: the 0xF300 DID the payload field was
+    // originally wired to is one of the speculative Mode 22 IDs the ECU never
+    // answers, so it read 0 forever. Boost is instead derived from two PIDs the ECU
+    // does answer: absolute manifold pressure (0x0B) minus ambient pressure (0x33).
+    static float computeBoostBar(const DataAggregator& aggregator);
 };

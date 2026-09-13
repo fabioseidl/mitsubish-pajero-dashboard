@@ -200,7 +200,59 @@ static void test_fuel_rate_broadcast_supersedes_direct_pid() {
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 2.1557f, DerivedCalculator::computeFuelRate(agg));
 }
 
+// ---- Boost pressure (derived: MAP - ambient) ----
+
+// Regression guard for the reported bug: the payload's boost field used to read
+// PID_M22_BOOST_PRES (a 0xF3xx DID this ECU never answers), so the dash showed 0
+// forever. With real manifold + ambient readings it must now be non-zero.
+static void test_boost_from_map_minus_baro() {
+    DataAggregator agg;
+    agg.update(PID_MAP_PRESSURE, 180.0f);   // kPa absolute
+    agg.update(PID_BARO_PRESSURE, 100.0f);  // kPa ambient
+    // (180 - 100) / 100 = 0.8 bar gauge
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.8f, DerivedCalculator::computeBoostBar(agg));
+}
+
+// Off boost the manifold sits at roughly ambient → 0, not a negative reading.
+static void test_boost_off_boost_is_zero() {
+    DataAggregator agg;
+    agg.update(PID_MAP_PRESSURE, 100.0f);
+    agg.update(PID_BARO_PRESSURE, 100.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, DerivedCalculator::computeBoostBar(agg));
+}
+
+// Slight vacuum (intake restriction / whole-kPa rounding) clamps to 0 rather than
+// showing a negative value on a boost gauge.
+static void test_boost_negative_clamps_to_zero() {
+    DataAggregator agg;
+    agg.update(PID_MAP_PRESSURE, 96.0f);
+    agg.update(PID_BARO_PRESSURE, 101.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, DerivedCalculator::computeBoostBar(agg));
+}
+
+// Ambient PID unsupported → fall back to ISA sea level rather than a dead gauge.
+static void test_boost_without_baro_uses_sea_level_fallback() {
+    DataAggregator agg;
+    agg.update(PID_MAP_PRESSURE, 201.3f);
+    TEST_ASSERT_FALSE(agg.isValid(PID_BARO_PRESSURE));
+    // (201.3 - 101.3) / 100 = 1.0 bar
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, DerivedCalculator::computeBoostBar(agg));
+}
+
+// No manifold reading at all → nothing to derive, report 0 (not a fallback-driven
+// negative or a bogus positive).
+static void test_boost_without_map_is_zero() {
+    DataAggregator agg;
+    agg.update(PID_BARO_PRESSURE, 100.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, DerivedCalculator::computeBoostBar(agg));
+}
+
 void run_derived_calculator_tests() {
+    RUN_TEST(test_boost_from_map_minus_baro);
+    RUN_TEST(test_boost_off_boost_is_zero);
+    RUN_TEST(test_boost_negative_clamps_to_zero);
+    RUN_TEST(test_boost_without_baro_uses_sea_level_fallback);
+    RUN_TEST(test_boost_without_map_is_zero);
     RUN_TEST(test_fuel_rate_from_broadcast_scales_with_raw);
     RUN_TEST(test_fuel_rate_from_broadcast_is_rpm_independent);
     RUN_TEST(test_fuel_rate_broadcast_idle_is_physical);

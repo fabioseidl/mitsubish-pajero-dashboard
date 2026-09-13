@@ -76,7 +76,11 @@ Payload PayloadBuilder::build(const DataAggregator& aggregator,
     p.at_oil_pres              = aggregator.get(PID_M22_AT_OIL_PRES);
 
     // Mode 22 — Engine ECU (slot IDs PID_M22_BOOST_PRES … PID_M22_INJ_COR_CYL4)
-    p.boost_pres               = aggregator.get(PID_M22_BOOST_PRES);
+    // boost_pres is NOT read from PID_M22_BOOST_PRES: that slot is one of the
+    // speculative 0xF3xx DIDs this ECU never answers, so it was always 0. It is
+    // derived from manifold + ambient pressure instead. Units: bar (gauge), which
+    // is what the main_display "BOOST bar" readout expects.
+    p.boost_pres               = DerivedCalculator::computeBoostBar(aggregator);
     p.egr_valve_pos_pct        = aggregator.get(PID_M22_EGR_VALVE_POS);
     p.dpf_soot_load            = aggregator.get(PID_M22_DPF_SOOT);
     p.dpf_regen_status         = aggregator.get(PID_M22_DPF_REGEN);

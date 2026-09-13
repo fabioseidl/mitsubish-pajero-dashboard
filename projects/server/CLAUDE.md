@@ -33,7 +33,7 @@ Pin assignments must be defined as named constants in `include/pin_config.h`. Ne
 | `PIDDictionary` | `include/pid_dictionary.h` | Lookup from (can_id, pid_code) to PidDefinition |
 | `PIDTranslator` | `include/pid_translator.h` | Raw bytes → engineering float; bitmask extraction |
 | `DataAggregator` | `include/data_aggregator.h` | Thread-safe latest-value store per PID |
-| `DerivedCalculator` | `include/derived_calculator.h` | Instantaneous consumption from speed + fuel rate |
+| `DerivedCalculator` | `include/derived_calculator.h` | Consumption, fuel rate, altitude, and boost (MAP − ambient) |
 | `SessionAccumulator` | `include/session_accumulator.h` | Integrated distance and fuel since boot |
 | `PayloadBuilder` | `include/payload_builder.h` | Assembles `Payload` from aggregator + session |
 
@@ -68,7 +68,10 @@ All supported PIDs are defined in `lib/core/include/pid_map.h`. Do not hardcode 
 Required PIDs for a valid broadcast (checked by `DataAggregator::allRequiredPidsReceived()`):
 - `PID_RPM` (0x0C)
 - `PID_SPEED` (0x0D)
-- `PID_FUEL_RATE` (0x5E) — unverified, consumption will be 0.0 if unsupported
+
+`PID_FUEL_RATE` (0x5E) is deliberately NOT required: this ECU never answers it, and
+since this check gates `PAYLOAD_FLAG_DATA_VALID`, requiring it would clear that flag
+forever and blank every client. The fuel rate is derived instead (CAN 0x608, else MAF).
 
 ---
 
@@ -86,13 +89,17 @@ delta_distance = speed_km_h * (delta_ms / 3_600_000.0f)
 
 // Session avg consumption
 avg = total_distance_km / total_fuel_l  (0.0 if total_fuel == 0)
+
+// Turbo boost (bar, gauge) — no dedicated boost PID exists on this vehicle
+boost_bar = max(0, (MAP_kPa(0x0B) - ambient_kPa(0x33)) / 100)
+// ambient falls back to 101.3 kPa when PID 0x33 is unsupported
 ```
 
 ---
 
 ## Tests for This Project
 
-All tests are in `test/host/server/`. Run from repo root:
+All tests are in `test/host/test_server/`. Run from repo root:
 
 ```bash
 cd test && pio test -e native_tests

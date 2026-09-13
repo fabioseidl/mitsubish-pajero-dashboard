@@ -92,7 +92,7 @@ avg = total_distance_km / total_fuel_l  (0.0 if total_fuel == 0)
 
 ## Tests for This Project
 
-All tests are in `test/host/server/`. Run from repo root:
+All tests are in `test/host/test_server/`. Run from repo root:
 
 ```bash
 cd test && pio test -e native_tests
