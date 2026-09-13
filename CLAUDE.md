@@ -37,9 +37,11 @@ A distributed car dashboard for a Mitsubishi Pajero Dakar. One ESP32 reads OBD-I
 - `ESPNowBroadcaster` / `ESPNowReceiver` — wireless abstraction (broadcast to `FF:FF:FF:FF:FF:FF`, PMK security)
 - `BrightnessController`, `ServerConnectionMonitor`, `IDisplay` — shared logic across all clients
 
-**Host tests** (`test/`):
+**Host tests** (`test/host/`):
 - Unity framework running on macOS native (ARM64); all tests compile with `-DUNIT_TEST` and `-std=c++17`
-- Mocks in `test/host/mocks/` replace hardware drivers (CAN, display, ESP-NOW)
+- Two PlatformIO suites: `test/host/test_server/` (server classes) and `test/host/test_lib/` (shared `lib/core` classes). PlatformIO only treats `test_*` subfolders as suites, and `test_dir = host` is set under `[platformio]` in `test/platformio.ini` — keep both when adding a suite.
+- Mocks in `test/host/mocks/` replace hardware drivers (CAN, display, ESP-NOW); it is shared headers, not a suite
+- Each test file `#include`s the implementation `.cpp` it exercises at the bottom, so sources are never passed to the compiler separately
 - Tests cover all server-side classes and shared lib classes; run these before flashing
 
 **Server data flow:**

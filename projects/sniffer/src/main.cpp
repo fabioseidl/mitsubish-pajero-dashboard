@@ -36,7 +36,8 @@
 // Serial commands (one per line):
 //   T<unix>                 set wall-clock base for timestamps (e.g. T1716394391)
 //   DUMP                    toggle passive candump printing on/off (default off)
-//   WATCH [id ...]          decode broadcast frames (hex IDs); no args = 608 218
+//   WATCH [id ...]          decode broadcast frames (hex IDs); no args watches all
+//                           known candidates: 608 218 215 308 312 236 424 445
 //   DIFF [id]               isolate a slow field in one frame; no arg = 218 (gear)
 //   ADIFF                   whole-bus DIFF: hold still to learn, then toggle an
 //                           input; the changed ID/byte is printed (unknown frames)
@@ -98,19 +99,44 @@ static bool     g_dump    = false;   // passive candump printing; off until DUMP
 // If 0x608 really is injected fuel it should collapse to ~0 on overrun (closed
 // throttle, elevated rpm) — exactly what FUELLOG checks — letting it replace the
 // MAF→AFR estimate in projects/server/src/derived_calculator.cpp.
-static constexpr uint16_t BCAST_FUEL = 0x608;
-static constexpr uint16_t BCAST_GEAR = 0x218;
+static constexpr uint16_t BCAST_FUEL = CAN_BCAST_FUEL;
+static constexpr uint16_t BCAST_GEAR = CAN_BCAST_GEAR;
+
+// --- Candidate frames from the igkov/MPS2 Pajero Sport 2 dash ---------------
+// Speed, rpm, torque, steering, body-control (ETACS) and auto-A/C. See the
+// "Candidate broadcast frames" block in lib/core/include/pid_map.h for the byte
+// layouts and the decoders — this file deliberately holds NO magic numbers of
+// its own, so a correction there fixes the sniffer and the server together.
+// UNVERIFIED on the Pajero IV: WATCH decodes them so a drive can confirm them.
 
 struct WatchId {
     uint16_t id;
     uint32_t last_ms;    // last time this id was printed (rate limiter)
     int32_t  last_val;   // last decoded headline value (change detector)
 };
-static constexpr uint8_t  WATCH_MAX = 8;
-static WatchId  g_watch[WATCH_MAX] = { { BCAST_FUEL, 0, INT32_MIN },
-                                       { BCAST_GEAR, 0, INT32_MIN } };
-static uint8_t  g_watch_n = 2;
+static constexpr uint8_t  WATCH_MAX = 16;
+static WatchId  g_watch[WATCH_MAX] = { { BCAST_FUEL,      0, INT32_MIN },
+                                       { BCAST_GEAR,      0, INT32_MIN },
+                                       { CAN_BCAST_SPEED, 0, INT32_MIN },
+                                       { CAN_BCAST_RPM,   0, INT32_MIN },
+                                       { CAN_BCAST_TORQUE,0, INT32_MIN },
+                                       { CAN_BCAST_STEER, 0, INT32_MIN },
+                                       { CAN_BCAST_ETACS, 0, INT32_MIN },
+                                       { CAN_BCAST_AUTOAC,0, INT32_MIN } };
+static uint8_t  g_watch_n = 8;
 static constexpr uint32_t WATCH_MIN_INTERVAL_MS = 250;   // per-id print throttle
+
+// Analog frames change on nearly every message (speed, rpm, torque, steering,
+// fuel), and 0x308 alone arrives at ~50 Hz — printing each change would flood the
+// console and starve the others. Those are throttled to WATCH_MIN_INTERVAL_MS.
+// Discrete frames (gear, lamps/doors, A/C switches) are the ones where the whole
+// point is catching the instant a bit flips, so a change prints immediately.
+// Unknown IDs typed by the user default to discrete: watching one is almost always
+// a hunt for a state change.
+static bool isContinuousBcast(uint16_t id) {
+    return id == BCAST_FUEL || id == CAN_BCAST_SPEED || id == CAN_BCAST_RPM
+        || id == CAN_BCAST_TORQUE || id == CAN_BCAST_STEER;
+}
 
 // Latest decoded broadcast values, refreshed from the bus each FUELLOG tick.
 static int32_t g_fl_fuel = -1;   // (D5<<8|D6) from 0x608, -1 = not seen yet
@@ -547,8 +573,16 @@ static void sigTick() {
 // headline integer used for change-detection; prints the decoded interpretation.
 // ---------------------------------------------------------------------------
 static int32_t decodeBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc) {
-    if (id == BCAST_FUEL && dlc >= 7) return (d[5] << 8) | d[6];   // injected fuel raw
-    if (id == BCAST_GEAR && dlc >= 3) return d[2];                 // full gear byte (tgt<<4|cur)
+    if (id == BCAST_FUEL      && dlc >= 7) return (d[5] << 8) | d[6];   // injected fuel raw
+    if (id == BCAST_GEAR      && dlc >= 3) return d[2];                 // full gear byte (tgt<<4|cur)
+    if (id == CAN_BCAST_SPEED && dlc >= 4) return (int32_t)bcast_speed_kmh(d);
+    if (id == CAN_BCAST_RPM   && dlc >= 3) return bcast_rpm(d);
+    if (id == CAN_BCAST_TORQUE&& dlc >= 2) return bcast_torque_nm(d);
+    if (id == CAN_BCAST_STEER && dlc >= 2) return bcast_steer_angle(d);
+    // Discrete frames: the headline is the concatenation of the bytes that carry
+    // state, so ANY switch/lamp/door change registers as a change.
+    if (id == CAN_BCAST_ETACS && dlc >= 3) return (d[0] << 16) | (d[1] << 8) | d[2];
+    if (id == CAN_BCAST_AUTOAC&& dlc >= 6) return (d[0] << 24) | (d[3] << 16) | (d[4] << 8) | d[5];
     return 0;
 }
 
@@ -576,11 +610,44 @@ static void printBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc, uint64_t 
     for (uint8_t i = 0; i < dlc; ++i) Serial.printf("%02X", d[i]);
 
     if (id == BCAST_FUEL && dlc >= 7) {
-        Serial.printf("  fuel_raw=%d (D5D6)  D0=%u", (d[5] << 8) | d[6], d[0]);
+        // D0 is very likely coolant temp: the MPS2 dash reads this exact byte as
+        // (D0 - 40) degC, and our own captures (0x4D -> 37 C cold, 0x7A -> 82 C
+        // warm) fit that curve. Printed decoded so a drive can confirm it.
+        Serial.printf("  fuel_raw=%d (D5D6)  D0=%u (coolant? %d C)",
+                      (d[5] << 8) | d[6], d[0], (int)d[0] - 40);
     } else if (id == BCAST_GEAR && dlc >= 3) {
         uint8_t cur = d[2] & 0x0F, tgt = d[2] >> 4;
         Serial.printf("  gear=%s", gearName(cur));
         if (tgt != cur) Serial.printf(" (shifting->%s)", gearName(tgt));
+    } else if (id == CAN_BCAST_SPEED && dlc >= 4) {
+        // Cross-check against the speedo: 1/128 km/h resolution, and the D2,D3
+        // counter should climb ~BCAST_TRIP_COUNTS_PER_KM per km driven.
+        Serial.printf("  speed=%.2f km/h  trip_cnt=%u", bcast_speed_kmh(d), bcast_trip_counts(d));
+    } else if (id == CAN_BCAST_RPM && dlc >= 3) {
+        Serial.printf("  rpm=%u", bcast_rpm(d));
+    } else if (id == CAN_BCAST_TORQUE && dlc >= 2) {
+        Serial.printf("  torque=%ld Nm", (long)bcast_torque_nm(d));
+    } else if (id == CAN_BCAST_STEER && dlc >= 2) {
+        // Sign/centre are calibration dependent: straight ahead should read ~0.
+        Serial.printf("  steer=%ld (raw=%u)", (long)bcast_steer_angle(d), (d[0] << 8) | d[1]);
+    } else if (id == CAN_BCAST_ETACS && dlc >= 3) {
+        Serial.printf("  lamps[%s%s%s] turn[%s%s] doors[%s%s]",
+                      (d[0] & ETACS_D0_POSITION_LAMP) ? "pos "  : "",
+                      (d[1] & ETACS_D1_HEAD_LAMP_LO)  ? "lo "   : "",
+                      (d[1] & ETACS_D1_HEAD_LAMP_HI)  ? "hi "   : "",
+                      (d[1] & ETACS_D1_LEFT_TURN)     ? "L"     : "-",
+                      (d[1] & ETACS_D1_RIGHT_TURN)    ? "R"     : "-",
+                      (d[2] & ETACS_D2_DRIVER_DOOR)   ? "drv "  : "",
+                      (d[2] & ETACS_D2_OTHER_DOOR)    ? "other" : "");
+    } else if (id == CAN_BCAST_AUTOAC && dlc >= 6) {
+        Serial.printf("  ac=%s temp=%u fan=%u vent[%s%s%s] %s%s",
+                      (d[3] & AUTOAC_D3_AC_ON)       ? "on"  : "off",
+                      bcast_ac_set_temp(d), bcast_ac_fan_speed(d),
+                      (d[5] & AUTOAC_D5_VENT_UP)     ? "face " : "",
+                      (d[5] & AUTOAC_D5_VENT_DOWN)   ? "foot " : "",
+                      (d[5] & AUTOAC_D5_VENT_WIND)   ? "wind"  : "",
+                      (d[3] & AUTOAC_D3_RECIRCULATE) ? " recirc" : " fresh",
+                      (d[4] & AUTOAC_D4_MIRROR_HEAT) ? " mirror-heat" : "");
     }
     Serial.println();
 }
@@ -600,6 +667,9 @@ static void watchTick() {
         uint32_t now = millis();
         bool changed = (v != g_watch[i].last_val);
         bool elapsed = (now - g_watch[i].last_ms) >= WATCH_MIN_INTERVAL_MS;
+        // Continuous signals change constantly, so an immediate change-print would
+        // flood; they only print on the interval. Discrete state prints at once.
+        if (isContinuousBcast(id)) changed = false;
         if (changed || elapsed) {
             printBroadcast(id, m.data, m.can_dlc, currentTimestampUs());
             g_watch[i].last_val = v;
@@ -823,7 +893,7 @@ static void handleSerial() {
 
     if (cmd.startsWith("WATCH")) {
         // WATCH [id ...] — replace the watch list with the given hex IDs, or keep
-        // the defaults (0x608, 0x218) when none are supplied.
+        // the defaults (every known/candidate broadcast frame) when none are given.
         uint8_t n = 0;
         int i = 5;                                  // skip "WATCH"
         while (i < (int)cmd.length() && n < WATCH_MAX) {

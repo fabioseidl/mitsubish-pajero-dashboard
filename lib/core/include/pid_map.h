@@ -123,6 +123,78 @@ typedef struct {
 #define GEAR_CODE_REVERSE  0xBu
 #define GEAR_CODE_PARK     0xDu
 
+// ---------- Candidate broadcast frames (igkov / MPS2, UNVERIFIED here) ------
+// The frames below are decoded by the "MPS2_Digital_Dash" Pajero Sport 2 dash
+// (src/can_handler.cpp + src/mps_params.h) — an independent reverse-engineering
+// of the same Mitsubishi powertrain/body bus. That project reads 0x608 (fuel in
+// D5,D6) and 0x218 (gear nibbles in D2) exactly as our own road tests confirmed
+// them above, which is the reason to trust the rest of its map enough to test.
+//
+// STATUS: none of these are confirmed on the Pajero IV (V80 / 4M41) yet, and
+// nothing in projects/server reads them. They exist here so the sniffer's WATCH
+// mode can decode them on a drive; promote one to a real payload field only
+// after a capture on THIS vehicle agrees with the decode.
+//
+// Frame layouts (all big-endian, D0 = first data byte):
+//   0x215 D0,D1 = speed (1/128 km/h);  D2,D3 = distance counter (16-bit, wraps)
+//   0x236 D0,D1 = steering angle, raw; centre is a per-sensor calibration
+//   0x308 D1,D2 = engine rpm (direct, no scaling)
+//   0x312 D0,D1 = engine torque, ((D0<<8|D1)/4) - 500
+//   0x424 body-control (ETACS): lamps, turn signals, doors — see masks below
+//   0x445 auto A/C: set temp, fan speed, vent routing, recirculation, mirror heat
+#define CAN_BCAST_SPEED  0x215u
+#define CAN_BCAST_STEER  0x236u
+#define CAN_BCAST_RPM    0x308u
+#define CAN_BCAST_TORQUE 0x312u
+#define CAN_BCAST_ETACS  0x424u
+#define CAN_BCAST_AUTOAC 0x445u
+
+// 0x215 distance counter → km. MPS2 calls this an empirically measured constant
+// (counts per km), so it is the first thing to re-derive on our truck: drive a
+// known distance and divide the counter delta by it.
+#define BCAST_TRIP_COUNTS_PER_KM  25700.0f
+
+// 0x236 steering: raw value at the straight-ahead position. MPS2's comment marks
+// this as sensor-calibration dependent, so expect to re-zero it on our vehicle.
+#define BCAST_STEER_CENTRE_RAW    0x1001
+
+// 0x424 ETACS bit masks (byte index, then mask within that byte).
+#define ETACS_D0_POSITION_LAMP   0x04u
+#define ETACS_D1_RIGHT_TURN      0x01u
+#define ETACS_D1_LEFT_TURN       0x02u
+#define ETACS_D1_HEAD_LAMP_HI    0x04u
+#define ETACS_D1_HEAD_LAMP_LO    0x20u
+#define ETACS_D2_OTHER_DOOR      0x01u
+#define ETACS_D2_DRIVER_DOOR     0x02u
+// NB: MPS2 declares front/rear fog lamps but never assigns them — those bits are
+// unknown in that project too, so they are deliberately absent here.
+
+// 0x445 auto A/C bit masks.
+#define AUTOAC_D3_RECIRCULATE    0x02u
+#define AUTOAC_D3_AC_ON          0x08u
+#define AUTOAC_D4_MIRROR_HEAT    0x20u
+#define AUTOAC_D5_VENT_UP        0x02u   // face vents
+#define AUTOAC_D5_VENT_DOWN      0x04u   // footwell
+#define AUTOAC_D5_VENT_WIND      0x08u   // windscreen / defrost
+#define AUTOAC_D5_FAN_MASK       0xF0u   // fan speed in the high nibble
+// Set-point temperature is D0 with an offset; values at or below the floor mean
+// the display shows no numeric set point (A/C off / full-cold).
+#define AUTOAC_D0_TEMP_OFFSET    63
+#define AUTOAC_D0_TEMP_FLOOR     50
+
+// --- Shared decoders. Keep every magic number above in ONE place so the sniffer
+// and the server can never disagree about how a frame is read. Each takes the
+// 8-byte frame payload; callers must range-check the DLC first.
+static inline float   bcast_speed_kmh(const uint8_t* d)   { return ((d[0] << 8) | d[1]) / 128.0f; }
+static inline uint16_t bcast_trip_counts(const uint8_t* d){ return (uint16_t)((d[2] << 8) | d[3]); }
+static inline int32_t bcast_steer_angle(const uint8_t* d) { return BCAST_STEER_CENTRE_RAW - ((d[0] << 8) | d[1]); }
+static inline uint16_t bcast_rpm(const uint8_t* d)        { return (uint16_t)((d[1] << 8) | d[2]); }
+static inline int32_t bcast_torque_nm(const uint8_t* d)   { return (((d[0] << 8) | d[1]) / 4) - 500; }
+static inline uint8_t bcast_ac_fan_speed(const uint8_t* d){ return (uint8_t)((d[5] & AUTOAC_D5_FAN_MASK) >> 4); }
+static inline uint8_t bcast_ac_set_temp(const uint8_t* d) {
+    return (d[0] <= AUTOAC_D0_TEMP_FLOOR) ? 0u : (uint8_t)(d[0] - AUTOAC_D0_TEMP_OFFSET);
+}
+
 static const PidDefinition PID_MAP[] = {
     { PID_MONITOR_STATUS,  "Monitor Status",                   "",      4,     FORMULA_BITMASK, 0.0f,    0.0f,    0.0f,           0.0f,     0.0f,      0.0f,      true  },
     { PID_ENGINE_LOAD,     "Calculated Engine Load",           "%",     1,     FORMULA_LINEAR,  1.0f,    0.0f,    0.392157f,      0.0f,     0.0f,      100.0f,    true  },

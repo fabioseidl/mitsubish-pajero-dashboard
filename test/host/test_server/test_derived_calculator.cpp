@@ -124,14 +124,49 @@ static void test_fuel_rate_idle_released_pedal_not_cut() {
 
 // ---- CAN 0x608 injected-fuel broadcast (preferred over MAF estimate) ----
 
-// When the real injected-fuel broadcast is present, the rate is raw * rpm * K.
-// (K = 4.1e-6, see FUEL_RAW_K in derived_calculator.cpp — keep in sync.)
-static void test_fuel_rate_from_broadcast_scales_with_raw_and_rpm() {
+// The broadcast is a fuel MASS FLOW in mg/s, so the rate is rpm-independent:
+//   L/h = raw * 3.6 / DIESEL_DENSITY_G_L   (835 g/L — keep in sync with
+//   derived_calculator.cpp).
+static void test_fuel_rate_from_broadcast_scales_with_raw() {
     DataAggregator agg;
     agg.update(PID_BCAST_FUEL_RAW, 1000.0f);
     agg.update(PID_RPM, 2000.0f);
-    // 1000 * 2000 * 4.1e-6 = 8.2 L/h
-    TEST_ASSERT_FLOAT_WITHIN(0.01f, 8.2f, DerivedCalculator::computeFuelRate(agg));
+    // 1000 * 3.6 / 835 = 4.3114 L/h
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 4.3114f, DerivedCalculator::computeFuelRate(agg));
+}
+
+// Regression guard for the rpm-multiplied model that used to live here: it read
+// far too low at idle and predicted a physically impossible ~74 L/h under load
+// (a 4M41 cannot exceed ~32 L/h). Same raw at two very different rpm MUST give
+// the same rate — if this fails, an rpm term has crept back into the formula.
+static void test_fuel_rate_from_broadcast_is_rpm_independent() {
+    DataAggregator low, high;
+    low.update(PID_BCAST_FUEL_RAW, 1500.0f);
+    low.update(PID_RPM, 800.0f);
+    high.update(PID_BCAST_FUEL_RAW, 1500.0f);
+    high.update(PID_RPM, 3600.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, DerivedCalculator::computeFuelRate(low),
+                                     DerivedCalculator::computeFuelRate(high));
+}
+
+// The decoded idle figure must be physically sane for a warm 3.2 DI-D: our own
+// FUELLOG idle sample (raw≈318) should land near ~1.4 L/h, not the ~0.85 L/h the
+// old model produced.
+static void test_fuel_rate_broadcast_idle_is_physical() {
+    DataAggregator agg;
+    agg.update(PID_BCAST_FUEL_RAW, 318.0f);
+    agg.update(PID_RPM, 650.0f);
+    float l_per_h = DerivedCalculator::computeFuelRate(agg);
+    TEST_ASSERT_TRUE(l_per_h > 1.0f && l_per_h < 1.8f);
+}
+
+// ...and the hard-accel sample must stay under the engine's absolute fuel
+// ceiling (~32 L/h at peak power, 123 kW @ ~215 g/kWh).
+static void test_fuel_rate_broadcast_full_load_under_engine_ceiling() {
+    DataAggregator agg;
+    agg.update(PID_BCAST_FUEL_RAW, 4734.0f);
+    agg.update(PID_RPM, 3800.0f);
+    TEST_ASSERT_TRUE(DerivedCalculator::computeFuelRate(agg) < 32.0f);
 }
 
 // raw == 0 is true deceleration fuel cut-off → exactly 0, even with air flowing
@@ -161,12 +196,15 @@ static void test_fuel_rate_broadcast_supersedes_direct_pid() {
     agg.update(PID_FUEL_RATE, 50.0f);    // direct PID present
     agg.update(PID_BCAST_FUEL_RAW, 500.0f);
     agg.update(PID_RPM, 1000.0f);
-    // 500 * 1000 * 4.1e-6 = 2.05 L/h (the broadcast), not 50
-    TEST_ASSERT_FLOAT_WITHIN(0.01f, 2.05f, DerivedCalculator::computeFuelRate(agg));
+    // 500 * 3.6 / 835 = 2.1557 L/h (the broadcast), not 50
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 2.1557f, DerivedCalculator::computeFuelRate(agg));
 }
 
 void run_derived_calculator_tests() {
-    RUN_TEST(test_fuel_rate_from_broadcast_scales_with_raw_and_rpm);
+    RUN_TEST(test_fuel_rate_from_broadcast_scales_with_raw);
+    RUN_TEST(test_fuel_rate_from_broadcast_is_rpm_independent);
+    RUN_TEST(test_fuel_rate_broadcast_idle_is_physical);
+    RUN_TEST(test_fuel_rate_broadcast_full_load_under_engine_ceiling);
     RUN_TEST(test_fuel_rate_broadcast_zero_is_overrun);
     RUN_TEST(test_fuel_rate_broadcast_supersedes_maf);
     RUN_TEST(test_fuel_rate_broadcast_supersedes_direct_pid);

@@ -31,10 +31,17 @@ static void test_update_overwrites_previous_value() {
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 2000.0f, agg.get(PID_RPM));
 }
 
+// "Required" is RPM + SPEED only — deliberately NOT fuel rate.
+//
+// This gates PAYLOAD_FLAG_DATA_VALID, which clients use to decide whether to
+// render anything at all. This vehicle's ECU never answers PID 0x5E (fuel rate);
+// it is polled, but valid_[PID_FUEL_RATE] stays false forever, which is exactly
+// why DerivedCalculator computes the rate from CAN 0x608 / MAF instead. Adding
+// 0x5E to the required set would therefore clear DATA_VALID permanently and blank
+// every client. The original spec listed it before that was discovered.
 static void test_allRequiredPidsReceived_false_when_partial() {
     DataAggregator agg;
     agg.update(PID_RPM, 1000.0f);
-    agg.update(PID_SPEED, 50.0f);
     TEST_ASSERT_FALSE(agg.allRequiredPidsReceived());
 }
 
@@ -42,7 +49,15 @@ static void test_allRequiredPidsReceived_true_when_all_present() {
     DataAggregator agg;
     agg.update(PID_RPM, 1000.0f);
     agg.update(PID_SPEED, 50.0f);
-    agg.update(PID_FUEL_RATE, 5.0f);
+    TEST_ASSERT_TRUE(agg.allRequiredPidsReceived());
+}
+
+// Regression guard: an unanswered fuel-rate PID must never hold DATA_VALID down.
+static void test_allRequiredPidsReceived_true_without_fuel_rate() {
+    DataAggregator agg;
+    agg.update(PID_RPM, 1000.0f);
+    agg.update(PID_SPEED, 50.0f);
+    TEST_ASSERT_FALSE(agg.isValid(PID_FUEL_RATE));
     TEST_ASSERT_TRUE(agg.allRequiredPidsReceived());
 }
 
@@ -79,6 +94,7 @@ void run_data_aggregator_tests() {
     RUN_TEST(test_update_overwrites_previous_value);
     RUN_TEST(test_allRequiredPidsReceived_false_when_partial);
     RUN_TEST(test_allRequiredPidsReceived_true_when_all_present);
+    RUN_TEST(test_allRequiredPidsReceived_true_without_fuel_rate);
     RUN_TEST(test_update_mil_status_stored_and_retrieved);
     RUN_TEST(test_update_dtc_count_stored_and_retrieved);
     RUN_TEST(test_reset_invalidates_all_values);

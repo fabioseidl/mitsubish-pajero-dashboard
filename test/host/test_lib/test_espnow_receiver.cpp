@@ -63,14 +63,24 @@ static void test_wrong_size_does_not_invoke_callback() {
     TEST_ASSERT_EQUAL_INT(0, callback_count);
 }
 
-static void test_missing_data_valid_flag_does_not_invoke_callback() {
+// A payload WITHOUT the DATA_VALID flag must still reach the callback: the
+// receiver validates transport framing (length + version) only, and rendering is
+// the UI's decision.
+//
+// Dropping it here would break the connection monitor, which is fed from this very
+// callback (see client_simple_hud/src/main.cpp). The server clears DATA_VALID
+// whenever RPM/SPEED haven't been answered yet — e.g. ignition on, engine not
+// running — so a transport-level drop would report a perfectly healthy server as
+// OFFLINE. Clients already skip rendering on the flag themselves
+// (main_display/src/app_ui.cpp, dashboard_ui.cpp).
+static void test_missing_data_valid_flag_still_invokes_callback() {
     reset_counters();
     ESPNowReceiver rcv;
     rcv.setCallback(test_callback);
     Payload p = make_valid_payload();
     p.flags = 0;
     simulateReceive(rcv, (const uint8_t*)&p, sizeof(p));
-    TEST_ASSERT_EQUAL_INT(0, callback_count);
+    TEST_ASSERT_EQUAL_INT(1, callback_count);
 }
 
 static void test_two_valid_payloads_invoke_callback_twice() {
@@ -96,7 +106,7 @@ void run_espnow_receiver_tests() {
     RUN_TEST(test_callback_receives_correct_rpm);
     RUN_TEST(test_wrong_version_does_not_invoke_callback);
     RUN_TEST(test_wrong_size_does_not_invoke_callback);
-    RUN_TEST(test_missing_data_valid_flag_does_not_invoke_callback);
+    RUN_TEST(test_missing_data_valid_flag_still_invokes_callback);
     RUN_TEST(test_two_valid_payloads_invoke_callback_twice);
     RUN_TEST(test_null_callback_does_not_crash_on_receive);
 }

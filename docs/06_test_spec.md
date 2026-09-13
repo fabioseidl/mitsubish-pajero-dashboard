@@ -220,12 +220,22 @@ TEST: update_overwrites_previous_value
   Expected: aggregator.get(PID_RPM) == 2000.0f
 
 TEST: allRequiredPidsReceived_false_when_partial
-  When:  only PID_RPM and PID_SPEED updated
+  When:  only PID_RPM updated
   Expected: allRequiredPidsReceived() == false
 
 TEST: allRequiredPidsReceived_true_when_all_present
-  When:  PID_RPM, PID_SPEED, PID_FUEL_RATE all updated
+  When:  PID_RPM and PID_SPEED updated
   Expected: allRequiredPidsReceived() == true
+
+TEST: allRequiredPidsReceived_true_without_fuel_rate
+  When:  PID_RPM and PID_SPEED updated, PID_FUEL_RATE never received
+  Expected: allRequiredPidsReceived() == true
+
+  NOTE: the required set is RPM + SPEED only. An earlier revision of this spec
+  also required PID_FUEL_RATE (0x5E), but this vehicle's ECU never answers it —
+  that is why DerivedCalculator derives the rate from CAN 0x608 / MAF. Since
+  allRequiredPidsReceived() gates PAYLOAD_FLAG_DATA_VALID, requiring 0x5E would
+  clear that flag forever and blank every client.
 
 TEST: update_mil_status_stored_and_retrieved
   When:  updateMilStatus(true)
@@ -461,9 +471,16 @@ TEST: wrong_size_does_not_invoke_callback
   Given: len = sizeof(Payload) - 1
   Expected: callback not invoked
 
-TEST: missing_data_valid_flag_does_not_invoke_callback
+TEST: missing_data_valid_flag_still_invokes_callback
   Given: payload.flags = 0
-  Expected: callback not invoked
+  Expected: callback IS invoked
+
+  NOTE: this expectation was inverted in an earlier revision. ESPNowReceiver
+  validates transport framing (length + version) only; whether to RENDER is the
+  UI's decision, and clients already gate on PAYLOAD_FLAG_DATA_VALID themselves.
+  Dropping the payload here would also starve ServerConnectionMonitor, which is
+  fed from this same callback — so a healthy server would read OFFLINE whenever
+  the engine is not running and the flag is legitimately clear.
 
 TEST: two_valid_payloads_invoke_callback_twice
   When:  simulateReceive() called twice with valid payloads
