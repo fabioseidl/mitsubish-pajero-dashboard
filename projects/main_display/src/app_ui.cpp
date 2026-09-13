@@ -205,7 +205,10 @@ void update(const Payload& p) {
     set_if_changed(ui_lbdistancekm,         "%.1f", p.distance_km);
     set_if_changed(ui_lbbarometerpressure,  "%u",   (unsigned)p.baro_pressure_kpa);
     set_if_changed(ui_lbambientetemperature,"%.0f", p.ambient_temp_c);
-    set_if_changed(ui_lbboostpressure,      "%.1f", p.boost_pres);
+    // Boost is derived from MAP - ambient, both whole-kPa, so the data resolves to
+    // ~0.01 bar. Two decimals show that; "%.1f" quantised it to 0.1 bar steps and
+    // hid all movement below a tenth of a bar.
+    set_if_changed(ui_lbboostpressure,      "%.2f", p.boost_pres);
     set_if_changed(ui_lbengineload,         "%.0f", p.engine_load_pct);
     set_if_changed(ui_lbthrottle,           "%.0f", p.throttle_pct);
     set_if_changed(ui_lbcoolanttemp,        "%.0f", p.coolant_temp_c);
