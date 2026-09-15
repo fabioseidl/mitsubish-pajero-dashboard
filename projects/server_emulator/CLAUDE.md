@@ -20,7 +20,7 @@ This project must produce a `Payload` struct that is **byte-for-byte identical i
 
 | Component | Detail |
 |---|---|
-| MCU | ESP32 (any variant) |
+| MCU | LilyGo T-2CAN — ESP32-S3, 16 MB flash, 8 MB PSRAM; logs over native USB-Serial-JTAG (`sdkconfig.defaults`) |
 | CAN | None — not connected |
 | Display | None |
 
