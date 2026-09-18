@@ -1,78 +1,102 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code working in this repository.
 
-## Commands
+Deeper context lives in `.claude/skills/` and loads on demand — this file holds
+only what is true everywhere.
 
-**Build & Flash (run from each sub-project directory):**
-```bash
-pio run                    # build only
-pio run --target upload    # build and flash to hardware
-```
+| Skill | Covers |
+|---|---|
+| `server-firmware` | `projects/server` + `server_emulator`: CAN, polling, deep sleep, derived maths |
+| `client-firmware` | The four display clients, their shared contract and per-board quirks |
+| `payload-protocol` | `Payload`, `pid_map.h`, ESP-NOW — the contract between them |
+| `host-tests` | The Unity suites under `test/host` |
+| `can-reverse-engineering` | `projects/sniffer`: finding and confirming new vehicle data |
 
-**Run all host tests (from repo root):**
-```bash
-cd test && pio test -e native_tests
-```
+Slash commands: `/build <project>`, `/flash <project>`, `/test`.
 
-**First-time setup:**
-```bash
-cp lib/core/include/security_config.h.example lib/core/include/security_config.h
-# Edit security_config.h and set a real 16-byte PMK
-```
+## What this is
 
-## Architecture
+A distributed dashboard for a Mitsubishi Pajero Dakar (Pajero IV 3.2 DI-D, 4M41
+diesel). One ESP32 reads OBD-II data from the vehicle CAN bus and broadcasts a
+packed `Payload` struct at 10 Hz over ESP-NOW; several ESP32 clients receive it
+and render it with LVGL.
 
-A distributed car dashboard for a Mitsubishi Pajero Dakar. One ESP32 reads OBD-II data over CAN bus and broadcasts it wirelessly via ESP-NOW; multiple ESP32 clients receive and render the data on displays using LVGL.
-
-**Sub-projects** (`projects/`):
-- `server/` — reads CAN frames via TWAI at 500 kbps, translates PIDs, accumulates session data, and broadcasts a `Payload` struct at 10 Hz via ESP-NOW
-- `server_emulator/` — same ESP-NOW broadcast as server but generates synthetic sinusoidal driving profiles instead of reading from CAN; enables client development without the vehicle
-- `client_simple_hud/` — LVGL + LovyanGFX on ESP32, renders the dashboard on a small 2.4" SPI display
-- `main_display/` — LVGL on Waveshare ESP32-S3 with a 7" 1024×600 RGB parallel LCD + GT911 touch
-
-**Shared library** (`lib/core/`):
-- `payload.h` — central 221-byte packed struct; a `static_assert` enforces the exact size
-- `pid_map.h` — hand-maintained OBD-II PID definitions with formula parameters; never auto-generate
-- `ESPNowBroadcaster` / `ESPNowReceiver` — wireless abstraction (broadcast to `FF:FF:FF:FF:FF:FF`, PMK security)
-- `BrightnessController`, `ServerConnectionMonitor`, `IDisplay` — shared logic across all clients
-
-**Host tests** (`test/host/`):
-- Unity framework running on macOS native (ARM64); all tests compile with `-DUNIT_TEST` and `-std=c++17`
-- Two PlatformIO suites: `test/host/test_server/` (server classes) and `test/host/test_lib/` (shared `lib/core` classes). PlatformIO only treats `test_*` subfolders as suites, and `test_dir = host` is set under `[platformio]` in `test/platformio.ini` — keep both when adding a suite.
-- Mocks in `test/host/mocks/` replace hardware drivers (CAN, display, ESP-NOW); it is shared headers, not a suite
-- Each test file `#include`s the implementation `.cpp` it exercises at the bottom, so sources are never passed to the compiler separately
-- Tests cover all server-side classes and shared lib classes; run these before flashing
-
-**Server data flow:**
 ```
 CAN bus → CANDriver → PIDDictionary + PIDTranslator → DataAggregator (mutex)
         → DerivedCalculator → SessionAccumulator → PayloadBuilder → ESPNowBroadcaster
-```
-
-**Client data flow:**
-```
+                                    ↓ ESP-NOW broadcast, 10 Hz
 ESP-NOW ISR → ESPNowReceiver → ServerConnectionMonitor + IScreenController → LVGL widgets
 ```
 
-**FreeRTOS tasks on server:** `can_rx_task` (core 1, priority 5) and `broadcast_task` (core 0, priority 3). `DataAggregator` is the only shared state between tasks, protected by a mutex.
+## Layout
 
-## Key constraints
+```
+lib/core/            Shared by every node: payload.h, pid_map.h, ESP-NOW, IDisplay,
+                     brightness, connection monitor
+projects/
+  server/            Production server — ESP32-S3 + MCP2515, reads CAN, broadcasts
+  server_emulator/   Same broadcast from synthetic data (ESP-IDF) — client dev without the car
+  main_display/      Waveshare 7" 1024×600 RGB dashboard + GPS/IMU/environment sensors
+  main_hud/          Guition 3.5" QSPI windshield HUD — speed only
+  glass_display/     Waveshare ESP32-C6 1.47" — speed only
+  client_simple_hud/ CYD 2.4" SPI HUD, LDR auto-brightness
+  sniffer/           CAN sniffer + DBC + monitor.py for reverse engineering
+  server-prototype/  Legacy prototype — reference only, do not develop against it
+test/host/           Unity host tests: test_server/, test_lib/, mocks/
+ui/                  SquareLine Studio projects and source assets
+```
 
-- **Payload size**: must remain exactly 221 bytes; `static_assert` in `payload.h` enforces this at compile time
-- **Fixed-width types only** in `Payload` fields — never `int`, `long`, or `size_t` (arm64 host vs ESP32 sizes differ)
-- **PID map is hand-maintained**: add new PIDs manually with explicit formula parameters; do not generate code
-- **`security_config.h` is gitignored**: never commit it; always create from `.example`
-- **Session accumulation is server-side**: clients are pure renderers; distance and average consumption are computed on the server and carried in the Payload
-- **ESP-NOW is unidirectional**: server broadcasts, clients receive — no ACKs or reverse messages
+## Commands
 
-## Documentation
+```bash
+# Build / flash — from the sub-project directory
+cd projects/<name> && pio run
+cd projects/<name> && pio run --target upload
 
-Detailed specs live in `docs/`:
-- `00_overview.md` — system overview, hardware, design decisions log
-- `01_architecture.md` — component diagram, FreeRTOS tasks, derived value formulas
-- `02_data_model.md` — PID map, formula encoding
-- `03_server_spec.md` / `04_client_lib_spec.md` — full class specifications
-- `06_test_spec.md` — spec-driven development methodology and full test suites
+# Host tests — from the repo root
+cd test && pio test -e native_tests
+```
 
-Sub-project-level `CLAUDE.md` files exist in `projects/server/` and `projects/server_emulator/` with additional hardware-specific details.
+If `pio` is not on PATH it is at `~/.platformio/penv/bin/pio`.
+
+**First-time setup** — `lib/core/include/security_config.h` is gitignored and
+nothing builds without it:
+
+```bash
+cp lib/core/include/security_config.h.example lib/core/include/security_config.h
+# then set a real 16-byte PMK — the same value on every node
+```
+
+## Invariants
+
+- **`Payload` is a packed struct with a `static_assert` on its exact size**
+  (currently 233 bytes). Change a field → update the assert, bump
+  `PAYLOAD_VERSION`, update `PayloadBuilder` *and* the emulator, and reflash every
+  client. See the `payload-protocol` skill for the full checklist.
+- **Fixed-width types only** in `Payload` and in tests — never `int`, `long` or
+  `size_t`. Host tests build for arm64; the firmware is 32-bit Xtensa.
+- **`pid_map.h` is hand-maintained.** Add PIDs manually with explicit formula
+  parameters and an honest `verified` flag. Never generate it.
+- **Never commit `security_config.h`.**
+- **Clients are pure renderers.** Session totals, consumption, boost and altitude
+  are all computed server-side and carried in the `Payload`.
+- **ESP-NOW is unidirectional** — broadcast only, no ACKs, no client→server messages.
+- **LVGL is single-threaded.** Copy the payload in the ESP-NOW callback, apply it
+  in `tick()`. Never touch a widget from the receive callback.
+- **Pin numbers belong in `include/pin_config.h`**, never inline in code.
+- **Generated files are never hand-edited** — SquareLine exports (`ui/`, `src/ui/`)
+  and `lv_font_conv` output (`ui_font_*.c`). Adapt them from a bridge module.
+- **Run the host tests before flashing.** They are the only verification that does
+  not need the vehicle.
+
+## Working on this repo
+
+Library versions are pinned deliberately in several projects (a wrong LovyanGFX or
+Arduino_GFX version means a dark panel, not a compile error). Read the relevant
+board reference under `.claude/skills/client-firmware/references/` before bumping
+one.
+
+The calibration constants in `derived_calculator.cpp` encode real road-test
+results. Each carries a comment explaining how to tune it — change them by that
+method, not by guessing, and keep the reasoning in the comment.

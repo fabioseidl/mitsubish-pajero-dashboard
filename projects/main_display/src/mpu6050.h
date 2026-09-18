@@ -17,7 +17,8 @@
 //  blocking delays, no per-loop heap. Detection is non-fatal — if the
 //  chip is absent the rest of the board (display, touch, GPS) runs on.
 //
-//  Bus wiring (see BOARD_SPEC.md — shared with CH422G / GT911):
+//  Bus wiring (see .claude/skills/client-firmware/references/main_display.md
+//  — shared with the I/O expander / GT911):
 //    SDA = GPIO8, SCL = GPIO9. Wire.begin() is done once in setup();
 //    this module never re-initialises the bus, it only uses &Wire.
 // ─────────────────────────────────────────────────────────────

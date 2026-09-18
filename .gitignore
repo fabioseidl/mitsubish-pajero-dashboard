@@ -28,3 +28,6 @@ ui/main_display/backup/main_display_backup06.zip
 ui/main_display/backup/main_display_backup07.zip
 ui/main_display/backup/main_display_backup08.zip
 ui/main_display/backup/main_display_backup09.zip
+
+# Claude Code local (per-machine) settings
+.claude/settings.local.json

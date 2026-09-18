@@ -12,7 +12,8 @@
 //  Pure consumer: begin() wires up the UART + parser; update() must be
 //  pumped from the main loop. No blocking delays, no per-loop heap.
 //
-//  Pin assignment (Option B — see BOARD_SPEC.md §3.5):
+//  Pin assignment (Option B — see "GPS on the 'UART2' connector" in
+//  .claude/skills/client-firmware/references/main_display.md):
 //    The board's "UART2" connector is wired to ESP32 UART0 (GPIO43/44),
 //    selected via the onboard UART-selection DIP switch. With the switch
 //    set to UART2, the GPS TX lands on GPIO44 and the USB-C console is

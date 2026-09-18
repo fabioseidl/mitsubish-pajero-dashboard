@@ -20,8 +20,9 @@ namespace {
 // ── Backlight control ────────────────────────────────────────────────────────
 //
 // This board CANNOT dim its backlight. It is PCF8574 pin P1 — a digital latch,
-// HIGH = ON (BOARD_SPEC §5.2), with no PWM path and no backlight GPIO on the
-// ESP32 at all. (GPIO 0 is not an option either: it is RGB Green 3, so the BOOT
+// HIGH = ON (see the PCF8574 map in
+// .claude/skills/client-firmware/references/main_display.md), with no PWM path
+// and no backlight GPIO on the ESP32 at all. (GPIO 0 is not an option either: it is RGB Green 3, so the BOOT
 // button cannot be read while the panel runs.) So unlike main_hud, where the
 // identical 10-step cycle drives LEDC PWM on GPIO 1, "brightness" here is the
 // opacity of a black layer drawn over the UI: perceived brightness follows the

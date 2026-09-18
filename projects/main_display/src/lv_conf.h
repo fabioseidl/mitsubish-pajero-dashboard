@@ -8,7 +8,8 @@
 #ifndef LV_CONF_H
 #define LV_CONF_H
 
-/* RGB565, no byte-swap — matches BOARD_SPEC §15 (LV_COLOR_16_SWAP 0).
+/* RGB565, no byte-swap — matches the LVGL 9 integration notes in
+ * .claude/skills/client-firmware/references/main_display.md (LV_COLOR_16_SWAP 0).
  * Pixels are pushed to the LovyanGFX RGB framebuffer in native order. */
 #define LV_COLOR_DEPTH 16
 
