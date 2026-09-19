@@ -43,6 +43,7 @@ const FieldSpec kFields[] = {
     F(consumption_km_per_l,     true),
     F(avg_consumption_km_per_l, true),
     F(distance_km,              true),
+    F(trip_time_s,              true),
     F(mil_on,                   false),  // no simulated fault
     F(dtc_count,                false),  // no simulated fault
     F(engine_load_pct,          true),

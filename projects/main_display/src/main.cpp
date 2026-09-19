@@ -16,7 +16,7 @@
 #include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
 
 // ── App: LVGL dashboard + ESP-NOW link to the server ──────────
-// The server broadcasts a 221-byte Payload at 10 Hz over ESP-NOW; we render it
+// The server broadcasts a 153-byte Payload at 10 Hz over ESP-NOW; we render it
 // on the 1024x600 panel with a hand-written LVGL dashboard (dashboard_ui.cpp).
 #include <lvgl.h>
 #include <esp_heap_caps.h>
@@ -598,17 +598,6 @@ void loop() {
     if (isnan(rh)) snprintf(buf, sizeof(buf), "--");
     else           snprintf(buf, sizeof(buf), "%.0f %%", rh);  // "XX %"
     app_ui::set_humidity(buf);
-  }
-
-  // ── Trip time: HH:MM:SS since boot (resets on restart, like TRIP km) ──
-  static uint32_t last_trip_ms = 0;
-  if (t - last_trip_ms >= 1000) {
-    last_trip_ms = t;
-    uint32_t s = t / 1000;
-    char buf[12];
-    snprintf(buf, sizeof(buf), "%02u:%02u:%02u",
-             (unsigned)(s / 3600), (unsigned)((s % 3600) / 60), (unsigned)(s % 60));
-    app_ui::set_trip_time(buf);
   }
 
   // ── Hold the backlight ON ──────────────────────────────────

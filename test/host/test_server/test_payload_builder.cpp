@@ -58,6 +58,14 @@ static void test_build_copies_distance_from_session() {
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 42.5f, p.distance_km);
 }
 
+static void test_build_copies_trip_time_from_session() {
+    DataAggregator agg;
+    SessionAccumulator sess;
+    sess.update(0.0f, 0.0f, 90000);            // 90 s of engine-on time
+    Payload p = PayloadBuilder::build(agg, sess, 0.0f, 0);
+    TEST_ASSERT_EQUAL_UINT32(90, p.trip_time_s);
+}
+
 static void test_build_copies_mil_status_from_aggregator() {
     DataAggregator agg;
     SessionAccumulator sess;
@@ -123,6 +131,7 @@ void run_payload_builder_tests() {
     RUN_TEST(test_build_copies_instantaneous_consumption);
     RUN_TEST(test_build_copies_avg_consumption_from_session);
     RUN_TEST(test_build_copies_distance_from_session);
+    RUN_TEST(test_build_copies_trip_time_from_session);
     RUN_TEST(test_build_copies_mil_status_from_aggregator);
     RUN_TEST(test_build_copies_dtc_count_from_aggregator);
     RUN_TEST(test_build_sets_data_valid_flag_when_all_pids_present);

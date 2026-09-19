@@ -39,9 +39,6 @@ void set_gps_datetime(const char* text);   // UTC-3 date/time    -> ui_lbdatetim
 void set_gps_altitude(const char* text);   // altitude MSL (m)   -> ui_lbaltitude
 void set_gps_compass(const char* text);    // course (degrees)   -> ui_lbcompass
 
-// Trip time (HH:MM:SS since boot) -> ui_lbtriptime.
-void set_trip_time(const char* text);
-
 // AHT20 ambient temperature (pre-formatted "XX.X °C") -> ui_lbambienttemperature.
 void set_ambient_temperature(const char* text);
 

@@ -28,7 +28,7 @@ Each sub-project under `projects/` is a standalone PlatformIO environment.
 projects/server/            Reads CAN bus, broadcasts Payload via ESP-NOW (production server)
 projects/server_emulator/   Generates synthetic driving data — client dev without the car
 projects/main_display/      7" LVGL dashboard (SquareLine UI) + GPS/IMU/environment sensors
-projects/main_hud/          3.5" QSPI speed-only HUD with windshield mirroring
+projects/main_hud/          3.5" QSPI speed-only portrait display
 projects/glass_display/     1.47" ESP32-C6 speed-only client
 projects/client_simple_hud/ 2.4" CYD HUD (SquareLine UI, LDR auto-brightness)
 projects/sniffer/           CAN sniffer + DBC files + monitor.py for PID reverse engineering

@@ -8,6 +8,20 @@ void StepBrightness::next() {
     applyCurrent();
 }
 
+void StepBrightness::increase() {
+    if (level_ + 1 < LEVEL_COUNT) {
+        ++level_;
+        applyCurrent();
+    }
+}
+
+void StepBrightness::decrease() {
+    if (level_ > 0) {
+        --level_;
+        applyCurrent();
+    }
+}
+
 void StepBrightness::applyCurrent() {
     display_.setBacklightPercent(getCurrentPercent());
 }

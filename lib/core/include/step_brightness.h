@@ -4,10 +4,13 @@
 #include "i_display.h"
 
 /**
- * Ten-step brightness stepper: 10, 20, … 100%, wrapping 100 → 10.
+ * Ten-step brightness stepper: 10, 20, … 100%.
  *
- * Shared by the clients whose brightness button cycles levels on each tap
- * (main_hud, main_display). Deliberately separate from BrightnessController:
+ * Two control styles over the same levels. next() cycles and wraps, for a single
+ * button (main_display). increase()/decrease() clamp at the ends, for a +/- pair
+ * (main_hud) — wrapping there would drop a 100% screen to 10% on a mistaken tap.
+ *
+ * Deliberately separate from BrightnessController:
  * that one is fixed at four levels (25/50/75/100) and couples brightness to an
  * LDR, which suits the CYD client but neither of these.
  *
@@ -31,7 +34,14 @@ public:
     explicit StepBrightness(IDisplay& display);
 
     // Advance one step and apply it; wraps from 100% back to 10%.
+    // For a single cycling button.
     void next();
+
+    // Step one level up and apply it; clamps at 100%.
+    void increase();
+
+    // Step one level down and apply it; clamps at 10%.
+    void decrease();
 
     // Push the current level to the display without changing it.
     void applyCurrent();

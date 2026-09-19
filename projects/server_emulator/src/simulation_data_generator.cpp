@@ -47,6 +47,7 @@ Payload SimulationDataGenerator::getPayload() const {
     p.consumption_km_per_l     = consumption;
     p.avg_consumption_km_per_l = session_.getAvgConsumptionKmPerL();
     p.distance_km              = session_.getDistanceKm();
+    p.trip_time_s              = session_.getTripTimeS();
 
     // MIL / DTC
     p.mil_on                   = false;

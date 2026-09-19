@@ -9,8 +9,10 @@
 #include "pin_config.h"
 
 // Roboto Bold, generated from ui/client_simple_hud/assets/Roboto-Bold.ttf by
-// lv_font_conv (see CLAUDE.md). The 200 px face carries digits and '-' only.
-extern const lv_font_t ui_font_roboto_bold_200;
+// lv_font_conv (see CLAUDE.md). The 150 px face carries digits and '-' only, so
+// its line height (110 px) is the digit box itself — no ascent padding above.
+// Three digits advance 258 px, inside SCREEN_W with room to spare.
+extern const lv_font_t ui_font_roboto_bold_150;
 extern const lv_font_t ui_font_roboto_bold_28;
 
 // ── Arduino_GFX stack ────────────────────────────────────────────────────────
@@ -21,9 +23,6 @@ extern const lv_font_t ui_font_roboto_bold_28;
 static Arduino_DataBus* s_bus    = nullptr;
 static Arduino_GFX*     s_panel  = nullptr;
 static Arduino_Canvas*  s_canvas = nullptr;
-
-// One row of mirrored pixels, reused every flush in HUD mode.
-static uint16_t s_mirror_row[SCREEN_W];
 
 HudScreenController* HudScreenController::instance_ = nullptr;
 
@@ -114,27 +113,16 @@ bool HudScreenController::initLvgl() {
 // ── UI ───────────────────────────────────────────────────────────────────────
 
 static constexpr int16_t BTN_MARGIN = 8;
+static constexpr int16_t BTN_W      = 74;
+static constexpr int16_t BTN_H      = 62;
 
-// Places a button at a corner described in *physical* terms — the corner the
-// driver sees — and cancels out whatever flip the current mode applies. In HUD
-// mode the frame is transformed on its way to the panel, so a widget LVGL puts
-// at the top-right would surface at the physical bottom-left; asking for the
-// opposite corner in LVGL's space undoes that, and the buttons stay put across
-// a mode switch.
-static void alignPhysicalCorner(lv_obj_t* obj, bool want_top, bool want_right,
-                                bool flip_x, bool flip_y) {
-    const bool top   = want_top   != flip_y;
-    const bool right = want_right != flip_x;
+// Gap above the digits. The face has no ascent padding, so this is the whole
+// visual margin — drop it to 0 to sit the number flush against the top edge.
+static constexpr int16_t SPEED_TOP_MARGIN = 16;
 
-    const lv_align_t align = top ? (right ? LV_ALIGN_TOP_RIGHT    : LV_ALIGN_TOP_LEFT)
-                                 : (right ? LV_ALIGN_BOTTOM_RIGHT : LV_ALIGN_BOTTOM_LEFT);
-    lv_obj_align(obj, align, right ? -BTN_MARGIN : BTN_MARGIN,
-                             top   ?  BTN_MARGIN : -BTN_MARGIN);
-}
-
-static lv_obj_t* makeButton(lv_obj_t* parent, lv_event_cb_t cb, lv_obj_t** out_label) {
+static lv_obj_t* makeButton(lv_obj_t* parent, const char* text, lv_event_cb_t cb) {
     lv_obj_t* btn = lv_button_create(parent);
-    lv_obj_set_size(btn, 74, 62);
+    lv_obj_set_size(btn, BTN_W, BTN_H);
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x202020), LV_PART_MAIN);
     lv_obj_set_style_border_color(btn, lv_color_hex(0x606060), LV_PART_MAIN);
     lv_obj_set_style_border_width(btn, 1, LV_PART_MAIN);
@@ -142,10 +130,10 @@ static lv_obj_t* makeButton(lv_obj_t* parent, lv_event_cb_t cb, lv_obj_t** out_l
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t* label = lv_label_create(btn);
+    lv_label_set_text(label, text);
     lv_obj_set_style_text_font(label, &ui_font_roboto_bold_28, LV_PART_MAIN);
     lv_obj_set_style_text_color(label, lv_color_hex(0xC0C0C0), LV_PART_MAIN);
     lv_obj_center(label);
-    *out_label = label;
     return btn;
 }
 
@@ -154,39 +142,38 @@ void HudScreenController::buildUi() {
     lv_obj_set_style_bg_color(scr, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
 
-    // Speed — the point of the whole device. Centred on the screen, deliberately
-    // ignoring the buttons: they overlay it and spend most of their time hidden,
-    // so letting them shift the number would leave it off-centre in the state
-    // the display is normally in.
+    // Speed — the point of the whole device. Sits at the top; the brightness row
+    // owns the bottom, so the two never overlap and the number never shifts.
     speed_label_ = lv_label_create(scr);
-    lv_obj_set_style_text_font(speed_label_, &ui_font_roboto_bold_200, LV_PART_MAIN);
+    lv_obj_set_style_text_font(speed_label_, &ui_font_roboto_bold_150, LV_PART_MAIN);
 
-    mode_btn_   = makeButton(scr, onModeButton,       &mode_btn_label_);
-    bright_btn_ = makeButton(scr, onBrightnessButton, &bright_btn_label_);
+    // Brightness row along the bottom edge: '-' left, current percent centred,
+    // '+' right. The buttons take opposite corners so a blind tap on a moving
+    // vehicle cannot hit the wrong one.
+    bright_down_btn_ = makeButton(scr, "-", onBrightnessDown);
+    bright_up_btn_   = makeButton(scr, "+", onBrightnessUp);
+    lv_obj_align(bright_down_btn_, LV_ALIGN_BOTTOM_LEFT,   BTN_MARGIN, -BTN_MARGIN);
+    lv_obj_align(bright_up_btn_,   LV_ALIGN_BOTTOM_RIGHT, -BTN_MARGIN, -BTN_MARGIN);
 
-    positionButtons();
-    refreshModeButton();
-    refreshBrightnessButton();
-    repaint();  // establishes the "--" offline placeholder and centres the label
+    bright_pct_label_ = lv_label_create(scr);
+    lv_obj_set_style_text_font(bright_pct_label_, &ui_font_roboto_bold_28, LV_PART_MAIN);
+    lv_obj_set_style_text_color(bright_pct_label_, lv_color_hex(0xC0C0C0), LV_PART_MAIN);
+
+    refreshBrightnessLabel();
+    repaint();  // establishes the "--" offline placeholder and places the label
 }
 
-void HudScreenController::refreshModeButton() {
-    // Shows the mode you'd switch *to*, so the button reads as an action.
-    lv_label_set_text(mode_btn_label_, mode_ == Mode::SIMPLE ? "HUD" : "SCR");
-}
+void HudScreenController::refreshBrightnessLabel() {
+    lv_label_set_text_fmt(bright_pct_label_, "%u%%", brightness_.getCurrentPercent());
 
-void HudScreenController::refreshBrightnessButton() {
-    lv_label_set_text_fmt(bright_btn_label_, "%u%%", brightness_.getCurrentPercent());
-}
-
-// Physical layout, identical in both modes: mode button top-right, brightness
-// button bottom-right, as seen by the driver.
-void HudScreenController::positionButtons() {
-    const bool flip_x = (mode_ == Mode::HUD) && MIRROR_HORIZONTAL;
-    const bool flip_y = (mode_ == Mode::HUD) && MIRROR_VERTICAL;
-
-    alignPhysicalCorner(mode_btn_,   /*top=*/true,  /*right=*/true, flip_x, flip_y);
-    alignPhysicalCorner(bright_btn_, /*top=*/false, /*right=*/true, flip_x, flip_y);
+    // Centre the label on the button row: LVGL anchors a BOTTOM_MID object by its
+    // bottom edge, so lift it by half its own height to line the text's middle up
+    // with the buttons' middle. Re-applied on every change — the label auto-sizes,
+    // and LVGL does not re-run the alignment itself, so "10%" and "100%" would
+    // otherwise drift sideways.
+    const int16_t half_text = (int16_t)(lv_font_get_line_height(&ui_font_roboto_bold_28) / 2);
+    lv_obj_align(bright_pct_label_, LV_ALIGN_BOTTOM_MID, 0,
+                 half_text - (BTN_MARGIN + BTN_H / 2));
 }
 
 void HudScreenController::setButtonsVisible(bool visible) {
@@ -195,25 +182,14 @@ void HudScreenController::setButtonsVisible(bool visible) {
 
     // LVGL invalidates the area itself, so the speed underneath repaints.
     if (visible) {
-        lv_obj_clear_flag(mode_btn_,   LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(bright_btn_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(bright_up_btn_,    LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(bright_down_btn_,  LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(bright_pct_label_, LV_OBJ_FLAG_HIDDEN);
     } else {
-        lv_obj_add_flag(mode_btn_,   LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(bright_btn_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(bright_up_btn_,    LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(bright_down_btn_,  LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(bright_pct_label_, LV_OBJ_FLAG_HIDDEN);
     }
-}
-
-void HudScreenController::setMode(Mode mode) {
-    if (mode_ == mode) return;
-    mode_ = mode;
-    refreshModeButton();
-    positionButtons();  // re-anchor so both buttons stay put on the glass
-
-    // The mirror only takes effect as areas are re-flushed, so force a full
-    // redraw — otherwise the un-mirrored frame stays on screen until something
-    // else happens to invalidate it.
-    lv_obj_invalidate(lv_screen_active());
-    Serial.printf("[SCREEN] mode -> %s\n", mode_ == Mode::HUD ? "HUD" : "SIMPLE");
 }
 
 // ── LVGL callbacks ───────────────────────────────────────────────────────────
@@ -225,30 +201,7 @@ uint32_t HudScreenController::tickCb() {
 void HudScreenController::flushCb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     const int32_t w = lv_area_get_width(area);
     const int32_t h = lv_area_get_height(area);
-    uint16_t* src = (uint16_t*)px_map;
-
-    const bool mirror_x = instance_->mode_ == Mode::HUD && MIRROR_HORIZONTAL;
-    const bool mirror_y = instance_->mode_ == Mode::HUD && MIRROR_VERTICAL;
-
-    if (!mirror_x && !mirror_y) {
-        s_canvas->draw16bitRGBBitmap(area->x1, area->y1, src, w, h);
-    } else {
-        // Reflect the area's position, then reflect the pixels inside it. Done
-        // per row so a partial area lands in the right place on the far side.
-        const int32_t dst_x = mirror_x ? (SCREEN_W - 1 - area->x2) : area->x1;
-        for (int32_t row = 0; row < h; ++row) {
-            uint16_t* s = src + (size_t)row * w;
-            uint16_t* out;
-            if (mirror_x) {
-                for (int32_t i = 0; i < w; ++i) s_mirror_row[i] = s[w - 1 - i];
-                out = s_mirror_row;
-            } else {
-                out = s;
-            }
-            const int32_t dst_y = mirror_y ? (SCREEN_H - 1 - (area->y1 + row)) : (area->y1 + row);
-            s_canvas->draw16bitRGBBitmap(dst_x, dst_y, out, w, 1);
-        }
-    }
+    s_canvas->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t*)px_map, w, h);
 
     instance_->canvas_dirty_ = true;
     lv_display_flush_ready(disp);
@@ -267,11 +220,6 @@ void HudScreenController::touchReadCb(lv_indev_t* indev, lv_indev_data_t* data) 
             self->wake_only_ = !self->buttons_visible_;
         }
 
-        // LVGL laid the buttons out un-mirrored, but HUD mode paints them
-        // mirrored, so a finger on the glass has to be reflected back into
-        // LVGL's coordinate space.
-        if (self->mode_ == Mode::HUD && MIRROR_HORIZONTAL) x = SCREEN_W - 1 - x;
-        if (self->mode_ == Mode::HUD && MIRROR_VERTICAL)   y = SCREEN_H - 1 - y;
         self->touch_x_ = x;
         self->touch_y_ = y;
         self->touch_until_ms_ = now + TOUCH_HOLD_MS;
@@ -288,17 +236,18 @@ void HudScreenController::touchReadCb(lv_indev_t* indev, lv_indev_data_t* data) 
                                                  : LV_INDEV_STATE_RELEASED;
 }
 
-void HudScreenController::onModeButton(lv_event_t* e) {
+void HudScreenController::onBrightnessUp(lv_event_t* e) {
     LV_UNUSED(e);
     HudScreenController* self = instance_;
-    self->setMode(self->mode_ == Mode::SIMPLE ? Mode::HUD : Mode::SIMPLE);
+    self->brightness_.increase();
+    self->refreshBrightnessLabel();
 }
 
-void HudScreenController::onBrightnessButton(lv_event_t* e) {
+void HudScreenController::onBrightnessDown(lv_event_t* e) {
     LV_UNUSED(e);
     HudScreenController* self = instance_;
-    self->brightness_.next();
-    self->refreshBrightnessButton();
+    self->brightness_.decrease();
+    self->refreshBrightnessLabel();
 }
 
 // ── Data in ──────────────────────────────────────────────────────────────────
@@ -324,9 +273,9 @@ void HudScreenController::repaint() {
         lv_label_set_text(speed_label_, "--");
         lv_obj_set_style_text_color(speed_label_, lv_color_hex(0x505050), LV_PART_MAIN);
     }
-    // Re-centre after every text change: the label auto-sizes, so "9" and "120"
+    // Re-align after every text change: the label auto-sizes, so "9" and "120"
     // would otherwise sit at different offsets.
-    lv_obj_align(speed_label_, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_align(speed_label_, LV_ALIGN_TOP_MID, 0, SPEED_TOP_MARGIN);
 }
 
 void HudScreenController::tick() {

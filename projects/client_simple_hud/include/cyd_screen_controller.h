@@ -36,7 +36,7 @@ private:
     uint32_t last_btn_ms_;
 
     // Pending payload from WiFi-task callback — applied to LVGL only in tick().
-    // Stored as a heap pointer so the 221-byte struct does not inflate .dram0.bss
+    // Stored as a heap pointer so the 153-byte struct does not inflate .dram0.bss
     // (the CYDScreenController object is a global static in main.cpp).
     Payload* pending_payload_     = nullptr;
     bool     has_pending_payload_ = false;

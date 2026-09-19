@@ -10,7 +10,7 @@ Payload PayloadBuilder::build(const DataAggregator& aggregator,
     // `Payload p;` happens to be correct — but the failure mode when a newly
     // added field is missed here is stack garbage broadcast to every client, and
     // the static_assert cannot catch it (the assert gets updated as part of
-    // adding the field). A 149-byte memset at 10 Hz is not worth the risk.
+    // adding the field). A 153-byte memset at 10 Hz is not worth the risk.
     Payload p{};
     p.version                  = PAYLOAD_VERSION;
     p.timestamp_ms             = timestamp_ms;
@@ -22,6 +22,7 @@ Payload PayloadBuilder::build(const DataAggregator& aggregator,
     p.consumption_km_per_l     = consumption;
     p.avg_consumption_km_per_l = session.getAvgConsumptionKmPerL();
     p.distance_km              = session.getDistanceKm();
+    p.trip_time_s              = session.getTripTimeS();
 
     // MIL / DTC
     p.mil_on                   = aggregator.getMilStatus();

@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define PAYLOAD_VERSION 5
+#define PAYLOAD_VERSION 6
 
 // Wire budget. ESP-NOW caps a single broadcast at 250 bytes, so every field here
 // is spent out of a fixed allowance. Only fields some code path can actually
@@ -22,6 +22,7 @@ typedef struct __attribute__((packed)) {
     float    consumption_km_per_l;      // derived
     float    avg_consumption_km_per_l;  // session derived
     float    distance_km;              // session derived
+    uint32_t trip_time_s;              // session derived — engine-on seconds this trip
 
     // --- MIL / DTC (from PID_MONITOR_STATUS 0x01) ---
     bool     mil_on;
@@ -85,7 +86,7 @@ typedef struct __attribute__((packed)) {
 #define PAYLOAD_FLAG_DATA_VALID     (1 << 0)
 #define PAYLOAD_FLAG_ENGINE_RUNNING (1 << 1)
 
-static_assert(sizeof(Payload) == 149,
+static_assert(sizeof(Payload) == 153,
     "Payload size mismatch - check struct fields and packing");
 static_assert(sizeof(Payload) <= PAYLOAD_MAX_WIRE_BYTES,
     "Payload exceeds the 250-byte ESP-NOW broadcast limit");

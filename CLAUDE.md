@@ -38,7 +38,7 @@ projects/
   server/            Production server — ESP32-S3 + MCP2515, reads CAN, broadcasts
   server_emulator/   Same broadcast from synthetic data (ESP-IDF) — client dev without the car
   main_display/      Waveshare 7" 1024×600 RGB dashboard + GPS/IMU/environment sensors
-  main_hud/          Guition 3.5" QSPI windshield HUD — speed only
+  main_hud/          Guition 3.5" QSPI portrait display — speed only
   glass_display/     Waveshare ESP32-C6 1.47" — speed only
   client_simple_hud/ CYD 2.4" SPI HUD, LDR auto-brightness
   sniffer/           CAN sniffer + DBC + monitor.py for reverse engineering
@@ -70,7 +70,7 @@ cp lib/core/include/security_config.h.example lib/core/include/security_config.h
 ## Invariants
 
 - **`Payload` is a packed struct with a `static_assert` on its exact size**
-  (currently 149 bytes; ESP-NOW's broadcast ceiling is 250). Change a field →
+  (currently 153 bytes; ESP-NOW's broadcast ceiling is 250). Change a field →
   update the assert, bump `PAYLOAD_VERSION`, update `PayloadBuilder` *and* the
   emulator, update the field table in `test/host/test_server/test_payload_coverage.cpp`
   (it fails until every byte is accounted for), and reflash every client. See the

@@ -69,6 +69,7 @@ static const uint64_t TRIP_RESET_AFTER_PARK_S = 8 * 3600;   // 8 h — tune to t
 RTC_DATA_ATTR static uint32_t g_rtc_magic;
 RTC_DATA_ATTR static float    g_rtc_trip_distance_km;
 RTC_DATA_ATTR static float    g_rtc_trip_fuel_l;
+RTC_DATA_ATTR static uint32_t g_rtc_trip_time_s;     // engine-on seconds this trip
 RTC_DATA_ATTR static uint64_t g_rtc_sleep_started_us;  // gettimeofday at sleep entry
 RTC_DATA_ATTR static uint64_t g_rtc_parked_us;         // accumulated off-time
 
@@ -86,6 +87,7 @@ static void restoreTripState() {
         g_rtc_magic            = TRIP_RTC_MAGIC;
         g_rtc_trip_distance_km = 0.0f;
         g_rtc_trip_fuel_l      = 0.0f;
+        g_rtc_trip_time_s      = 0;
         g_rtc_parked_us        = 0;
         g_rtc_sleep_started_us = 0;
         Serial.println("[trip] cold boot — trip cleared");
@@ -105,10 +107,12 @@ static void restoreTripState() {
                       (unsigned long long)(g_rtc_parked_us / 60000000ULL));
         g_rtc_trip_distance_km = 0.0f;
         g_rtc_trip_fuel_l      = 0.0f;
+        g_rtc_trip_time_s      = 0;
         g_rtc_parked_us        = 0;
     } else {
-        Serial.printf("[trip] resuming: %.1f km, %.2f L (parked %llu min)\n",
+        Serial.printf("[trip] resuming: %.1f km, %.2f L, %lu s (parked %llu min)\n",
                       g_rtc_trip_distance_km, g_rtc_trip_fuel_l,
+                      (unsigned long)g_rtc_trip_time_s,
                       (unsigned long long)(g_rtc_parked_us / 60000000ULL));
     }
 }
@@ -444,7 +448,7 @@ static void can_rx_task(void* /*param*/) {
 static void broadcast_task(void* /*param*/) {
     Serial.println("broadcast_task started");
     SessionAccumulator session;
-    session.restore(g_rtc_trip_distance_km, g_rtc_trip_fuel_l);
+    session.restore(g_rtc_trip_distance_km, g_rtc_trip_fuel_l, g_rtc_trip_time_s);
     ESPNowBroadcaster  broadcaster;
     uint32_t           last_tick_ms = 0;
     uint32_t           send_count = 0;
@@ -484,9 +488,10 @@ static void broadcast_task(void* /*param*/) {
         session.update(speed, fuel_rate, delta_ms);
         // Mirror into RTC on every tick: enterDeepSleep() is called from
         // can_rx_task and never returns, so there is no shutdown hook to flush
-        // from. Two word writes at 10 Hz into RTC RAM cost nothing (no flash).
+        // from. Three word writes at 10 Hz into RTC RAM cost nothing (no flash).
         g_rtc_trip_distance_km = session.getDistanceKm();
         g_rtc_trip_fuel_l      = session.getTotalFuelL();
+        g_rtc_trip_time_s      = session.getTripTimeS();
 
         Payload payload = PayloadBuilder::build(aggregator, session, consumption, now_ms);
 

@@ -33,8 +33,9 @@ ESP-NOW ISR → ESPNowReceiver → ServerConnectionMonitor + IScreenController �
   `DEFAULT_TIMEOUT_MS` (2000 ms) of silence.
 - **`IDisplay`** — `begin()` + `setBacklightPercent(uint8_t)`. The indirection that
   lets very different backlight hardware share one brightness stepper.
-- **`StepBrightness`** — 10 levels (10…100%, wrapping), starts at 50%. Used by
-  `main_hud` and `main_display`.
+- **`StepBrightness`** — 10 levels (10…100%), starts at 50%. `next()` cycles and
+  wraps for a single button (`main_display`); `increase()`/`decrease()` clamp at
+  the ends for a +/- pair (`main_hud`).
 - **`BrightnessController`** — 4 levels (25/50/75/100) plus LDR auto-brightness with
   a 10 s manual-override hold-off. CYD only; the other boards have no light sensor.
 

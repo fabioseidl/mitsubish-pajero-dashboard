@@ -10,25 +10,13 @@
 #include "axs15231b_touch.h"
 
 /**
- * The whole UI: one very large speed readout plus two touch buttons.
+ * The whole UI: one very large speed readout, a brightness readout, and a pair
+ * of +/- brightness buttons.
  *
- * Display modes
- * -------------
- *  SIMPLE — read the panel directly.
- *  HUD    — panel lies face-up and reflects off the windshield, so the frame is
- *           mirrored left-to-right on its way to the glass (MIRROR_HORIZONTAL).
- *
- * Mirroring happens in the LVGL flush callback rather than in the panel or the
- * widget tree: the AXS15231B has no hardware mirror, and LVGL has no flip
- * transform for a whole display. LVGL therefore always draws un-mirrored and
- * never knows which mode is active — which also means touch input has to be
- * mirrored back the other way (see touchReadCb) so buttons stay where the
- * user sees them.
+ * The panel is read directly — LVGL's frame reaches the canvas untransformed.
  */
 class HudScreenController : public IScreenController {
 public:
-    enum class Mode : uint8_t { SIMPLE = 0, HUD = 1 };
-
     explicit HudScreenController(StepBrightness& brightness);
 
     bool begin() override;
@@ -36,23 +24,7 @@ public:
     void onServerStatusChanged(bool online) override;
     void tick() override;
 
-    Mode getMode() const { return mode_; }
-
 private:
-    // Which way HUD mode flips the image, for the windshield reflection.
-    //
-    // Currently: mirrored AND upside down. That is the vertical axis ALONE —
-    // flipping top-to-bottom is the same thing as a left-right mirror plus a
-    // 180° rotation, since the two compose:
-    //     mirror_x then rotate_180:  (x,y) → (W-1-x, y) → (x, H-1-y)
-    // Setting both flags would instead cancel the mirror back out and leave a
-    // plain 180° rotation, which is NOT what this mode wants.
-    //
-    // The axes are independent; retune against the real glass if the reflection
-    // reads wrong once mounted.
-    static constexpr bool MIRROR_HORIZONTAL = false;
-    static constexpr bool MIRROR_VERTICAL   = true;
-
     // How long a touch report keeps LVGL in the PRESSED state. The controller
     // reports on interrupt only, so without a hold window LVGL would see a
     // single-frame press and could miss the click.
@@ -65,26 +37,21 @@ private:
     bool initDisplay();
     bool initLvgl();
     void buildUi();
-    void setMode(Mode mode);
-    void refreshModeButton();
-    void refreshBrightnessButton();
+    void refreshBrightnessLabel();
     void setButtonsVisible(bool visible);
-    void positionButtons();
     void repaint();
 
     // LVGL C callbacks — they reach the live instance through instance_.
     static void flushCb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
     static void touchReadCb(lv_indev_t* indev, lv_indev_data_t* data);
     static uint32_t tickCb();
-    static void onModeButton(lv_event_t* e);
-    static void onBrightnessButton(lv_event_t* e);
+    static void onBrightnessUp(lv_event_t* e);
+    static void onBrightnessDown(lv_event_t* e);
 
     static HudScreenController* instance_;
 
     StepBrightness&  brightness_;
     AXS15231BTouch  touch_;
-
-    Mode     mode_      = Mode::SIMPLE;
 
     // Written from the ESP-NOW callback, read by tick().
     volatile uint8_t speed_kmh_ = 0;
@@ -116,10 +83,9 @@ private:
     bool buttons_visible_ = true;
 
     lv_obj_t* speed_label_      = nullptr;
-    lv_obj_t* mode_btn_         = nullptr;
-    lv_obj_t* bright_btn_       = nullptr;
-    lv_obj_t* mode_btn_label_   = nullptr;
-    lv_obj_t* bright_btn_label_ = nullptr;
+    lv_obj_t* bright_up_btn_    = nullptr;
+    lv_obj_t* bright_down_btn_  = nullptr;
+    lv_obj_t* bright_pct_label_ = nullptr;
 };
 
 #endif // UNIT_TEST

@@ -41,7 +41,7 @@ the repo root (`.spj` project, TTFs, PNGs).
   manual-override hold-off after a touch or button press).
 - Both the touchscreen and the physical BOOT button (GPIO 0) cycle brightness.
 - The pending payload is kept as a **heap pointer**, not by value: the controller
-  is a global static in `main.cpp`, and inlining the `Payload` struct (149 bytes
+  is a global static in `main.cpp`, and inlining the `Payload` struct (153 bytes
   as of PAYLOAD_VERSION 5, 233 before it) inflates `.dram0.bss` on a plain ESP32. It is written under a `portMUX_TYPE` spinlock in
   the ESP-NOW callback and applied to LVGL only in `tick()`.
 - `freertos/FreeRTOS.h` is included **before** anything pulls in `portmacro.h`, so

@@ -11,9 +11,9 @@ either changes every binary in the repo.
 
 ## The Payload struct
 
-- Packed C struct (`__attribute__((packed))`), currently **149 bytes**, enforced by
-  `static_assert(sizeof(Payload) == 149, ...)` at the bottom of `payload.h`.
-- `PAYLOAD_VERSION` is currently **5**. `ESPNowReceiver::onReceiveISR` *does*
+- Packed C struct (`__attribute__((packed))`), currently **153 bytes**, enforced by
+  `static_assert(sizeof(Payload) == 153, ...)` at the bottom of `payload.h`.
+- `PAYLOAD_VERSION` is currently **6**. `ESPNowReceiver::onReceiveISR` *does*
   reject a version mismatch, so a stale client goes silent rather than misreading
   a changed layout — a dead display after a server change usually means an
   un-reflashed client, not a wiring fault.

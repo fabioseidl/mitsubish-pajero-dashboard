@@ -204,6 +204,13 @@ void update(const Payload& p) {
         set_if_changed(ui_lbconsumptionkml, "%.1f", p.consumption_km_per_l);
     set_if_changed(ui_lbavgconsumptionkml,  "%.1f", p.avg_consumption_km_per_l);
     set_if_changed(ui_lbdistancekm,         "%.1f", p.distance_km);
+    // Trip time is the server's engine-on counter (Payload.trip_time_s), not this
+    // client's uptime: it survives the server's deep sleep and resets with the
+    // rest of the trip totals, so it stays consistent with TRIP km.
+    set_if_changed(ui_lbtriptime,           "%02u:%02u:%02u",
+                   (unsigned)(p.trip_time_s / 3600u),
+                   (unsigned)((p.trip_time_s % 3600u) / 60u),
+                   (unsigned)(p.trip_time_s % 60u));
     set_if_changed(ui_lbbarometerpressure,  "%u",   (unsigned)p.baro_pressure_kpa);
     set_if_changed(ui_lbambientetemperature,"%.0f", p.ambient_temp_c);
     // Boost is derived from MAP - ambient, both whole-kPa, so the data resolves to
@@ -286,7 +293,6 @@ void set_gps_compass(const char* text) {
     int idx = ((int)lroundf(deg / 22.5f)) % 16;
     set_text(ui_lbcompasscardial, kCardinals[idx]);
 }
-void set_trip_time(const char* text)    { set_text(ui_lbtriptime, text); }
 void set_ambient_temperature(const char* text) { set_text(ui_lbambienttemperature, text); }
 void set_humidity(const char* text) { set_text(ui_lbhumidity, text); }
 

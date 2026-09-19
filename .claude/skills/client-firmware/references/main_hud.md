@@ -1,7 +1,14 @@
 # `main_hud` — Guition JC3248W535 (ESP32-S3)
 
-A speed-only client for windshield HUD use: `speed_kmh` in a very large Roboto
-Bold face and nothing else.
+A speed-only client: `speed_kmh` in a very large Roboto Bold face, plus a pair
+of +/- brightness buttons.
+
+Mounted **vertically**: `SCREEN_ROTATION` is 2, so LVGL works in a 320x480
+portrait frame. The panel is natively portrait, so rotation 2 is a plain 180°
+flip of the native frame — no axis swap.
+
+The panel is read directly. There is no windshield-reflection mode: the frame
+reaches the canvas untransformed, and `flushCb` is a straight blit.
 
 ## Board
 
@@ -9,6 +16,7 @@ Bold face and nothing else.
 |---|---|
 | MCU | ESP32-S3-N16R8 — 16 MB flash, 8 MB OPI PSRAM |
 | Panel | 3.5" 320×480 IPS, AXS15231B controller, **QSPI** bus |
+| Orientation | Portrait, `SCREEN_ROTATION` 2 — LVGL sees 320×480 |
 | Touch | AXS15231B capacitive, own I²C bus, address `0x3B` |
 | Backlight | GPIO 1, active-HIGH, LEDC PWM |
 | PlatformIO | `espressif32@6.9.0`, `esp32-s3-devkitc-1`, Arduino, `qio_opi`, `default_16MB.csv` |
@@ -34,7 +42,7 @@ the whole repo.
 
 ```
 LVGL (partial buffer, internal RAM)
-  → flushCb — mirrors the pixels in HUD mode
+  → flushCb — blits the area into the canvas
   → Arduino_Canvas framebuffer (307 KB, PSRAM)
   → canvas->flush() — full-frame QSPI push
 ```
@@ -46,45 +54,22 @@ partial areas.
 - **A flush costs ~15 ms** (307 KB over QSPI at 40 MHz). `tick()` therefore pushes
   only when `flushCb` reports LVGL actually drew something. Making the flush
   unconditional saturates the bus at the 5 ms loop rate.
-- **Mirroring happens in `flushCb`**, not in the panel or the widget tree — the
-  AXS15231B has no hardware mirror and LVGL has no whole-display flip. LVGL always
-  lays out un-mirrored and never knows the mode, which is exactly why `touchReadCb`
-  mirrors touch input back the other way, so buttons keep matching what the user sees.
-
-## Display modes
-
-Two modes toggled by an on-screen button: `SIMPLE` (panel read directly) and
-`HUD` (panel reflects off the windshield, frame transformed on its way to the glass).
-
-`MIRROR_HORIZONTAL` / `MIRROR_VERTICAL` in `hud_screen_controller.h` set the flip
-axes independently:
-
-| H | V | HUD mode shows |
-|---|---|---|
-| ✓ | ✗ | left-right mirror |
-| ✗ | ✓ | mirrored **and** upside down (**current**) |
-| ✓ | ✓ | plain 180° rotation — upside down, NOT mirrored |
-| ✗ | ✗ | same as SIMPLE |
-
-The V-only row is the non-obvious one: a top-to-bottom flip *is* a left-right
-mirror plus a 180° rotation, because the two compose — `mirror_x` then
-`rotate_180` gives `(x,y) → (W-1-x, y) → (x, H-1-y)`. Setting both flags cancels
-the mirror back out, leaving a bare rotation. Tune against the real windshield;
-the right combination depends on how the panel is mounted.
-
-**The buttons stay in the same physical corner in both modes** (mode top-right,
-brightness bottom-right, as the driver sees them). `positionButtons()` anchors
-them to the *opposite* corner in LVGL space whenever a flip is active, which the
-flush transform cancels out. Labels do flip with everything else — only position
-is compensated, not glyph orientation.
-
 ## UI behaviour
 
-The two buttons hide after `BUTTONS_IDLE_HIDE_MS` (3 s) without a touch and come
-back on the next one, so at speed the screen shows a number and nothing else.
+Brightness runs down the right edge: `+` top-right, the current percent under it,
+`-` bottom-right. The two buttons sit at opposite ends of a 480 px screen so a
+blind tap on a moving vehicle cannot hit the wrong one.
+
+They drive `StepBrightness::increase()` / `decrease()`, which **clamp** at 100%
+and 10% rather than wrapping — `next()`'s wrap would drop a 100% screen to 10%
+on a mistaken tap. A clamped press never reaches the display.
+
+Both buttons and the percent label hide together after `BUTTONS_IDLE_HIDE_MS`
+(3 s) without a touch and come back on the next one, so at speed the screen shows
+a number and nothing else.
 
 The tap that brings them back is deliberately **not** delivered to them
-(`wake_only_` in `touchReadCb`): a wake-up tap landing on the brightness button
+(`wake_only_` in `touchReadCb`): a wake-up tap landing on a brightness button
 would otherwise change brightness by accident. First tap wakes, second acts.
 
 The speed is centred on the whole screen and ignores the buttons — they overlay it
@@ -95,10 +80,10 @@ leave it off-centre in the display's normal state.
 
 | Class | File | Responsibility |
 |---|---|---|
-| `HudScreenController` | `include/hud_screen_controller.h` | LVGL UI, mode switching, mirroring, touch routing |
+| `HudScreenController` | `include/hud_screen_controller.h` | LVGL UI, brightness buttons, touch routing |
 | `HudDisplay` | `include/hud_display.h` | `IDisplay` — LEDC backlight on GPIO 1 |
 | `AXS15231BTouch` | `include/axs15231b_touch.h` | Touch controller I²C protocol |
-| `StepBrightness` | `lib/core/include/step_brightness.h` | Shared 10-step cycle |
+| `StepBrightness` | `lib/core/include/step_brightness.h` | Shared 10 levels; `increase()`/`decrease()` clamp |
 
 `HudDisplay` stays local rather than reusing `CYDDisplay`, which is named for the
 CYD board and hardcodes a 75% startup level. `BrightnessController` is not reused
@@ -116,14 +101,19 @@ attached **after** the panel is up. `main.cpp` calls `screen.begin()` before
 `src/ui_font_roboto_bold_*.c` are generated, not hand-edited:
 
 ```bash
-lv_font_conv --font ui/client_simple_hud/assets/Roboto-Bold.ttf --size 200 \
+lv_font_conv --font ui/client_simple_hud/assets/Roboto-Bold.ttf --size 180 \
   -r 0x2D -r 0x30-0x39 --bpp 4 --no-compress --format lvgl --lv-include lvgl.h \
-  -o projects/main_hud/src/ui_font_roboto_bold_200.c
+  -o projects/main_hud/src/ui_font_roboto_bold_180.c
 ```
 
-The 200 px face carries digits and `-` only (all the speed readout and its `--`
+The 180 px face carries digits and `-` only (all the speed readout and its `--`
 offline placeholder ever show); the 28 px face carries full ASCII for the button
-labels. Widening the 200 px range costs flash fast — it is ~430 KB as is.
+labels. Widening the 180 px range costs flash fast — it is ~348 KB as is.
+
+**180 px is a ceiling set by the portrait width.** A Roboto Bold digit advances
+`0.574 × size`, so three digits need `1.72 × size` px: 310 px at 180, against a
+`SCREEN_W` of 320. Anything larger clips the speed at 100 km/h and above. Resize
+the face if `SCREEN_ROTATION` ever goes back to a landscape value.
 
 ## Serial output — read before debugging
 
@@ -146,7 +136,7 @@ psramInit(): PSRAM enabled
 === main_hud SETUP START ===
 [DISPLAY] backlight init GPIO1 ch7
 [MAIN] PSRAM: found (8386295 bytes free)
-[SCREEN] display 480x320 ready
+[SCREEN] display 320x480 ready
 [MAIN] listening on WiFi channel 1
 ```
 
