@@ -1,6 +1,7 @@
 #include "data_aggregator.h"
 #include "pid_map.h"
 #include <string.h>
+#include <stdint.h>
 
 #ifdef UNIT_TEST
 #include <mutex>
@@ -13,9 +14,10 @@ static inline void mtx_lock(void* m)   { xSemaphoreTake(static_cast<SemaphoreHan
 static inline void mtx_unlock(void* m) { xSemaphoreGive(static_cast<SemaphoreHandle_t>(m)); }
 #endif
 
-DataAggregator::DataAggregator() : mil_on_(false), dtc_count_(0) {
-    memset(values_, 0, sizeof(values_));
-    memset(valid_,  0, sizeof(valid_));
+DataAggregator::DataAggregator() : mil_on_(false), dtc_count_(0), now_ms_(0) {
+    memset(values_,         0, sizeof(values_));
+    memset(valid_,          0, sizeof(valid_));
+    memset(last_update_ms_, 0, sizeof(last_update_ms_));
 #ifdef UNIT_TEST
     mutex_ = new std::mutex();
 #else
@@ -31,10 +33,17 @@ DataAggregator::~DataAggregator() {
 #endif
 }
 
+void DataAggregator::setNow(uint32_t now_ms) {
+    mtx_lock(mutex_);
+    now_ms_ = now_ms;
+    mtx_unlock(mutex_);
+}
+
 void DataAggregator::update(uint16_t pid, float value) {
     mtx_lock(mutex_);
-    values_[pid] = value;
-    valid_[pid]  = true;
+    values_[pid]         = value;
+    valid_[pid]          = true;
+    last_update_ms_[pid] = now_ms_;
     mtx_unlock(mutex_);
 }
 
@@ -64,6 +73,22 @@ bool DataAggregator::isValid(uint16_t pid) const {
     return v;
 }
 
+uint32_t DataAggregator::ageMs(uint16_t pid) const {
+    mtx_lock(mutex_);
+    // Unsigned subtraction, so a 49-day millisecond wrap still yields the correct
+    // (small) age rather than a huge one.
+    uint32_t age = valid_[pid] ? (now_ms_ - last_update_ms_[pid]) : UINT32_MAX;
+    mtx_unlock(mutex_);
+    return age;
+}
+
+bool DataAggregator::isFresh(uint16_t pid, uint32_t max_age_ms) const {
+    mtx_lock(mutex_);
+    bool fresh = valid_[pid] && ((now_ms_ - last_update_ms_[pid]) <= max_age_ms);
+    mtx_unlock(mutex_);
+    return fresh;
+}
+
 bool DataAggregator::getMilStatus() const {
     mtx_lock(mutex_);
     bool m = mil_on_;
@@ -87,8 +112,9 @@ bool DataAggregator::allRequiredPidsReceived() const {
 
 void DataAggregator::reset() {
     mtx_lock(mutex_);
-    memset(values_, 0, sizeof(values_));
-    memset(valid_,  0, sizeof(valid_));
+    memset(values_,         0, sizeof(values_));
+    memset(valid_,          0, sizeof(valid_));
+    memset(last_update_ms_, 0, sizeof(last_update_ms_));
     mil_on_    = false;
     dtc_count_ = 0;
     mtx_unlock(mutex_);

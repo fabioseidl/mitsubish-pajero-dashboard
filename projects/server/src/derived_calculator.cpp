@@ -1,6 +1,7 @@
 #include "derived_calculator.h"
 #include "pid_map.h"
 #include <math.h>
+#include <stdint.h>
 
 // Deriving diesel fuel rate from MAF (used when the direct fuel-rate PID 0x5E
 // is unsupported).
@@ -103,11 +104,25 @@ static constexpr float ALTITUDE_SEA_LEVEL_REF_KPA = 102.0f;
 static constexpr float FUEL_RAW_MG_S_TO_G_H = 3.6f;   // mg/s → g/h
 static constexpr float FUEL_RAW_TRIM        = 1.0f;   // dimensionless calibration
 
+// --- Staleness windows -------------------------------------------------------
+// Every guard below asks "is this reading trustworthy right now", and valid_
+// alone cannot answer that: it latches true at the first response and stays true
+// forever, so a PID the ECU quietly stopped answering still reads as usable. The
+// overrun fuel-cut branch is the sharp case — it zeroes fuel based on the pedal
+// and load, and a frozen pedal-at-zero would zero fuel for the rest of the drive.
+//
+// The windows come from the poll schedule in main.cpp: FAST_PIDS refresh every
+// (FAST_COUNT + 1) * OBD_POLL_INTERVAL_MS ≈ 400 ms, and each SLOW_PIDS entry once
+// per full slow round-robin ≈ 12 s. Both windows are set to a few times their
+// natural refresh period, so a missed response is tolerated but a dead PID is not.
+static constexpr uint32_t FAST_PID_MAX_AGE_MS = 2000;    // ~5 fast sweeps
+static constexpr uint32_t SLOW_PID_MAX_AGE_MS = 40000;   // ~3 slow round-robins
+
 float DerivedCalculator::computeFuelRate(const DataAggregator& aggregator) {
     // Preferred: the real injected-fuel broadcast (CAN 0x608). It is the actual
     // ECU fuelling figure — including a true zero during deceleration fuel cut-off
     // — so it supersedes both the direct PID and the MAF estimate when present.
-    if (aggregator.isValid(PID_BCAST_FUEL_RAW)) {
+    if (aggregator.isFresh(PID_BCAST_FUEL_RAW, FAST_PID_MAX_AGE_MS)) {
         float raw = aggregator.get(PID_BCAST_FUEL_RAW);   // mg/s
         return raw * FUEL_RAW_MG_S_TO_G_H * FUEL_RAW_TRIM / DIESEL_DENSITY_G_L;
     }
@@ -122,16 +137,16 @@ float DerivedCalculator::computeFuelRate(const DataAggregator& aggregator) {
     // throttle and zero out fuel everywhere. Prefer the accelerator-pedal PIDs
     // (0x49/0x4A); fall back to throttle position (0x11).
     float pedal = -1.0f;
-    if (aggregator.isValid(PID_ACCEL_D)) pedal = aggregator.get(PID_ACCEL_D);
-    if (aggregator.isValid(PID_ACCEL_E)) pedal = fmaxf(pedal, aggregator.get(PID_ACCEL_E));
-    if (pedal < 0.0f && aggregator.isValid(PID_THROTTLE)) pedal = aggregator.get(PID_THROTTLE);
+    if (aggregator.isFresh(PID_ACCEL_D, FAST_PID_MAX_AGE_MS)) pedal = aggregator.get(PID_ACCEL_D);
+    if (aggregator.isFresh(PID_ACCEL_E, FAST_PID_MAX_AGE_MS)) pedal = fmaxf(pedal, aggregator.get(PID_ACCEL_E));
+    if (pedal < 0.0f && aggregator.isFresh(PID_THROTTLE, SLOW_PID_MAX_AGE_MS)) pedal = aggregator.get(PID_THROTTLE);
 
     float rpm   = aggregator.get(PID_RPM);
     float speed = aggregator.get(PID_SPEED);
     // Only a low, VALID engine load confirms true overrun (vs. cruise holding
     // speed). If the load PID is unavailable we err toward NOT cutting, so a
     // cruise is never wrongly zeroed — at worst we slightly over-read real DFCO.
-    bool load_low = aggregator.isValid(PID_ENGINE_LOAD)
+    bool load_low = aggregator.isFresh(PID_ENGINE_LOAD, FAST_PID_MAX_AGE_MS)
                     && (aggregator.get(PID_ENGINE_LOAD) <= FUEL_CUT_LOAD_MAX_PCT);
     bool overrun = (pedal >= 0.0f) && (pedal <= FUEL_CUT_PEDAL_MAX_PCT)
                    && (rpm > FUEL_CUT_RPM_MIN) && (speed > 0.0f) && load_low;
@@ -150,7 +165,7 @@ float DerivedCalculator::computeFuelRate(const DataAggregator& aggregator) {
 
     // Load-aware correction: nudge AFR leaner at light load, richer at heavy load
     // (neutral at LOAD_AFR_REF, and neutral when the load PID isn't available).
-    if (aggregator.isValid(PID_ENGINE_LOAD)) {
+    if (aggregator.isFresh(PID_ENGINE_LOAD, FAST_PID_MAX_AGE_MS)) {
         float factor = 1.0f + LOAD_AFR_GAIN * (LOAD_AFR_REF - aggregator.get(PID_ENGINE_LOAD));
         if (factor < LOAD_AFR_MIN) factor = LOAD_AFR_MIN;
         if (factor > LOAD_AFR_MAX) factor = LOAD_AFR_MAX;
@@ -182,10 +197,10 @@ static constexpr float KPA_PER_BAR             = 100.0f;
 
 float DerivedCalculator::computeBoostBar(const DataAggregator& aggregator) {
     // Without a manifold-pressure reading there is nothing to derive.
-    if (!aggregator.isValid(PID_MAP_PRESSURE)) return 0.0f;
+    if (!aggregator.isFresh(PID_MAP_PRESSURE, FAST_PID_MAX_AGE_MS)) return 0.0f;
 
     float map_kpa  = aggregator.get(PID_MAP_PRESSURE);
-    float baro_kpa = aggregator.isValid(PID_BARO_PRESSURE)
+    float baro_kpa = aggregator.isFresh(PID_BARO_PRESSURE, SLOW_PID_MAX_AGE_MS)
                          ? aggregator.get(PID_BARO_PRESSURE)
                          : BOOST_FALLBACK_BARO_KPA;
 

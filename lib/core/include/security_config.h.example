@@ -1,11 +1,43 @@
 #pragma once
 #include <stdint.h>
 
-// Copy this file to security_config.h and set a real 16-byte PMK.
+// Copy this file to security_config.h and fill it in.
 // security_config.h is gitignored — never commit it.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// What the PMK actually does here: nothing to the data.
+//
+// ESP-NOW can only encrypt unicast traffic. This system broadcasts to
+// FF:FF:FF:FF:FF:FF, and ESPNowBroadcaster::begin() therefore registers that peer
+// with `encrypt = false` — the only setting a broadcast peer accepts. So although
+// every node calls esp_now_set_pmk() with the key below, the Payload goes out in
+// the clear and any ESP32 in range can read it, or broadcast a well-formed fake
+// one that the clients will happily render.
+//
+// The PMK is still worth setting (it is the key material if a unicast link is
+// ever added, and a mismatch is a silent total failure, so the nodes must agree),
+// but do not mistake it for confidentiality or authentication on this link.
+//
+// For authentication, pin the server's MAC below. That is what actually stops
+// another device's broadcast from reaching your dashboard.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 16-byte primary master key. Must be IDENTICAL on every node.
 static const uint8_t PMK_KEY[16] = {
     0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00
 };
+
+// Optional: accept broadcasts only from this MAC (the server's station MAC).
+//
+// The server prints it at boot:
+//     [espnow] server station MAC: AA:BB:CC:DD:EE:FF
+// Uncomment and paste those bytes. Clients compiled without it accept any sender,
+// which is the historical behaviour.
+//
+// If a client goes dark after enabling this, check ESPNowReceiver::
+// rejected_sender_count_ — a rising count means the MAC here is wrong.
+//
+// #define ESPNOW_SERVER_MAC { 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF }

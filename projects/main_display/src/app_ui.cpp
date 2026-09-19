@@ -228,7 +228,13 @@ void update(const Payload& p) {
                                         LV_PART_MAIN | LV_STATE_DEFAULT);
         }
     }
-    set_if_changed(ui_lbdpfsoot,            "%.0f", p.dpf_soot_load);
+    // DPF soot had no data behind it: it came from a 0xF3xx Mode 22 DID this
+    // vehicle's ECU rejects, so the field was always 0 and the label always read
+    // "0" — indistinguishable from a genuinely clean filter. PAYLOAD_VERSION 5
+    // removed the field; the label stays (it is a generated SquareLine widget)
+    // and now reads "--", which is the honest value. Give it a real source and
+    // this becomes a set_if_changed on that.
+    set_if_changed(ui_lbdpfsoot,            "%s", "--");
     // ui_lbaltitude is driven by GPS altitude (set_gps_altitude), not the OBD
     // barometric altitude — see set_gps_* below.
     set_if_changed(ui_lbvoltage,            "%.1f", p.module_voltage_v);

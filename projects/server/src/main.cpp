@@ -22,6 +22,7 @@
 #include <esp_sleep.h>
 #include <esp_wifi.h>
 #include <math.h>
+#include <sys/time.h>
 
 static const char* TAG = "server";
 
@@ -43,6 +44,74 @@ static const uint32_t DEEP_SLEEP_FALLBACK_S = 30;
 // that timer-triggered probe wake-ups while the car is off stay cheap (CAN
 // only, radio off) instead of burning ~150 mA powering the radio for nothing.
 static volatile bool g_car_on = false;
+
+
+// --- Trip persistence across deep sleep -------------------------------------
+// SessionAccumulator lives on broadcast_task's stack, and enterDeepSleep()
+// reboots the chip — so before this, trip distance and average consumption reset
+// at every ignition-off, including a two-minute fuel stop. That made the average
+// unusable for the tank-vs-receipt comparison the FUEL_RAW_TRIM calibration note
+// asks for.
+//
+// RTC slow memory survives deep sleep (it does NOT survive a power cut or a
+// reflash), so the totals live here and are re-seeded on wake. ESP-NOW is
+// one-way, so no client can ask for a reset; instead the trip auto-clears once
+// the car has been parked longer than TRIP_RESET_AFTER_PARK_S — short stops
+// continue the trip, an overnight park starts a fresh one.
+//
+// Parked time is measured with gettimeofday(): IDF keeps the system clock running
+// off the RTC across deep sleep, so the delta across a sleep is real elapsed time.
+// The 30 s DEEP_SLEEP_FALLBACK_S probe wake-ups each add their own sleep to the
+// accumulator, so a long park is counted correctly in ~30 s increments.
+#define TRIP_RTC_MAGIC 0x50414A31u   // 'PAJ1' — RTC memory is garbage on cold boot
+static const uint64_t TRIP_RESET_AFTER_PARK_S = 8 * 3600;   // 8 h — tune to taste
+
+RTC_DATA_ATTR static uint32_t g_rtc_magic;
+RTC_DATA_ATTR static float    g_rtc_trip_distance_km;
+RTC_DATA_ATTR static float    g_rtc_trip_fuel_l;
+RTC_DATA_ATTR static uint64_t g_rtc_sleep_started_us;  // gettimeofday at sleep entry
+RTC_DATA_ATTR static uint64_t g_rtc_parked_us;         // accumulated off-time
+
+static uint64_t wall_clock_us() {
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    return (uint64_t)tv.tv_sec * 1000000ULL + (uint64_t)tv.tv_usec;
+}
+
+// Re-seed the trip from RTC memory, clearing it on a cold boot or after a long
+// park. Call once from setup(), before broadcast_task reads the values.
+static void restoreTripState() {
+    if (g_rtc_magic != TRIP_RTC_MAGIC) {
+        // Cold boot: RTC contents are undefined. Start clean.
+        g_rtc_magic            = TRIP_RTC_MAGIC;
+        g_rtc_trip_distance_km = 0.0f;
+        g_rtc_trip_fuel_l      = 0.0f;
+        g_rtc_parked_us        = 0;
+        g_rtc_sleep_started_us = 0;
+        Serial.println("[trip] cold boot — trip cleared");
+        return;
+    }
+
+    if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_UNDEFINED &&
+        g_rtc_sleep_started_us != 0) {
+        uint64_t now = wall_clock_us();
+        if (now > g_rtc_sleep_started_us) {
+            g_rtc_parked_us += (now - g_rtc_sleep_started_us);
+        }
+    }
+
+    if (g_rtc_parked_us >= TRIP_RESET_AFTER_PARK_S * 1000000ULL) {
+        Serial.printf("[trip] parked %llu min — starting a new trip\n",
+                      (unsigned long long)(g_rtc_parked_us / 60000000ULL));
+        g_rtc_trip_distance_km = 0.0f;
+        g_rtc_trip_fuel_l      = 0.0f;
+        g_rtc_parked_us        = 0;
+    } else {
+        Serial.printf("[trip] resuming: %.1f km, %.2f L (parked %llu min)\n",
+                      g_rtc_trip_distance_km, g_rtc_trip_fuel_l,
+                      (unsigned long long)(g_rtc_parked_us / 60000000ULL));
+    }
+}
 
 // Build a Mode 01 (OBD-II) request for a single-byte PID.
 static CANFrame makeOBDRequest(uint8_t pid) {
@@ -113,6 +182,9 @@ static void enterDeepSleep(CANDriver& driver) {
     driver.prepareForSleep();
     esp_wifi_stop();   // ensure the radio is down before we power off
 
+    // Stamp the clock so restoreTripState() can measure how long this park lasts.
+    g_rtc_sleep_started_us = wall_clock_us();
+
     // GPIO8 (MCP2515 INT) is RTC-capable on the ESP32-S3; INT is active-low and
     // push-pull, so ANY_LOW fires only when a frame is actually received.
     esp_sleep_enable_ext1_wakeup(1ULL << PIN_MCP2515_INT, ESP_EXT1_WAKEUP_ANY_LOW);
@@ -173,7 +245,6 @@ static void can_rx_task(void* /*param*/) {
         PID_CMD_AFR,
         PID_AMBIENT_TEMP,
         PID_THROTTLE_B,
-        PID_HYBRID_BATT,
         PID_OIL_TEMP,
         PID_FUEL_RATE,
     };
@@ -229,6 +300,9 @@ static void can_rx_task(void* /*param*/) {
 
     while (true) {
         uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+        // Drive the aggregator's clock so every stored value carries an accurate
+        // arrival time and DerivedCalculator's isFresh() guards mean something.
+        aggregator.setNow(now_ms);
 
         // Car-off check: no CAN traffic for CAR_OFF_TIMEOUT_MS → deep sleep.
         if (now_ms - last_activity_ms > CAR_OFF_TIMEOUT_MS) {
@@ -261,6 +335,12 @@ static void can_rx_task(void* /*param*/) {
                 // bus is alive → ignition is on. Refresh the activity timestamp
                 // and release the broadcast task to bring up ESP-NOW.
                 last_activity_ms = now_ms;
+                if (!g_car_on) {
+                    // Ignition just came back on: whatever park we were counting
+                    // ended without crossing the reset threshold, so this trip
+                    // continues and the accumulator starts fresh.
+                    g_rtc_parked_us = 0;
+                }
                 g_car_on         = true;
 
                 if (!car_can_connected) {
@@ -364,10 +444,12 @@ static void can_rx_task(void* /*param*/) {
 static void broadcast_task(void* /*param*/) {
     Serial.println("broadcast_task started");
     SessionAccumulator session;
+    session.restore(g_rtc_trip_distance_km, g_rtc_trip_fuel_l);
     ESPNowBroadcaster  broadcaster;
     uint32_t           last_tick_ms = 0;
     uint32_t           send_count = 0;
     uint32_t           fail_count = 0;
+    uint8_t            log_divider = 0;   // throttles the default (non-VERBOSE_TX) log
     bool               broadcaster_started = false;
 
     while (true) {
@@ -380,6 +462,11 @@ static void broadcast_task(void* /*param*/) {
         if (!broadcaster_started) {
             Serial.println("[power] car ON — starting ESP-NOW broadcaster");
             bool begin_ok = broadcaster.begin(PMK_KEY);
+            // Printed so it can be pasted into each client's security_config.h as
+            // ESPNOW_SERVER_MAC — the broadcast is unencrypted and unauthenticated,
+            // so pinning this MAC is what keeps a stranger's frames off the dash.
+            Serial.printf("[espnow] server station MAC: %s\n",
+                          WiFi.macAddress().c_str());
             Serial.printf("broadcaster.begin() returned: %d, add_peer_err=%d, send_err=%d\n",
                           begin_ok, (int)broadcaster.lastAddPeerErr(), (int)broadcaster.lastSendErr());
             broadcaster_started = true;
@@ -395,6 +482,11 @@ static void broadcast_task(void* /*param*/) {
         float consumption = DerivedCalculator::computeConsumption(aggregator);
 
         session.update(speed, fuel_rate, delta_ms);
+        // Mirror into RTC on every tick: enterDeepSleep() is called from
+        // can_rx_task and never returns, so there is no shutdown hook to flush
+        // from. Two word writes at 10 Hz into RTC RAM cost nothing (no flash).
+        g_rtc_trip_distance_km = session.getDistanceKm();
+        g_rtc_trip_fuel_l      = session.getTotalFuelL();
 
         Payload payload = PayloadBuilder::build(aggregator, session, consumption, now_ms);
 
@@ -412,7 +504,18 @@ static void broadcast_task(void* /*param*/) {
         bool sent = broadcaster.send(payload);
         sent ? ++send_count : ++fail_count;
 
-        // Log every broadcast message with its full contents (all Payload fields).
+        // Per-broadcast logging.
+        //
+        // The full dump below is ~900 characters. At the 10 Hz broadcast rate that
+        // is ~9 KB/s against the 11.5 KB/s a 115200 line can carry, so sustained it
+        // very nearly saturates the link — and on USB-CDC a write stalls once the
+        // TX buffer fills, quietly holding this loop below 10 Hz. It exists to
+        // calibrate DerivedCalculator against a real drive (its constants document
+        // tuning "against the server log"), so it stays — behind a flag.
+        //
+        // Build with -DVERBOSE_TX for a calibration drive; the default is one
+        // compact line per second carrying what the calibration knobs need.
+#ifdef VERBOSE_TX
         Serial.printf(
             "[TX #%lu %s ok=%lu fail=%lu] ver=%u t=%lums\n"
             "  rpm=%u spd=%ukm/h fuel_rate=%.2fL/h cons=%.2fkm/L avg=%.2fkm/L dist=%.2fkm\n"
@@ -422,12 +525,8 @@ static void broadcast_task(void* /*param*/) {
             "  warmups=%u dist_cleared=%ukm baro=%ukPa alt=%.1fm cat=%.1fC volt=%.2fV\n"
             "  rel_thr=%.1f%% accel_d=%.1f%% accel_e=%.1f%% thr_act=%.1f%% time_mil=%umin time_cleared=%umin\n"
             "  stft=%.1f%% ltft=%.1f%% fuel_pres=%.1fkPa o2=%.3f abs_load=%.1f%% cmd_afr=%.3f\n"
-            "  ambient=%.1fC throttle_b=%.1f%% hybrid_batt=%.1f%% oil=%.1fC obd_std=%u\n"
-            "  at: gear=%.1f ratio=%.2f in=%.0frpm out=%.0frpm slip=%.0frpm atf=%.1fC sol=0x%.0f "
-            "lockup=%.0f prndl=%.0f tgt_gear=%.1f oil_pres=%.1f\n"
-            "  eng22: boost=%.2f egr_pos=%.1f%% dpf_soot=%.2f dpf_regen=%.0f rail_act=%.1f rail_des=%.1f "
-            "inj=[%.2f %.2f %.2f %.2f]\n"
-            "  fuel_temp=%.1fC fan_duty=%.1f%%\n",
+            "  ambient=%.1fC throttle_b=%.1f%% oil=%.1fC obd_std=%u\n"
+            "  gear=%.0f tgt_gear=%.0f boost=%.2fbar\n",
             (unsigned long)send_count, sent ? "OK" : "FAIL",
             (unsigned long)send_count, (unsigned long)fail_count,
             (unsigned)payload.version, (unsigned long)payload.timestamp_ms,
@@ -446,16 +545,26 @@ static void broadcast_task(void* /*param*/) {
             (unsigned)payload.time_mil_min, (unsigned)payload.time_cleared_min,
             payload.stft_pct, payload.ltft_pct, payload.fuel_pressure_kpa, payload.o2_sensor,
             payload.abs_load_pct, payload.cmd_afr_lambda,
-            payload.ambient_temp_c, payload.throttle_b_pct, payload.hybrid_batt_pct,
+            payload.ambient_temp_c, payload.throttle_b_pct,
             payload.oil_temp_c, (unsigned)payload.obd_standards,
-            payload.at_gear_pos, payload.at_gear_ratio, payload.at_input_speed_rpm,
-            payload.at_output_speed_rpm, payload.at_tc_slip_rpm, payload.at_atf_temp_c,
-            payload.at_shift_sol_status, payload.at_lockup_status, payload.at_prndl,
-            payload.at_target_gear, payload.at_oil_pres,
-            payload.boost_pres, payload.egr_valve_pos_pct, payload.dpf_soot_load,
-            payload.dpf_regen_status, payload.rail_pres_act, payload.rail_pres_des,
-            payload.inj_cor_cyl1, payload.inj_cor_cyl2, payload.inj_cor_cyl3, payload.inj_cor_cyl4,
-            payload.fuel_temp_c, payload.cooling_fan_duty_pct);
+            payload.at_gear_pos, payload.at_target_gear, payload.boost_pres);
+#else
+        // One line per second (~110 chars → ~0.1 KB/s), carrying exactly the
+        // fields the DerivedCalculator constants are tuned against: maf, load and
+        // the resulting fuel rate / economy.
+        if (++log_divider >= 10) {
+            log_divider = 0;
+            Serial.printf(
+                "[TX #%lu %s fail=%lu] rpm=%u spd=%u load=%.0f%% maf=%.1f "
+                "fuel=%.2fL/h cons=%.1f avg=%.1f dist=%.1fkm boost=%.2f flags=0x%02X\n",
+                (unsigned long)send_count, sent ? "OK" : "FAIL", (unsigned long)fail_count,
+                (unsigned)payload.rpm, (unsigned)payload.speed_kmh,
+                payload.engine_load_pct, payload.maf_g_per_s,
+                payload.fuel_rate_l_per_h, payload.consumption_km_per_l,
+                payload.avg_consumption_km_per_l, payload.distance_km,
+                payload.boost_pres, payload.flags);
+        }
+#endif
 
         vTaskDelay(pdMS_TO_TICKS(100));
     }
@@ -473,6 +582,8 @@ void setup() {
     Serial.begin(115200);
     delay(1500);  // Allow serial monitor to connect if present; never block when USB is absent
     Serial.println("Server starting...");
+
+    restoreTripState();
 
     xTaskCreatePinnedToCore(can_rx_task,    "can_rx",    4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(broadcast_task, "broadcast", 4096, nullptr, 3, nullptr, 0);

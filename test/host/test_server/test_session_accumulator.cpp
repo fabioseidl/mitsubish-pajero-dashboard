@@ -1,4 +1,5 @@
 #include <unity.h>
+#include <math.h>
 #include "session_accumulator.h"
 
 static void test_initial_distance_is_zero() {
@@ -77,6 +78,56 @@ static void test_reset_clears_all_accumulators() {
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, s.getAvgConsumptionKmPerL());
 }
 
+// --- restore() (trip persistence across deep sleep) ------------------------
+// The server keeps the running totals in RTC memory so an ignition-off no longer
+// wipes the trip; restore() seeds them back on wake. RTC memory is garbage after
+// a battery disconnect, so restore() must refuse to seed nonsense.
+
+static void test_restore_seeds_totals() {
+    SessionAccumulator s;
+    s.restore(120.0f, 10.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 120.0f, s.getDistanceKm());
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 10.0f,  s.getTotalFuelL());
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 12.0f,  s.getAvgConsumptionKmPerL());
+}
+
+static void test_restore_then_update_continues_from_seed() {
+    SessionAccumulator s;
+    s.restore(100.0f, 10.0f);
+    s.update(100.0f, 10.0f, 3600000);          // +100 km, +10 L over one hour
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 200.0f, s.getDistanceKm());
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 20.0f,  s.getTotalFuelL());
+}
+
+static void test_restore_rejects_negative_values() {
+    SessionAccumulator s;
+    s.restore(-5.0f, -1.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, s.getDistanceKm());
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, s.getTotalFuelL());
+}
+
+static void test_restore_rejects_nan_from_uninitialised_rtc_memory() {
+    SessionAccumulator s;
+    s.restore(NAN, NAN);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, s.getDistanceKm());
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, s.getTotalFuelL());
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, s.getAvgConsumptionKmPerL());
+}
+
+static void test_restore_rejects_infinity() {
+    SessionAccumulator s;
+    s.restore(INFINITY, INFINITY);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, s.getDistanceKm());
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, s.getTotalFuelL());
+}
+
+static void test_restore_zero_is_a_clean_trip() {
+    SessionAccumulator s;
+    s.restore(0.0f, 0.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, s.getDistanceKm());
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, s.getAvgConsumptionKmPerL());
+}
+
 void run_session_accumulator_tests() {
     RUN_TEST(test_initial_distance_is_zero);
     RUN_TEST(test_initial_fuel_is_zero);
@@ -90,6 +141,12 @@ void run_session_accumulator_tests() {
     RUN_TEST(test_zero_fuel_does_not_accumulate_fuel);
     RUN_TEST(test_negative_speed_treated_as_zero);
     RUN_TEST(test_reset_clears_all_accumulators);
+    RUN_TEST(test_restore_seeds_totals);
+    RUN_TEST(test_restore_then_update_continues_from_seed);
+    RUN_TEST(test_restore_rejects_negative_values);
+    RUN_TEST(test_restore_rejects_nan_from_uninitialised_rtc_memory);
+    RUN_TEST(test_restore_rejects_infinity);
+    RUN_TEST(test_restore_zero_is_a_clean_trip);
 }
 
 #include "../../../projects/server/src/session_accumulator.cpp"

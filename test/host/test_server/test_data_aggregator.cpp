@@ -1,4 +1,5 @@
 #include <unity.h>
+#include <stdint.h>
 #include "data_aggregator.h"
 #include "pid_map.h"
 
@@ -86,6 +87,91 @@ static void test_reset_invalidates_all_values() {
     TEST_ASSERT_EQUAL_UINT8(0, agg.getDtcCount());
 }
 
+// --- Staleness -------------------------------------------------------------
+// isValid() latches true forever, which cannot distinguish a live reading from
+// one the ECU stopped answering. isFresh() is what a decision should consult.
+
+static void test_isFresh_false_before_any_update() {
+    DataAggregator agg;
+    TEST_ASSERT_FALSE(agg.isFresh(PID_RPM, 1000));
+}
+
+static void test_isFresh_true_immediately_after_update() {
+    DataAggregator agg;
+    agg.setNow(5000);
+    agg.update(PID_RPM, 2000.0f);
+    TEST_ASSERT_TRUE(agg.isFresh(PID_RPM, 1000));
+}
+
+static void test_isFresh_true_within_window() {
+    DataAggregator agg;
+    agg.setNow(5000);
+    agg.update(PID_RPM, 2000.0f);
+    agg.setNow(5900);
+    TEST_ASSERT_TRUE(agg.isFresh(PID_RPM, 1000));
+}
+
+static void test_isFresh_false_once_window_elapsed() {
+    DataAggregator agg;
+    agg.setNow(5000);
+    agg.update(PID_RPM, 2000.0f);
+    agg.setNow(6001);
+    TEST_ASSERT_FALSE(agg.isFresh(PID_RPM, 1000));
+}
+
+static void test_isValid_stays_true_after_value_goes_stale() {
+    DataAggregator agg;
+    agg.setNow(5000);
+    agg.update(PID_RPM, 2000.0f);
+    agg.setNow(500000);
+    TEST_ASSERT_TRUE(agg.isValid(PID_RPM));    // ever-received: still true
+    TEST_ASSERT_FALSE(agg.isFresh(PID_RPM, 1000));
+}
+
+static void test_update_refreshes_age() {
+    DataAggregator agg;
+    agg.setNow(1000);
+    agg.update(PID_RPM, 2000.0f);
+    agg.setNow(9000);
+    TEST_ASSERT_FALSE(agg.isFresh(PID_RPM, 1000));
+    agg.update(PID_RPM, 2100.0f);              // ECU answered again
+    TEST_ASSERT_TRUE(agg.isFresh(PID_RPM, 1000));
+}
+
+static void test_ageMs_is_max_for_never_received() {
+    DataAggregator agg;
+    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, agg.ageMs(PID_RPM));
+}
+
+static void test_ageMs_reports_elapsed_time() {
+    DataAggregator agg;
+    agg.setNow(1000);
+    agg.update(PID_SPEED, 50.0f);
+    agg.setNow(3500);
+    TEST_ASSERT_EQUAL_UINT32(2500, agg.ageMs(PID_SPEED));
+}
+
+// The server runs for weeks; esp_timer millis wrap every ~49 days. Unsigned
+// subtraction must keep reporting a small age across that boundary rather than
+// declaring every value stale for the next 49 days.
+static void test_ageMs_survives_millis_wraparound() {
+    DataAggregator agg;
+    agg.setNow(0xFFFFFF00u);
+    agg.update(PID_SPEED, 50.0f);
+    agg.setNow(0x00000064u);                   // wrapped; 356 ms later
+    TEST_ASSERT_EQUAL_UINT32(356, agg.ageMs(PID_SPEED));
+    TEST_ASSERT_TRUE(agg.isFresh(PID_SPEED, 1000));
+}
+
+static void test_reset_clears_freshness() {
+    DataAggregator agg;
+    agg.setNow(1000);
+    agg.update(PID_RPM, 2000.0f);
+    agg.reset();
+    TEST_ASSERT_FALSE(agg.isFresh(PID_RPM, 1000));
+    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, agg.ageMs(PID_RPM));
+}
+
 void run_data_aggregator_tests() {
     RUN_TEST(test_get_before_update_returns_zero);
     RUN_TEST(test_isValid_before_update_returns_false);
@@ -98,6 +184,16 @@ void run_data_aggregator_tests() {
     RUN_TEST(test_update_mil_status_stored_and_retrieved);
     RUN_TEST(test_update_dtc_count_stored_and_retrieved);
     RUN_TEST(test_reset_invalidates_all_values);
+    RUN_TEST(test_isFresh_false_before_any_update);
+    RUN_TEST(test_isFresh_true_immediately_after_update);
+    RUN_TEST(test_isFresh_true_within_window);
+    RUN_TEST(test_isFresh_false_once_window_elapsed);
+    RUN_TEST(test_isValid_stays_true_after_value_goes_stale);
+    RUN_TEST(test_update_refreshes_age);
+    RUN_TEST(test_ageMs_is_max_for_never_received);
+    RUN_TEST(test_ageMs_reports_elapsed_time);
+    RUN_TEST(test_ageMs_survives_millis_wraparound);
+    RUN_TEST(test_reset_clears_freshness);
 }
 
 #include "../../../projects/server/src/data_aggregator.cpp"

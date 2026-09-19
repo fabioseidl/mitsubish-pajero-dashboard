@@ -82,6 +82,20 @@ Current suites cover `PIDTranslator`, `PIDDictionary`, `DataAggregator`,
 `DerivedCalculator`, `SessionAccumulator`, `PayloadBuilder`, `BrightnessController`,
 `ESPNowReceiver` and `ServerConnectionMonitor`.
 
+`test_server/test_payload_coverage.cpp` is the odd one out and worth knowing
+about: it is the only suite that compiles the **emulator**
+(`simulation_data_generator.cpp`), and it holds a field table that must account
+for every byte of `Payload`. Add or remove a `Payload` field and it fails until
+the table is updated — deliberately, because updating it forces an explicit
+answer to "does the emulator populate this?". Silent-zero fields on the bench are
+the bug class it exists to catch; it found two the day it was written (boost in
+kPa instead of bar, and engine load scaled 5x low).
+
+Note it does NOT include `session_accumulator.cpp`, although
+`SimulationDataGenerator` has a `SessionAccumulator` member — `test_session_
+accumulator.cpp` already provides those symbols to the same link, and including
+it twice is the duplicate-symbol failure described above.
+
 New non-trivial logic is expected to arrive with tests. The habit this repo
 follows: specify the behaviour (inputs, outputs, **edge cases**) first, write the
 tests, then implement. The `DerivedCalculator` suite is the model to copy — it

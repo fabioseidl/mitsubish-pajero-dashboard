@@ -8,6 +8,13 @@
 #include <mcp2515.h>
 
 static MCP2515 mcp2515(PIN_MCP2515_CS, 10000000, &SPI);
+#else
+// Without a CAN backend every method below degrades to "succeeded, no frames" —
+// begin() returns true, isFrameAvailable() returns false forever. On hardware
+// that looks exactly like a healthy board on a silent bus, so the server boots
+// clean, never sees traffic, and deep-sleeps in a loop with no diagnostic.
+// Fail at compile time instead; projects/server/platformio.ini sets -DUSE_MCP2515.
+#error "No CAN backend selected: build projects/server with -DUSE_MCP2515"
 #endif
 #endif
 

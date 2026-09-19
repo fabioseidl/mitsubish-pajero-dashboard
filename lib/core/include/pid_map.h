@@ -71,9 +71,19 @@ typedef struct {
 // via MODE22_ADVANCED_PIDS below.
 //
 // The 0xA0–0xAA / 0xB0–0xB9 ranges below were originally reserved for a set of
-// speculative DIDs (0xF1xx/0xF3xx) that the ECU never answered.  They are kept
-// for payload-field continuity; only the slots referenced by
-// MODE22_ADVANCED_PIDS are actually populated from the bus.
+// speculative DIDs (0xF1xx/0xF3xx) that the ECU never answered.
+//
+// DORMANT AS OF PAYLOAD_VERSION 5.  Only PID_M22_AT_GEAR_POS and
+// PID_M22_AT_TARGET_GEAR are populated on this vehicle, and not via Mode 22 at
+// all — they are decoded from the free-running CAN 0x218 broadcast.  Every other
+// slot here has no source: main.cpp sets POLL_MODE22 = false because these ECUs
+// reject UDS service 0x22 outright, so nothing is ever requested and nothing can
+// ever be dispatched into them.  Their Payload fields were removed for that
+// reason (see the note at the bottom of payload.h).
+//
+// The slot IDs are kept deliberately.  They cost nothing, and reviving a value —
+// on this vehicle or another — means re-enabling the poll and re-adding a Payload
+// field, not re-inventing the mapping.
 //
 // AT ECU (CAN response 0x7E9) — real PIDs 0xF100–0xF10A
 #define PID_M22_AT_GEAR_POS      0xA0u  // Current gear position
@@ -247,9 +257,18 @@ static const PidDefinition PID_MAP[] = {
 #define UDS_RESP_OFFSET  0x008u   // response id = request id + 8
 
 // ---------- Mode 22 advanced-PID table ----------
-// Real, reverse-engineered Mitsubishi advanced PIDs for the Pajero IV 3.2 DI-D
-// (4M41).  Each entry says which ECU to ask, which DID to request, where the
-// useful byte(s) live in the reassembled UDS payload, and how to scale them.
+// Candidate Mitsubishi advanced PIDs for the Pajero IV 3.2 DI-D (4M41).  Each
+// entry says which ECU to ask, which DID to request, where the useful byte(s)
+// live in the reassembled UDS payload, and how to scale them.
+//
+// NOT ACTIVE ON THIS VEHICLE.  Every entry's `verified` flag is false, and a
+// sniffer DID sweep found these ECUs answer service 0x22 with 0x11
+// (serviceNotSupported) from the engine and 0x80 from the TCM.  main.cpp
+// therefore never sends a Mode 22 request, so this table is never consulted at
+// runtime.  It is kept as the decoded starting point for a vehicle that does
+// implement the service, or for a future capture that proves one of these DIDs
+// after all.  Promote an entry only by the rule in the can-reverse-engineering
+// skill, and flip `verified` only against a real capture.
 //
 // `data_index` is the Torque data-byte index: D0 is the first byte *after* the
 // 2-byte DID echo in the reassembled response (`62 DIDhi DIDlo D0 D1 …`).  Bytes

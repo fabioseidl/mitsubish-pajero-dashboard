@@ -1,4 +1,5 @@
 #include "session_accumulator.h"
+#include <math.h>
 
 SessionAccumulator::SessionAccumulator()
     : total_distance_km_(0.0f), total_fuel_l_(0.0f) {}
@@ -10,6 +11,11 @@ void SessionAccumulator::update(float speed_km_h, float fuel_rate_l_per_h, uint3
     if (fuel_rate_l_per_h > 0.0f) {
         total_fuel_l_ += fuel_rate_l_per_h * ((float)delta_ms / 3600000.0f);
     }
+}
+
+void SessionAccumulator::restore(float distance_km, float total_fuel_l) {
+    total_distance_km_ = (isfinite(distance_km)  && distance_km  > 0.0f) ? distance_km  : 0.0f;
+    total_fuel_l_      = (isfinite(total_fuel_l) && total_fuel_l > 0.0f) ? total_fuel_l : 0.0f;
 }
 
 float SessionAccumulator::getDistanceKm() const { return total_distance_km_; }

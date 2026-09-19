@@ -42,7 +42,6 @@ projects/
   glass_display/     Waveshare ESP32-C6 1.47" — speed only
   client_simple_hud/ CYD 2.4" SPI HUD, LDR auto-brightness
   sniffer/           CAN sniffer + DBC + monitor.py for reverse engineering
-  server-prototype/  Legacy prototype — reference only, do not develop against it
 test/host/           Unity host tests: test_server/, test_lib/, mocks/
 ui/                  SquareLine Studio projects and source assets
 ```
@@ -71,9 +70,14 @@ cp lib/core/include/security_config.h.example lib/core/include/security_config.h
 ## Invariants
 
 - **`Payload` is a packed struct with a `static_assert` on its exact size**
-  (currently 233 bytes). Change a field → update the assert, bump
-  `PAYLOAD_VERSION`, update `PayloadBuilder` *and* the emulator, and reflash every
-  client. See the `payload-protocol` skill for the full checklist.
+  (currently 149 bytes; ESP-NOW's broadcast ceiling is 250). Change a field →
+  update the assert, bump `PAYLOAD_VERSION`, update `PayloadBuilder` *and* the
+  emulator, update the field table in `test/host/test_server/test_payload_coverage.cpp`
+  (it fails until every byte is accounted for), and reflash every client. See the
+  `payload-protocol` skill for the full checklist.
+- **Only fields something can actually populate belong in `Payload`.** A field no
+  code path writes still costs its width on all 10 broadcasts a second. Version 5
+  removed 84 bytes of permanently-zero Mode 22 fields on exactly this ground.
 - **Fixed-width types only** in `Payload` and in tests — never `int`, `long` or
   `size_t`. Host tests build for arm64; the firmware is 32-bit Xtensa.
 - **`pid_map.h` is hand-maintained.** Add PIDs manually with explicit formula
@@ -100,3 +104,9 @@ one.
 The calibration constants in `derived_calculator.cpp` encode real road-test
 results. Each carries a comment explaining how to tune it — change them by that
 method, not by guessing, and keep the reasoning in the comment.
+
+
+## Code comments
+- Simple and direct and techinical code notes. Never tell a history of hot it was and how it was now.
+- Prefer single line comments to multline ones.
+- Always add docstring to all classes and functions

@@ -13,9 +13,28 @@
 
 ESPNowReceiver* ESPNowReceiver::instance_ = nullptr;
 uint32_t        ESPNowReceiver::raw_rx_count_ = 0;
+uint32_t        ESPNowReceiver::rejected_sender_count_ = 0;
+uint8_t         ESPNowReceiver::expected_mac_[6] = {0};
+bool            ESPNowReceiver::filter_sender_ = false;
+
+void ESPNowReceiver::setExpectedSender(const uint8_t mac[6]) {
+    memcpy(expected_mac_, mac, 6);
+    filter_sender_ = true;
+}
+
+void ESPNowReceiver::clearExpectedSender() {
+    filter_sender_ = false;
+}
 
 bool ESPNowReceiver::begin(const uint8_t pmk[16]) {
     instance_ = this;
+#ifdef ESPNOW_SERVER_MAC
+    // Compile-time sender pinning from security_config.h.
+    {
+        static const uint8_t kServerMac[6] = ESPNOW_SERVER_MAC;
+        setExpectedSender(kServerMac);
+    }
+#endif
 #ifndef UNIT_TEST
 #ifdef ARDUINO
     WiFi.mode(WIFI_STA);
@@ -75,8 +94,17 @@ void ESPNowReceiver::setCallback(PayloadCallback cb) {
 
 void ESPNowReceiver::onReceiveISR(const uint8_t* mac, const uint8_t* data, int len) {
     ++raw_rx_count_;
-    (void)mac;
     if (!instance_) return;
+
+    // Sender check first: cheapest rejection, and the only thing standing between
+    // a stranger's broadcast and the dashboard. See setExpectedSender().
+    if (filter_sender_) {
+        if (mac == nullptr || memcmp(mac, expected_mac_, 6) != 0) {
+            ++rejected_sender_count_;
+            return;
+        }
+    }
+
     if (len != (int)sizeof(Payload)) return;
 
     Payload payload;

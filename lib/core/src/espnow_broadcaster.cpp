@@ -52,6 +52,11 @@ bool ESPNowBroadcaster::begin(const uint8_t pmk[16]) {
     esp_now_peer_info_t peer = {};
     memcpy(peer.peer_addr, BROADCAST_MAC, 6);
     peer.channel = 0;
+    // encrypt MUST be false: ESP-NOW only encrypts unicast, and esp_now_add_peer()
+    // rejects a broadcast peer with encryption on. So the esp_now_set_pmk() call
+    // above does not protect this traffic — the Payload is sent in the clear and
+    // is unauthenticated. Clients that care pin the sender MAC instead; see
+    // ESPNowReceiver::setExpectedSender() and security_config.h.example.
     peer.encrypt = false;
     last_add_peer_err_ = esp_now_add_peer(&peer);
 

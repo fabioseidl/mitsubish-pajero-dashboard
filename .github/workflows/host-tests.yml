@@ -1,0 +1,48 @@
+# Enforces the repo's one stated pre-flash rule: "Run the host tests before
+# flashing. They are the only verification that does not need the vehicle."
+#
+# Nothing here needs hardware, a vehicle, or the real PMK — the suites build for
+# the host with -DUNIT_TEST, so the ESP-NOW and FreeRTOS paths are compiled out.
+name: host-tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unity:
+    name: Unity host suites
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # PlatformIO's toolchains and package index are the slow part of this job;
+      # keying on the pinned platformio.ini files means the cache only rebuilds
+      # when a dependency actually moves.
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('test/platformio.ini', 'projects/*/platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      # security_config.h is gitignored and nothing compiles without it. The
+      # example's all-zero PMK is correct for a host build: the tests never reach
+      # the radio, and a real key must never be in CI.
+      - name: Provide a build-only security config
+        run: cp lib/core/include/security_config.h.example lib/core/include/security_config.h
+
+      - name: Run host tests
+        working-directory: test
+        run: pio test -e native_tests

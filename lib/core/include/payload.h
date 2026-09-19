@@ -3,7 +3,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define PAYLOAD_VERSION 4
+#define PAYLOAD_VERSION 5
+
+// Wire budget. ESP-NOW caps a single broadcast at 250 bytes, so every field here
+// is spent out of a fixed allowance. Only fields some code path can actually
+// WRITE belong in this struct: a field nothing populates still costs its width on
+// every one of the 10 broadcasts per second. See the "Dead weight" note below.
+#define PAYLOAD_MAX_WIRE_BYTES 250
 
 typedef struct __attribute__((packed)) {
     uint8_t  version;
@@ -46,7 +52,10 @@ typedef struct __attribute__((packed)) {
     uint16_t time_mil_min;              // PID_TIME_MIL      (0x4D)  min
     uint16_t time_cleared_min;          // PID_TIME_CLEARED  (0x4E)  min
 
-    // --- Unverified PIDs (may be 0 if unsupported by vehicle) ---
+    // --- Unverified PIDs (polled, but this ECU may reject them → 0) ---
+    // These stay in the payload because the server DOES request them: if the ECU
+    // ever answers, the value lands here. That is the line for membership in this
+    // struct — a poll exists, so a value can exist.
     float    stft_pct;                  // PID_STFT          (0x06)  %
     float    ltft_pct;                  // PID_LTFT          (0x07)  %
     float    fuel_pressure_kpa;         // PID_FUEL_PRESSURE (0x0A)  kPa
@@ -55,45 +64,20 @@ typedef struct __attribute__((packed)) {
     float    cmd_afr_lambda;            // PID_CMD_AFR       (0x44)  lambda
     float    ambient_temp_c;            // PID_AMBIENT_TEMP  (0x46)  °C
     float    throttle_b_pct;            // PID_THROTTLE_B    (0x47)  %
-    float    hybrid_batt_pct;           // PID_HYBRID_BATT   (0x5B)  %
     float    oil_temp_c;                // PID_OIL_TEMP      (0x5C)  °C
 
     // --- Mode 01 informational ---
     uint8_t  obd_standards;             // PID_OBD_STANDARDS (0x1C)  raw enum (6=EOBD)
 
-    // --- Mode 22 — AT ECU (0x7E9) ---
-    // input/output shaft speeds are now read from the real Mitsubishi advanced
-    // DID 0x20AB (TCM); the remaining fields are legacy speculative slots that
-    // stay 0 on the real vehicle until confirmed DIDs are found.
-    float    at_gear_pos;               // CAN 0x218 D2 low nibble — current gear:
-                                        //   0=N, 1..5=forward, 0xB(11)=R, 0xD(13)=P
-    float    at_gear_ratio;             // (legacy) gear ratio
-    float    at_input_speed_rpm;        // DID 0x20AB D1,D2  input shaft speed  (rpm)
-    float    at_output_speed_rpm;       // DID 0x20AB D3,D4  output shaft speed (rpm)
-    float    at_tc_slip_rpm;            // F104  torque converter slip (rpm)
-    float    at_atf_temp_c;             // F105  ATF temperature (°C)
-    float    at_shift_sol_status;       // F106  shift solenoid status (bitmask)
-    float    at_lockup_status;          // F107  lock-up engaged (0/1)
-    float    at_prndl;                  // F108  gear selector position (PRNDL)
-    float    at_target_gear;            // CAN 0x218 D2 high nibble — target gear
-                                        //   (same codes as at_gear_pos)
-    float    at_oil_pres;               // F10A  transmission oil pressure
+    // --- Free-running CAN broadcast frames (passive; nothing is requested) ---
+    // Gear comes from CAN 0x218 D2, which the 4M41 emits continuously. Codes:
+    //   0=N, 1..5=forward, 0xB(11)=R, 0xD(13)=P
+    float    at_gear_pos;               // 0x218 D2 low nibble  — current gear
+    float    at_target_gear;            // 0x218 D2 high nibble — target gear
 
-    // --- Mode 22 — Engine ECU (0x7E8), real PIDs 0xF300–0xF309 ---
-    float    boost_pres;                // F300  boost pressure (turbo)
-    float    egr_valve_pos_pct;         // F301  EGR valve position
-    float    dpf_soot_load;             // F302  DPF soot load
-    float    dpf_regen_status;          // F303  DPF regeneration status
-    float    rail_pres_act;             // F304  fuel rail pressure — actual
-    float    rail_pres_des;             // F305  fuel rail pressure — desired
-    float    inj_cor_cyl1;              // F306  injector correction cyl 1
-    float    inj_cor_cyl2;              // F307  injector correction cyl 2
-    float    inj_cor_cyl3;              // F308  injector correction cyl 3
-    float    inj_cor_cyl4;              // F309  injector correction cyl 4
-
-    // --- Mitsubishi advanced PIDs (Pajero IV 3.2 DI-D / 4M41) ---
-    float    fuel_temp_c;               // DID 0x20F2 D4  fuel temperature (°C)
-    float    cooling_fan_duty_pct;      // DID 0x2151 D1  cooling fan duty (%)
+    // --- Derived ---
+    float    boost_pres;                // bar (gauge) = MAP - ambient, computed
+                                        // server-side by DerivedCalculator
 
     uint8_t  flags;
 } Payload;
@@ -101,5 +85,40 @@ typedef struct __attribute__((packed)) {
 #define PAYLOAD_FLAG_DATA_VALID     (1 << 0)
 #define PAYLOAD_FLAG_ENGINE_RUNNING (1 << 1)
 
-static_assert(sizeof(Payload) == 233,
+static_assert(sizeof(Payload) == 149,
     "Payload size mismatch - check struct fields and packing");
+static_assert(sizeof(Payload) <= PAYLOAD_MAX_WIRE_BYTES,
+    "Payload exceeds the 250-byte ESP-NOW broadcast limit");
+
+// --- Dead weight removed in PAYLOAD_VERSION 5 --------------------------------
+//
+// v4 was 233 bytes, of which 84 could never be anything but zero on this vehicle.
+// A sniffer DID sweep (projects/sniffer) established that these ECUs do not
+// implement UDS service 0x22 at all — the engine answers every DID with 0x11
+// (serviceNotSupported) and the TCM with 0x80 — so projects/server/src/main.cpp
+// sets POLL_MODE22 = false and never sends a Mode 22 request. Nothing requests
+// them, so nothing can ever dispatch a response into their aggregator slots.
+//
+// Removed (21 floats, 84 bytes):
+//   AT ECU      at_gear_ratio, at_input_speed_rpm, at_output_speed_rpm,
+//               at_tc_slip_rpm, at_atf_temp_c, at_shift_sol_status,
+//               at_lockup_status, at_prndl, at_oil_pres
+//   Engine 0xF3xx  egr_valve_pos_pct, dpf_soot_load, dpf_regen_status,
+//               rail_pres_act, rail_pres_des, inj_cor_cyl1..4
+//   Mitsubishi  fuel_temp_c (DID 0x20F2), cooling_fan_duty_pct (DID 0x2151)
+//   Other       hybrid_batt_pct — a 4M41 diesel has no hybrid battery; the poll
+//               was also dropped from SLOW_PIDS, since it only ever bought a
+//               guaranteed rejection in a round-robin slot.
+//
+// NOTE: earlier revisions of this header claimed the shaft speeds were "read from
+// the real Mitsubishi advanced DID 0x20AB (TCM)". They were not, and could not be
+// — see above. The claim is gone rather than corrected in place.
+//
+// The PID_M22_* slot IDs in pid_map.h, the MODE22_ADVANCED_PIDS[] table and the
+// ISO-TP reassembly path in main.cpp are all deliberately KEPT, dormant. They cost
+// nothing on the wire and are what a future vehicle (or a newly found DID) would
+// need. Reviving one means re-adding its Payload field and bumping the version.
+//
+// If the remaining fields ever need to shrink further, the next move is encoding
+// the 0.1-precision floats as scaled uint16_t, which roughly halves what is left
+// at the cost of touching every client's read path.

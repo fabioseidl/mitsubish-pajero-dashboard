@@ -11,12 +11,23 @@ either changes every binary in the repo.
 
 ## The Payload struct
 
-- Packed C struct (`__attribute__((packed))`), currently **233 bytes**, enforced by
-  `static_assert(sizeof(Payload) == 233, ...)` at the bottom of `payload.h`.
-- `PAYLOAD_VERSION` is currently **4**. Clients do not currently reject a version
-  mismatch, so a stale client silently misreads a changed layout.
-- Broadcast at **10 Hz** (100 ms) to `FF:FF:FF:FF:FF:FF`, encrypted with the PMK.
-  ESP-NOW's hard ceiling is 250 bytes — 233 leaves little headroom.
+- Packed C struct (`__attribute__((packed))`), currently **149 bytes**, enforced by
+  `static_assert(sizeof(Payload) == 149, ...)` at the bottom of `payload.h`.
+- `PAYLOAD_VERSION` is currently **5**. `ESPNowReceiver::onReceiveISR` *does*
+  reject a version mismatch, so a stale client goes silent rather than misreading
+  a changed layout — a dead display after a server change usually means an
+  un-reflashed client, not a wiring fault.
+- Broadcast at **10 Hz** (100 ms) to `FF:FF:FF:FF:FF:FF`, **in the clear**.
+  ESP-NOW's hard ceiling is 250 bytes.
+
+### Membership rule
+
+A field belongs in `Payload` only if some code path can actually write it. A field
+nothing populates still costs its width on every broadcast, and reads as a
+confident zero on every client — indistinguishable from a real measurement of
+zero. Version 5 removed 84 bytes of Mode 22 fields on that basis; see the note at
+the bottom of `payload.h` for exactly which, and why they can never be populated
+on this vehicle.
 
 ### Changing the struct — the whole checklist
 
@@ -30,8 +41,13 @@ Adding or removing a field means all of this, in order:
 5. Populate it in `projects/server_emulator/src/simulation_data_generator.cpp` —
    the emulator must stay byte-identical to the real server or bench-testing lies.
 6. Update `test/host/test_server/test_payload_builder.cpp`.
-7. **Reflash every client.** A client running the old layout reads every field
-   after the insertion point at the wrong offset.
+7. **Update the field table in `test/host/test_server/test_payload_coverage.cpp`.**
+   It asserts the table accounts for every byte of the struct, so it fails until
+   the new field is listed — which is the point: listing it forces an explicit
+   answer to "does the emulator populate this?". That test is what catches a field
+   that is silently zero on the bench.
+8. **Reflash every client.** A client running the old layout stops rendering
+   entirely (the version check rejects the frame).
 
 ### Field type rules
 
@@ -79,10 +95,16 @@ Never hardcode a raw PID number in server or client code — always use the
 - **Unidirectional.** Server broadcasts; clients receive. There are no ACKs, no
   reverse messages, no per-client state on the server. Do not add a reverse
   channel without changing this design deliberately.
-- Security is a **PMK only** (16 bytes, compile-time, identical on every node).
-  It lives in `lib/core/include/security_config.h`, which is **gitignored** —
-  create it from `security_config.h.example`. A PMK mismatch is silent: the client
-  simply never receives anything.
+- **The broadcast is neither encrypted nor authenticated.** ESP-NOW encrypts only
+  unicast, so `ESPNowBroadcaster::begin()` must register the broadcast peer with
+  `encrypt = false`. Every node still calls `esp_now_set_pmk()` with the 16-byte
+  key in the gitignored `lib/core/include/security_config.h` (create it from
+  `security_config.h.example`), but that key protects nothing on this link —
+  do not mistake the gitignore ceremony for confidentiality.
+- The available mitigation is **sender pinning**: define `ESPNOW_SERVER_MAC` in
+  `security_config.h`, or call `ESPNowReceiver::setExpectedSender()`, and the
+  client drops frames from anyone else. The server prints its station MAC at boot.
+  Without it, any ESP32 in range can put fabricated data on the dashboard.
 - All nodes must sit on the **same WiFi channel** (channel 1).
 - `ESPNowBroadcaster` / `ESPNowReceiver` in `lib/core` are the only ESP-NOW
   implementations — never reimplement the transport in a sub-project.

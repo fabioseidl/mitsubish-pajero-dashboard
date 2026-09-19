@@ -152,5 +152,8 @@ developed on the bench. Flash it in place of the real server.
 
 # Legacy
 
-`projects/server-prototype` is the earlier Arduino/esp32dev prototype, kept for
-reference only. Do not develop against it.
+`projects/server-prototype` (the earlier Arduino/esp32dev prototype) was removed.
+It duplicated `projects/server`'s class layout against an older `Payload` and was
+a standing source of confusion about which tree was real. Recover it from git
+history if a decision needs to be archaeology'd:
+`git log --diff-filter=D -- projects/server-prototype`.

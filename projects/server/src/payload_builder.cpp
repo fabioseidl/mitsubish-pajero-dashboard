@@ -6,7 +6,12 @@ Payload PayloadBuilder::build(const DataAggregator& aggregator,
                                const SessionAccumulator& session,
                                float consumption,
                                uint32_t timestamp_ms) {
-    Payload p;
+    // Zero-init, never default-init. Every field below is assigned today, so
+    // `Payload p;` happens to be correct — but the failure mode when a newly
+    // added field is missed here is stack garbage broadcast to every client, and
+    // the static_assert cannot catch it (the assert gets updated as part of
+    // adding the field). A 149-byte memset at 10 Hz is not worth the risk.
+    Payload p{};
     p.version                  = PAYLOAD_VERSION;
     p.timestamp_ms             = timestamp_ms;
 
@@ -56,44 +61,22 @@ Payload PayloadBuilder::build(const DataAggregator& aggregator,
     p.cmd_afr_lambda           = aggregator.get(PID_CMD_AFR);
     p.ambient_temp_c           = aggregator.get(PID_AMBIENT_TEMP);
     p.throttle_b_pct           = aggregator.get(PID_THROTTLE_B);
-    p.hybrid_batt_pct          = aggregator.get(PID_HYBRID_BATT);
     p.oil_temp_c               = aggregator.get(PID_OIL_TEMP);
 
     // Mode 01 informational
     p.obd_standards            = (uint8_t)aggregator.get(PID_OBD_STANDARDS);
 
-    // Mode 22 — AT ECU (slot IDs PID_M22_AT_*)
+    // Free-running CAN broadcast frames. 0x218 is emitted continuously by the
+    // 4M41, so these are the only transmission values that exist on this vehicle
+    // — every Mode 22 field was removed in PAYLOAD_VERSION 5 (see payload.h).
     p.at_gear_pos              = aggregator.get(PID_M22_AT_GEAR_POS);
-    p.at_gear_ratio            = aggregator.get(PID_M22_AT_GEAR_RATIO);
-    p.at_input_speed_rpm       = aggregator.get(PID_M22_AT_INPUT_SPEED);
-    p.at_output_speed_rpm      = aggregator.get(PID_M22_AT_OUTPUT_SPEED);
-    p.at_tc_slip_rpm           = aggregator.get(PID_M22_AT_TC_SLIP);
-    p.at_atf_temp_c            = aggregator.get(PID_M22_AT_ATF_TEMP);
-    p.at_shift_sol_status      = aggregator.get(PID_M22_AT_SHIFT_SOL);
-    p.at_lockup_status         = aggregator.get(PID_M22_AT_LOCKUP);
-    p.at_prndl                 = aggregator.get(PID_M22_AT_PRNDL);
     p.at_target_gear           = aggregator.get(PID_M22_AT_TARGET_GEAR);
-    p.at_oil_pres              = aggregator.get(PID_M22_AT_OIL_PRES);
 
-    // Mode 22 — Engine ECU (slot IDs PID_M22_BOOST_PRES … PID_M22_INJ_COR_CYL4)
-    // boost_pres is NOT read from PID_M22_BOOST_PRES: that slot is one of the
-    // speculative 0xF3xx DIDs this ECU never answers, so it was always 0. It is
-    // derived from manifold + ambient pressure instead. Units: bar (gauge), which
-    // is what the main_display "BOOST bar" readout expects.
+    // Boost is derived, not read: PID_M22_BOOST_PRES is one of the speculative
+    // 0xF3xx DIDs this ECU never answers, so it was always 0. Computed from
+    // manifold + ambient pressure instead. Units: bar (gauge), which is what the
+    // main_display "BOOST bar" readout expects.
     p.boost_pres               = DerivedCalculator::computeBoostBar(aggregator);
-    p.egr_valve_pos_pct        = aggregator.get(PID_M22_EGR_VALVE_POS);
-    p.dpf_soot_load            = aggregator.get(PID_M22_DPF_SOOT);
-    p.dpf_regen_status         = aggregator.get(PID_M22_DPF_REGEN);
-    p.rail_pres_act            = aggregator.get(PID_M22_RAIL_PRES_ACT);
-    p.rail_pres_des            = aggregator.get(PID_M22_RAIL_PRES_DES);
-    p.inj_cor_cyl1             = aggregator.get(PID_M22_INJ_COR_CYL1);
-    p.inj_cor_cyl2             = aggregator.get(PID_M22_INJ_COR_CYL2);
-    p.inj_cor_cyl3             = aggregator.get(PID_M22_INJ_COR_CYL3);
-    p.inj_cor_cyl4             = aggregator.get(PID_M22_INJ_COR_CYL4);
-
-    // Mitsubishi advanced PIDs (real DIDs confirmed for the Pajero 4M41)
-    p.fuel_temp_c              = aggregator.get(PID_M22_FUEL_TEMP);
-    p.cooling_fan_duty_pct     = aggregator.get(PID_M22_FAN_DUTY);
 
     p.flags = 0;
     if (aggregator.allRequiredPidsReceived()) {

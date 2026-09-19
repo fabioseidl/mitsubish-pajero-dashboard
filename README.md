@@ -32,7 +32,6 @@ projects/main_hud/          3.5" QSPI speed-only HUD with windshield mirroring
 projects/glass_display/     1.47" ESP32-C6 speed-only client
 projects/client_simple_hud/ 2.4" CYD HUD (SquareLine UI, LDR auto-brightness)
 projects/sniffer/           CAN sniffer + DBC files + monitor.py for PID reverse engineering
-projects/server-prototype/  Earlier server prototype (legacy, reference only)
 ```
 
 Shared code lives in `lib/core/` — the `Payload` struct, the PID map, the ESP-NOW

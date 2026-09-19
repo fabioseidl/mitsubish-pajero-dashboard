@@ -9,6 +9,7 @@ void run_data_aggregator_tests();
 void run_derived_calculator_tests();
 void run_session_accumulator_tests();
 void run_payload_builder_tests();
+void run_payload_coverage_tests();
 
 int main() {
     UNITY_BEGIN();
@@ -18,5 +19,6 @@ int main() {
     run_derived_calculator_tests();
     run_session_accumulator_tests();
     run_payload_builder_tests();
+    run_payload_coverage_tests();
     return UNITY_END();
 }
