@@ -51,14 +51,15 @@
 #define PCF8574_ADDR   0x24
 
 // STALE GUESSES — kept only because nothing reads them any more. They predate
-// the bit-scan and disagree with the verified mapping in BOARD_SPEC §5.2
+// the bit-scan and disagree with the verified PCF8574 mapping in
+// .claude/skills/client-firmware/references/main_display.md
 // (P0 = LCD_RST 0x01, P1 = LCD_BL 0x02, P2 = TP_RST 0x04); TP_BIT below is in
 // fact the backlight. Use the PCF_* constants underneath instead.
 #define LCD_RST_BIT  (1 << 3)   // WRONG — do not use
 #define BL_BIT       (1 << 2)   // WRONG — do not use
 #define TP_BIT       (1 << 1)   // WRONG — this is the backlight
 
-// Verified mapping (BOARD_SPEC §5.2). Only P1 was ever confirmed empirically by
+// Verified mapping (see that same board reference). Only P1 was ever confirmed empirically by
 // the backlight bit-scan; P0/P2 come from the spec text.
 static constexpr uint8_t PCF_LCD_RST = 0x01;  // P0
 static constexpr uint8_t PCF_LCD_BL  = 0x02;  // P1 — confirmed by bit-scan
@@ -156,7 +157,7 @@ static void i2c_scan();  // defined below
 //
 //  The GT911 does not simply answer once reset is released: it samples its INT
 //  pin as reset rises to choose its I2C address (INT low → 0x5D, high → 0x14),
-//  and stays silent if that never happens properly. BOARD_SPEC §6 lists the INT
+//  and stays silent if that never happens properly. The board reference lists the INT
 //  pin as "project-dependent" and it is not identified for this board, so try
 //  the GPIOs the RGB bus and the I2C/UART pins leave free — the same empirical
 //  bit-scan approach §5.2 used to find the backlight.
@@ -492,7 +493,7 @@ void setup() {
   // above runs while it is still held in reset, which is why it never appears
   // there. The chip needs a moment to boot after reset release.
   //
-  // BOARD_SPEC §5.2 maps P2 to TP_RST, but only P1 (backlight) was ever actually
+  // The board reference maps P2 to TP_RST, but only P1 (backlight) was ever actually
   // verified by bit-scan; P0/P2 are unconfirmed guesses. So re-scan here: if the
   // GT911 shows up now, the mapping holds and any failure is in our driver; if it
   // does not, the chip is still in reset and the reset line is not where we think.

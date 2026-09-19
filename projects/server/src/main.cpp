@@ -137,6 +137,7 @@ static void can_rx_task(void* /*param*/) {
         PID_ENGINE_LOAD,
         PID_ACCEL_D,         // overrun fuel-cut detection needs a live pedal — a
         PID_ACCEL_E,         // stale (slow-polled) pedal misses the lift-off window
+        PID_MAP_PRESSURE,    // boost = MAP - baro; a slow-polled MAP lagged the gauge ~11 s
     };
     static const size_t FAST_COUNT = sizeof(FAST_PIDS) / sizeof(FAST_PIDS[0]);
 
@@ -146,7 +147,6 @@ static void can_rx_task(void* /*param*/) {
         // Verified
         PID_MONITOR_STATUS,
         PID_COOLANT_TEMP,
-        PID_MAP_PRESSURE,
         PID_INTAKE_AIR_TEMP,
         PID_THROTTLE,
         PID_OBD_STANDARDS,

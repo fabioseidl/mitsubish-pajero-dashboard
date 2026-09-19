@@ -20,8 +20,9 @@ namespace {
 // ── Backlight control ────────────────────────────────────────────────────────
 //
 // This board CANNOT dim its backlight. It is PCF8574 pin P1 — a digital latch,
-// HIGH = ON (BOARD_SPEC §5.2), with no PWM path and no backlight GPIO on the
-// ESP32 at all. (GPIO 0 is not an option either: it is RGB Green 3, so the BOOT
+// HIGH = ON (see the PCF8574 map in
+// .claude/skills/client-firmware/references/main_display.md), with no PWM path
+// and no backlight GPIO on the ESP32 at all. (GPIO 0 is not an option either: it is RGB Green 3, so the BOOT
 // button cannot be read while the panel runs.) So unlike main_hud, where the
 // identical 10-step cycle drives LEDC PWM on GPIO 1, "brightness" here is the
 // opacity of a black layer drawn over the UI: perceived brightness follows the
@@ -205,7 +206,10 @@ void update(const Payload& p) {
     set_if_changed(ui_lbdistancekm,         "%.1f", p.distance_km);
     set_if_changed(ui_lbbarometerpressure,  "%u",   (unsigned)p.baro_pressure_kpa);
     set_if_changed(ui_lbambientetemperature,"%.0f", p.ambient_temp_c);
-    set_if_changed(ui_lbboostpressure,      "%.1f", p.boost_pres);
+    // Boost is derived from MAP - ambient, both whole-kPa, so the data resolves to
+    // ~0.01 bar. Two decimals show that; "%.1f" quantised it to 0.1 bar steps and
+    // hid all movement below a tenth of a bar.
+    set_if_changed(ui_lbboostpressure,      "%.2f", p.boost_pres);
     set_if_changed(ui_lbengineload,         "%.0f", p.engine_load_pct);
     set_if_changed(ui_lbthrottle,           "%.0f", p.throttle_pct);
     set_if_changed(ui_lbcoolanttemp,        "%.0f", p.coolant_temp_c);

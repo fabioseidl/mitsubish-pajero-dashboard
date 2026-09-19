@@ -2,6 +2,7 @@
 #include <string.h>
 
 #ifndef UNIT_TEST
+#include <esp_idf_version.h>   // ESP_IDF_VERSION / ESP_IDF_VERSION_VAL
 #include <esp_wifi.h>
 #ifdef ARDUINO
 #include <WiFi.h>
@@ -39,16 +40,26 @@ bool ESPNowReceiver::begin(const uint8_t pmk[16]) {
 #endif
         return false;
     }
+    // The receive-callback signature is set by the IDF version, NOT by whether this
+    // is an Arduino build: IDF 5.0 replaced the bare `const uint8_t* mac` first
+    // argument with `const esp_now_recv_info*`. Arduino-ESP32 2.x ships IDF 4.4 and
+    // 3.x ships IDF 5.x, and `platform = espressif32` is unpinned in the
+    // sub-projects, so both have to compile here. Selecting on ARDUINO (as this did
+    // originally) picks the 4.x signature on an Arduino 3.x build and fails to
+    // convert the lambda.
     esp_err_t cb_err;
-#ifdef ARDUINO
-    cb_err = esp_now_register_recv_cb([](const uint8_t* mac_addr, const uint8_t* data, int len) {
-        ESPNowReceiver::onReceiveISR(mac_addr, data, len);
-    });
-    Serial.printf("[ESPNOW] register_recv_cb=%d channel=%d\n", cb_err, WiFi.channel());
-#else
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
     cb_err = esp_now_register_recv_cb([](const esp_now_recv_info* recv_info, const uint8_t* data, int len) {
         ESPNowReceiver::onReceiveISR(recv_info->src_addr, data, len);
     });
+#else
+    cb_err = esp_now_register_recv_cb([](const uint8_t* mac_addr, const uint8_t* data, int len) {
+        ESPNowReceiver::onReceiveISR(mac_addr, data, len);
+    });
+#endif
+#ifdef ARDUINO
+    Serial.printf("[ESPNOW] register_recv_cb=%d channel=%d\n", cb_err, WiFi.channel());
+#else
     (void)cb_err;
 #endif
 #else

@@ -3,7 +3,8 @@
 #include <stdint.h>
 
 /**
- * Goodix GT911 capacitive touch controller (BOARD_SPEC §6).
+ * Goodix GT911 capacitive touch controller
+ * (.claude/skills/client-firmware/references/main_display.md).
  *
  * Sits on the board's shared I2C bus (SDA=8 / SCL=9) alongside the PCF8574,
  * MPU6050 and AHT20/BMP280, and uses the same Wire instance as the rest of the
@@ -14,8 +15,8 @@
  * high; the chip is invisible on the bus while held in reset (which is why the
  * i2c_scan() in setup() does not list it).
  *
- * The INT pin is not used. BOARD_SPEC calls it "project-dependent" and it is not
- * identified on this board, so read() polls the status register instead — at the
+ * The INT pin is not used. The board reference calls it "project-dependent"
+ * and it is not identified on this board, so read() polls the status register instead — at the
  * LVGL input rate that costs one short I2C transaction per read and removes the
  * need to know the pin at all.
  */

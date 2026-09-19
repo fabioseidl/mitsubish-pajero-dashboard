@@ -2,6 +2,7 @@
 #include <string.h>
 
 #ifndef UNIT_TEST
+#include <esp_idf_version.h>   // ESP_IDF_VERSION / ESP_IDF_VERSION_VAL
 #include <esp_wifi.h>
 #include <esp_now.h>
 #ifdef ARDUINO
@@ -10,6 +11,23 @@
 #endif
 
 static const uint8_t BROADCAST_MAC[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+
+#ifndef UNIT_TEST
+// The send callback's FIRST parameter type differs between SDKs: older ones pass
+// `const uint8_t* mac_addr`, newer ones `const wifi_tx_info_t*`. Rather than guess,
+// deduce it from the SDK's OWN typedef, so this adapts to whatever is installed.
+//
+// This replaced an `#ifdef ARDUINO` split, which conflated framework with SDK
+// version and broke the espidf-framework emulator. A version threshold is no better:
+// IDF 5.4.2 still ships the uint8_t form and defines no wifi_tx_info_t at all. A
+// generic (`auto*`) lambda would also work but needs C++14, and client_simple_hud
+// still builds as C++11 — this trait is C++11-clean.
+template <typename F> struct EspNowSendCbTraits;
+template <typename A> struct EspNowSendCbTraits<void (*)(A, esp_now_send_status_t)> {
+    using Arg0 = A;
+};
+using EspNowSendCbArg0 = EspNowSendCbTraits<esp_now_send_cb_t>::Arg0;
+#endif
 
 ESPNowBroadcaster* g_broadcaster_instance = nullptr;
 
@@ -38,15 +56,12 @@ bool ESPNowBroadcaster::begin(const uint8_t pmk[16]) {
     last_add_peer_err_ = esp_now_add_peer(&peer);
 
     g_broadcaster_instance = this;
-#ifdef ARDUINO
-    esp_now_register_send_cb([](const uint8_t* /*mac_addr*/, esp_now_send_status_t status) {
+    // First argument is unused; its type comes from EspNowSendCbArg0 above so this
+    // compiles against either SDK signature. Captureless, so it still converts to
+    // esp_now_send_cb_t.
+    esp_now_register_send_cb([](EspNowSendCbArg0 /*mac_or_tx_info*/, esp_now_send_status_t status) {
         ESPNowBroadcaster::onSendComplete(nullptr, status);
     });
-#else
-    esp_now_register_send_cb([](const wifi_tx_info_t* /*info*/, esp_now_send_status_t status) {
-        ESPNowBroadcaster::onSendComplete(nullptr, status);
-    });
-#endif
 #else
     (void)pmk;
 #endif

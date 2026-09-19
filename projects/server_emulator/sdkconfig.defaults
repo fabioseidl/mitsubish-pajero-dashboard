@@ -1,0 +1,10 @@
+# LilyGo T-2CAN (ESP32-S3). Applied when sdkconfig.server_emulator is regenerated.
+
+CONFIG_IDF_TARGET="esp32s3"
+
+# 16 MB flash
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# The board's only USB port is the S3's native USB-Serial-JTAG — route the log
+# console there, otherwise ESP_LOGI output goes to UART0 and is never seen.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y

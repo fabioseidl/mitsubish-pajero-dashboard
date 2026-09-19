@@ -1,10 +1,19 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
-      "Bash(xargs cat -n)",
+      "Bash(pio run:*)",
+      "Bash(pio test:*)",
+      "Bash(pio project:*)",
+      "Bash(pio device list:*)",
+      "Bash(~/.platformio/penv/bin/pio run:*)",
+      "Bash(~/.platformio/penv/bin/pio test:*)",
+      "Bash(~/.platformio/penv/bin/pio project:*)",
+      "Bash(~/.platformio/penv/bin/pio device list:*)",
+      "Bash(command -v:*)",
+      "Bash(g++ -fsyntax-only:*)",
       "WebFetch(domain:github.com)",
-      "Bash(python3 -)",
-      "Bash(grep -n \"^#define [A-Z_]*$\" /Users/fabioseidl/Documents/Repos/mitsubish-pajero-dashboard/projects/main_display_debug/include/lv_conf.h)"
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

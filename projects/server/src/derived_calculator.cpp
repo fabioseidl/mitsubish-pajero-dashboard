@@ -78,24 +78,38 @@ static constexpr float FUEL_CUT_LOAD_MAX_PCT  = 25.0f;   // % calc load; above t
 // the broadcast loop smooths the stepping but cannot add real resolution.
 static constexpr float ALTITUDE_SEA_LEVEL_REF_KPA = 102.0f;
 
-// CAN 0x608 injected-fuel scale. The broadcast carries a raw per-stroke injection
-// quantity (confirmed by FUELLOG: idle ~318 @ ~650 rpm, exactly 0 on overrun, up to
-// ~4700 under hard accel), so the rate scales with injection frequency (∝ rpm):
-//        fuel(L/h) = raw * rpm * FUEL_RAW_K
-// CALIBRATION: the default is anchored to a warm idle of ~0.85 L/h at raw≈318,
-// rpm≈650 → K = 0.85 / (318 * 650) ≈ 4.1e-6. For best accuracy, refine K against a
-// tank-average economy (raise K to increase reported L/h), exactly like the AFR
-// knobs below. raw == 0 (overrun) yields 0 with no special-casing.
-static constexpr float FUEL_RAW_K = 4.1e-6f;
+// CAN 0x608 injected-fuel scale.
+//
+// The broadcast carries an instantaneous fuel MASS FLOW in mg/s — NOT a
+// per-stroke injection quantity. So the conversion is rpm-INDEPENDENT:
+//        fuel(L/h) = raw[mg/s] * 3600 / 1e6 / density[kg/L]
+//                  = raw * 3.6 / DIESEL_DENSITY_G_L
+//
+// WHY NOT raw * rpm: an earlier model here multiplied by rpm on the assumption
+// that raw was mm³/stroke. That is physically impossible on this engine. Using
+// our own FUELLOG extremes (idle raw≈318 @ 650 rpm, hard accel raw≈4734), the
+// rpm-multiplied form spans an 80x idle→full range and predicts ~74 L/h at
+// 3800 rpm. A 4M41 makes 123 kW at a BSFC of ~215 g/kWh, so its ABSOLUTE
+// ceiling is ~32 L/h; the real idle→full span is ~25x. The mass-flow form gives
+// 1.37 L/h at idle and 20.5 L/h at that accel sample — both physical. It also
+// matches the independent igkov/MPS2 Pajero dash, which applies exactly this
+// scaling to the same 0x608 D5,D6 field.
+//
+// CALIBRATION: FUEL_RAW_TRIM is the single knob. 1.0 means raw is exactly mg/s.
+// Refine it against a tank-average economy over a few fills — raise it to
+// increase reported L/h. Do NOT reintroduce an rpm term to fix a gain error;
+// that bends the shape of the curve, not its scale.
+// raw == 0 (deceleration fuel cut-off) yields exactly 0 with no special-casing.
+static constexpr float FUEL_RAW_MG_S_TO_G_H = 3.6f;   // mg/s → g/h
+static constexpr float FUEL_RAW_TRIM        = 1.0f;   // dimensionless calibration
 
 float DerivedCalculator::computeFuelRate(const DataAggregator& aggregator) {
     // Preferred: the real injected-fuel broadcast (CAN 0x608). It is the actual
     // ECU fuelling figure — including a true zero during deceleration fuel cut-off
     // — so it supersedes both the direct PID and the MAF estimate when present.
     if (aggregator.isValid(PID_BCAST_FUEL_RAW)) {
-        float raw = aggregator.get(PID_BCAST_FUEL_RAW);
-        float rpm = aggregator.get(PID_RPM);
-        return raw * rpm * FUEL_RAW_K;
+        float raw = aggregator.get(PID_BCAST_FUEL_RAW);   // mg/s
+        return raw * FUEL_RAW_MG_S_TO_G_H * FUEL_RAW_TRIM / DIESEL_DENSITY_G_L;
     }
 
     // Use the direct reading when the ECU actually answers PID 0x5E.
@@ -155,6 +169,33 @@ float DerivedCalculator::computeConsumption(const DataAggregator& aggregator) {
     float fuel_rate = computeFuelRate(aggregator);
     if (speed <= 0.0f || fuel_rate <= 0.0f) return 0.0f;
     return speed / fuel_rate;
+}
+
+// Boost is a GAUGE pressure: manifold absolute pressure minus ambient. OBD gives
+// both as whole kPa, so resolution is 1 kPa (0.01 bar) — ample for a dash readout.
+//
+// If the ambient PID is unsupported we fall back to ISA sea-level pressure rather
+// than reporting nothing; that biases boost by however far local pressure sits from
+// 101.3 kPa (≈0.01 bar per kPa), which is far better than a permanently dead gauge.
+static constexpr float BOOST_FALLBACK_BARO_KPA = 101.3f;
+static constexpr float KPA_PER_BAR             = 100.0f;
+
+float DerivedCalculator::computeBoostBar(const DataAggregator& aggregator) {
+    // Without a manifold-pressure reading there is nothing to derive.
+    if (!aggregator.isValid(PID_MAP_PRESSURE)) return 0.0f;
+
+    float map_kpa  = aggregator.get(PID_MAP_PRESSURE);
+    float baro_kpa = aggregator.isValid(PID_BARO_PRESSURE)
+                         ? aggregator.get(PID_BARO_PRESSURE)
+                         : BOOST_FALLBACK_BARO_KPA;
+
+    float boost_bar = (map_kpa - baro_kpa) / KPA_PER_BAR;
+
+    // Clamp at zero. A diesel has no throttle plate, so off-boost the manifold sits
+    // at roughly ambient; the small negative readings that come from intake
+    // restriction and whole-kPa rounding would otherwise show as "-0.1" on a gauge
+    // whose whole point is boost.
+    return (boost_bar < 0.0f) ? 0.0f : boost_bar;
 }
 
 float DerivedCalculator::computeAltitude(float baro_kpa) {
