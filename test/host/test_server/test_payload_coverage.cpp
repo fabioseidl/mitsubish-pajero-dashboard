@@ -82,6 +82,15 @@ const FieldSpec kFields[] = {
     F(at_gear_pos,              true),
     F(at_target_gear,           true),
     F(boost_pres,               true),
+    F(imu_accel_x_ms2,          true),
+    F(imu_accel_y_ms2,          true),
+    F(imu_accel_z_ms2,          true),
+    F(imu_gyro_x_rads,          true),
+    F(imu_gyro_y_rads,          true),
+    F(imu_gyro_z_rads,          true),
+    F(env_temp_c,               true),
+    F(env_humidity_pct,         true),
+    F(env_pressure_hpa,         true),
     F(flags,                    true),
 };
 

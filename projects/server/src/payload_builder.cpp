@@ -1,6 +1,12 @@
 #include "payload_builder.h"
 #include "pid_map.h"
 #include "derived_calculator.h"
+#include <math.h>
+
+/** Return a sensor slot's value, or NAN when it was never read or has gone stale. */
+float PayloadBuilder::sensorValue(const DataAggregator& aggregator, uint16_t slot) {
+    return aggregator.isFresh(slot, SENSOR_STALE_MS) ? aggregator.get(slot) : NAN;
+}
 
 Payload PayloadBuilder::build(const DataAggregator& aggregator,
                                const SessionAccumulator& session,
@@ -10,7 +16,7 @@ Payload PayloadBuilder::build(const DataAggregator& aggregator,
     // `Payload p;` happens to be correct — but the failure mode when a newly
     // added field is missed here is stack garbage broadcast to every client, and
     // the static_assert cannot catch it (the assert gets updated as part of
-    // adding the field). A 153-byte memset at 10 Hz is not worth the risk.
+    // adding the field). A 189-byte memset at 10 Hz is not worth the risk.
     Payload p{};
     p.version                  = PAYLOAD_VERSION;
     p.timestamp_ms             = timestamp_ms;
@@ -78,6 +84,17 @@ Payload PayloadBuilder::build(const DataAggregator& aggregator,
     // manifold + ambient pressure instead. Units: bar (gauge), which is what the
     // main_display "BOOST bar" readout expects.
     p.boost_pres               = DerivedCalculator::computeBoostBar(aggregator);
+
+    // Onboard Qwiic sensors — NAN when absent or stale, so clients show "--"
+    p.imu_accel_x_ms2          = sensorValue(aggregator, PID_SENS_ACCEL_X);
+    p.imu_accel_y_ms2          = sensorValue(aggregator, PID_SENS_ACCEL_Y);
+    p.imu_accel_z_ms2          = sensorValue(aggregator, PID_SENS_ACCEL_Z);
+    p.imu_gyro_x_rads          = sensorValue(aggregator, PID_SENS_GYRO_X);
+    p.imu_gyro_y_rads          = sensorValue(aggregator, PID_SENS_GYRO_Y);
+    p.imu_gyro_z_rads          = sensorValue(aggregator, PID_SENS_GYRO_Z);
+    p.env_temp_c               = sensorValue(aggregator, PID_SENS_ENV_TEMP);
+    p.env_humidity_pct         = sensorValue(aggregator, PID_SENS_ENV_HUMIDITY);
+    p.env_pressure_hpa         = sensorValue(aggregator, PID_SENS_ENV_PRESSURE);
 
     p.flags = 0;
     if (aggregator.allRequiredPidsReceived()) {

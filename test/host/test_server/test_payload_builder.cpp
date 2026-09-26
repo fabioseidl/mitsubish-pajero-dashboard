@@ -3,6 +3,7 @@
 #include "data_aggregator.h"
 #include "session_accumulator.h"
 #include "pid_map.h"
+#include <math.h>
 
 static void test_build_sets_version_correctly() {
     DataAggregator agg;
@@ -116,6 +117,50 @@ static void test_build_clears_engine_running_flag_when_rpm_is_zero() {
     TEST_ASSERT_FALSE(p.flags & PAYLOAD_FLAG_ENGINE_RUNNING);
 }
 
+static void test_build_copies_onboard_sensors_from_aggregator() {
+    DataAggregator agg;
+    SessionAccumulator sess;
+    agg.update(PID_SENS_ACCEL_X,      1.5f);
+    agg.update(PID_SENS_ACCEL_Y,     -0.5f);
+    agg.update(PID_SENS_ACCEL_Z,      0.25f);
+    agg.update(PID_SENS_GYRO_X,       0.1f);
+    agg.update(PID_SENS_GYRO_Y,      -0.2f);
+    agg.update(PID_SENS_GYRO_Z,       0.3f);
+    agg.update(PID_SENS_ENV_TEMP,    23.5f);
+    agg.update(PID_SENS_ENV_HUMIDITY, 61.0f);
+    agg.update(PID_SENS_ENV_PRESSURE, 1013.2f);
+    Payload p = PayloadBuilder::build(agg, sess, 0.0f, 0);
+    TEST_ASSERT_EQUAL_FLOAT(1.5f,    p.imu_accel_x_ms2);
+    TEST_ASSERT_EQUAL_FLOAT(-0.5f,   p.imu_accel_y_ms2);
+    TEST_ASSERT_EQUAL_FLOAT(0.25f,   p.imu_accel_z_ms2);
+    TEST_ASSERT_EQUAL_FLOAT(0.1f,    p.imu_gyro_x_rads);
+    TEST_ASSERT_EQUAL_FLOAT(-0.2f,   p.imu_gyro_y_rads);
+    TEST_ASSERT_EQUAL_FLOAT(0.3f,    p.imu_gyro_z_rads);
+    TEST_ASSERT_EQUAL_FLOAT(23.5f,   p.env_temp_c);
+    TEST_ASSERT_EQUAL_FLOAT(61.0f,   p.env_humidity_pct);
+    TEST_ASSERT_EQUAL_FLOAT(1013.2f, p.env_pressure_hpa);
+}
+
+static void test_build_sends_nan_for_absent_sensors() {
+    DataAggregator agg;
+    SessionAccumulator sess;
+    Payload p = PayloadBuilder::build(agg, sess, 0.0f, 0);
+    TEST_ASSERT_TRUE(isnan(p.imu_accel_x_ms2));
+    TEST_ASSERT_TRUE(isnan(p.imu_gyro_z_rads));
+    TEST_ASSERT_TRUE(isnan(p.env_temp_c));
+    TEST_ASSERT_TRUE(isnan(p.env_pressure_hpa));
+}
+
+static void test_build_sends_nan_for_stale_sensors() {
+    DataAggregator agg;
+    SessionAccumulator sess;
+    agg.setNow(1000);
+    agg.update(PID_SENS_ENV_TEMP, 23.5f);
+    agg.setNow(1000 + PayloadBuilder::SENSOR_STALE_MS + 1);
+    Payload p = PayloadBuilder::build(agg, sess, 0.0f, 0);
+    TEST_ASSERT_TRUE(isnan(p.env_temp_c));
+}
+
 static void test_build_copies_timestamp() {
     DataAggregator agg;
     SessionAccumulator sess;
@@ -139,6 +184,9 @@ void run_payload_builder_tests() {
     RUN_TEST(test_build_sets_engine_running_flag_when_rpm_above_400);
     RUN_TEST(test_build_clears_engine_running_flag_when_rpm_is_zero);
     RUN_TEST(test_build_copies_timestamp);
+    RUN_TEST(test_build_copies_onboard_sensors_from_aggregator);
+    RUN_TEST(test_build_sends_nan_for_absent_sensors);
+    RUN_TEST(test_build_sends_nan_for_stale_sensors);
 }
 
 #include "../../../projects/server/src/payload_builder.cpp"

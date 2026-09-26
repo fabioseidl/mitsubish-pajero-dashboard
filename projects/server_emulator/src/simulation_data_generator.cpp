@@ -127,6 +127,20 @@ Payload SimulationDataGenerator::getPayload() const {
     // emulator exists to prevent. Keep this in bar.
     p.boost_pres         = (load_pct > 10.0f) ? (load_pct - 10.0f) * 0.015f : 0.0f;
 
+    // -----------------------------------------------------------------------
+    // Onboard Qwiic sensors (server: OnboardSensors). Gravity- and bias-removed
+    // like the real server, so every axis sits near 0 with small road motion.
+    // -----------------------------------------------------------------------
+    p.imu_accel_x_ms2    = 0.8f * sinf(t * 0.30f) + 0.05f;   // longitudinal accel/brake
+    p.imu_accel_y_ms2    = 1.2f * sinf(t * 0.17f) + 0.05f;   // cornering
+    p.imu_accel_z_ms2    = 0.3f * sinf(t * 2.10f) + 0.05f;   // road vibration
+    p.imu_gyro_x_rads    = 0.02f * sinf(t * 0.90f) + 0.005f; // roll
+    p.imu_gyro_y_rads    = 0.02f * sinf(t * 1.10f) + 0.005f; // pitch
+    p.imu_gyro_z_rads    = 0.15f * sinf(t * 0.17f) + 0.005f; // yaw, in step with cornering
+    p.env_temp_c         = 24.0f + 1.5f * sinf(t * 0.01f);
+    p.env_humidity_pct   = 55.0f + 5.0f * sinf(t * 0.02f);
+    p.env_pressure_hpa   = baro_kpa * 10.0f;                 // same air as the OBD baro
+
     p.flags = PAYLOAD_FLAG_DATA_VALID;
     if (rpm > 400.0f) {
         p.flags |= PAYLOAD_FLAG_ENGINE_RUNNING;

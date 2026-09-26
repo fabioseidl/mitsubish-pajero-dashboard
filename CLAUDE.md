@@ -70,7 +70,7 @@ cp lib/core/include/security_config.h.example lib/core/include/security_config.h
 ## Invariants
 
 - **`Payload` is a packed struct with a `static_assert` on its exact size**
-  (currently 153 bytes; ESP-NOW's broadcast ceiling is 250). Change a field →
+  (currently 189 bytes; ESP-NOW's broadcast ceiling is 250). Change a field →
   update the assert, bump `PAYLOAD_VERSION`, update `PayloadBuilder` *and* the
   emulator, update the field table in `test/host/test_server/test_payload_coverage.cpp`
   (it fails until every byte is accounted for), and reflash every client. See the

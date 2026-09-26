@@ -108,13 +108,11 @@ Other connectors are not plain UART: GPIO 15/16 = RS-485, GPIO 19/20 = CAN.
 
 | File | Role |
 |---|---|
-| `main.cpp` | Board bring-up (PCF8574, LovyanGFX, LVGL), ESP-NOW, sensor polling, loop |
+| `main.cpp` | Board bring-up (PCF8574, LovyanGFX, LVGL), ESP-NOW, loop; IMU + temp/humidity come from the server Payload |
 | `app_ui.{h,cpp}` | The **only** bridge to the SquareLine export in `src/ui/` |
 | `ui/` | SquareLine Studio LVGL 9 export — **generated, never hand-edit** |
 | `gps.{h,cpp}` | TinyGPSPlus on UART0/GPIO 44 |
 | `gt911.{h,cpp}` | Capacitive touch (silent on this unit) |
-| `mpu6050.{h,cpp}` | 6-axis IMU @ `0x68` |
-| `aht20_bmp280.{h,cpp}` | AHT20 `0x38` + BMP280 `0x76/0x77` |
 | `main_display.cpp`, `dashboard_ui.cpp`, `dashboard_widgets.cpp` | Legacy hand-written UI, excluded via `build_src_filter` |
 
 `app_ui` keeps `main.cpp` decoupled from the widget tree: `create()`,

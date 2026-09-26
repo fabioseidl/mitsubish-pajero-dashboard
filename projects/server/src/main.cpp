@@ -15,6 +15,7 @@
 #include "session_accumulator.h"
 #include "payload_builder.h"
 #include "espnow_broadcaster.h"
+#include "onboard_sensors.h"
 #include "pid_map.h"
 #include "pin_config.h"
 #include "security_config.h"
@@ -25,6 +26,15 @@
 #include <sys/time.h>
 
 static const char* TAG = "server";
+
+// Build with -DSERVER_NO_CAN (env:server_nocan) to run off the vehicle bus: no
+// CAN task, no car-off deep sleep, radio always on, only the onboard sensors
+// carry data. Never flash it in the car — without deep sleep it drains the battery.
+#ifdef SERVER_NO_CAN
+static constexpr bool CAN_ENABLED = false;
+#else
+static constexpr bool CAN_ENABLED = true;
+#endif
 
 static DataAggregator aggregator;
 
@@ -445,6 +455,22 @@ static void can_rx_task(void* /*param*/) {
     }
 }
 
+/** Reads the Qwiic IMU + environment sensors into the aggregator; never touches CAN. */
+static void sensor_task(void* /*param*/) {
+    OnboardSensors sensors;
+    sensors.begin();
+    if (!sensors.anyReady()) {
+        vTaskDelete(nullptr);
+    }
+    while (true) {
+        uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+        // can_rx_task owns the aggregator clock; with no CAN task this one drives it.
+        if (!CAN_ENABLED) aggregator.setNow(now_ms);
+        sensors.update(now_ms, aggregator);
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
 static void broadcast_task(void* /*param*/) {
     Serial.println("broadcast_task started");
     SessionAccumulator session;
@@ -531,7 +557,8 @@ static void broadcast_task(void* /*param*/) {
             "  rel_thr=%.1f%% accel_d=%.1f%% accel_e=%.1f%% thr_act=%.1f%% time_mil=%umin time_cleared=%umin\n"
             "  stft=%.1f%% ltft=%.1f%% fuel_pres=%.1fkPa o2=%.3f abs_load=%.1f%% cmd_afr=%.3f\n"
             "  ambient=%.1fC throttle_b=%.1f%% oil=%.1fC obd_std=%u\n"
-            "  gear=%.0f tgt_gear=%.0f boost=%.2fbar\n",
+            "  gear=%.0f tgt_gear=%.0f boost=%.2fbar\n"
+            "  acc=%.2f/%.2f/%.2fm/s2 gyro=%.2f/%.2f/%.2frad/s temp=%.1fC rh=%.0f%% pres=%.1fhPa\n",
             (unsigned long)send_count, sent ? "OK" : "FAIL",
             (unsigned long)send_count, (unsigned long)fail_count,
             (unsigned)payload.version, (unsigned long)payload.timestamp_ms,
@@ -552,7 +579,10 @@ static void broadcast_task(void* /*param*/) {
             payload.abs_load_pct, payload.cmd_afr_lambda,
             payload.ambient_temp_c, payload.throttle_b_pct,
             payload.oil_temp_c, (unsigned)payload.obd_standards,
-            payload.at_gear_pos, payload.at_target_gear, payload.boost_pres);
+            payload.at_gear_pos, payload.at_target_gear, payload.boost_pres,
+            payload.imu_accel_x_ms2, payload.imu_accel_y_ms2, payload.imu_accel_z_ms2,
+            payload.imu_gyro_x_rads, payload.imu_gyro_y_rads, payload.imu_gyro_z_rads,
+            payload.env_temp_c, payload.env_humidity_pct, payload.env_pressure_hpa);
 #else
         // One line per second (~110 chars → ~0.1 KB/s), carrying exactly the
         // fields the DerivedCalculator constants are tuned against: maf, load and
@@ -568,6 +598,12 @@ static void broadcast_task(void* /*param*/) {
                 payload.fuel_rate_l_per_h, payload.consumption_km_per_l,
                 payload.avg_consumption_km_per_l, payload.distance_km,
                 payload.boost_pres, payload.flags);
+            Serial.printf(
+                "[SENS] acc=%.2f/%.2f/%.2f m/s2 gyro=%.2f/%.2f/%.2f rad/s "
+                "temp=%.1fC rh=%.0f%% pres=%.1fhPa\n",
+                payload.imu_accel_x_ms2, payload.imu_accel_y_ms2, payload.imu_accel_z_ms2,
+                payload.imu_gyro_x_rads, payload.imu_gyro_y_rads, payload.imu_gyro_z_rads,
+                payload.env_temp_c, payload.env_humidity_pct, payload.env_pressure_hpa);
         }
 #endif
 
@@ -590,7 +626,13 @@ void setup() {
 
     restoreTripState();
 
-    xTaskCreatePinnedToCore(can_rx_task,    "can_rx",    4096, nullptr, 5, nullptr, 1);
+    if (CAN_ENABLED) {
+        xTaskCreatePinnedToCore(can_rx_task, "can_rx", 4096, nullptr, 5, nullptr, 1);
+    } else {
+        Serial.println("[power] SERVER_NO_CAN build — CAN and deep sleep disabled");
+        g_car_on = true;   // releases broadcast_task straight away
+    }
+    xTaskCreatePinnedToCore(sensor_task,    "sensors",   4096, nullptr, 2, nullptr, 1);
     xTaskCreatePinnedToCore(broadcast_task, "broadcast", 4096, nullptr, 3, nullptr, 0);
 }
 

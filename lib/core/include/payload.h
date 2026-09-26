@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define PAYLOAD_VERSION 6
+#define PAYLOAD_VERSION 7
 
 // Wire budget. ESP-NOW caps a single broadcast at 250 bytes, so every field here
 // is spent out of a fixed allowance. Only fields some code path can actually
@@ -80,13 +80,26 @@ typedef struct __attribute__((packed)) {
     float    boost_pres;                // bar (gauge) = MAP - ambient, computed
                                         // server-side by DerivedCalculator
 
+    // --- Server onboard sensors (T-2CAN Qwiic I2C bus) ---
+    // Independent of CAN: populated even with the server off the vehicle bus.
+    // NAN when the sensor is absent or its last reading is stale.
+    float    imu_accel_x_ms2;           // MPU-6500 accel X, gravity removed  m/s^2
+    float    imu_accel_y_ms2;           // MPU-6500 accel Y, gravity removed  m/s^2
+    float    imu_accel_z_ms2;           // MPU-6500 accel Z, gravity removed  m/s^2
+    float    imu_gyro_x_rads;           // MPU-6500 gyro X, bias removed      rad/s
+    float    imu_gyro_y_rads;           // MPU-6500 gyro Y, bias removed      rad/s
+    float    imu_gyro_z_rads;           // MPU-6500 gyro Z, bias removed      rad/s
+    float    env_temp_c;                // AHT20 temperature                  °C
+    float    env_humidity_pct;          // AHT20 relative humidity            %RH
+    float    env_pressure_hpa;          // BMP280 absolute pressure           hPa
+
     uint8_t  flags;
 } Payload;
 
 #define PAYLOAD_FLAG_DATA_VALID     (1 << 0)
 #define PAYLOAD_FLAG_ENGINE_RUNNING (1 << 1)
 
-static_assert(sizeof(Payload) == 153,
+static_assert(sizeof(Payload) == 189,
     "Payload size mismatch - check struct fields and packing");
 static_assert(sizeof(Payload) <= PAYLOAD_MAX_WIRE_BYTES,
     "Payload exceeds the 250-byte ESP-NOW broadcast limit");

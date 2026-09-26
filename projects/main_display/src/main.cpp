@@ -16,7 +16,7 @@
 #include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
 
 // ── App: LVGL dashboard + ESP-NOW link to the server ──────────
-// The server broadcasts a 153-byte Payload at 10 Hz over ESP-NOW; we render it
+// The server broadcasts a 189-byte Payload at 10 Hz over ESP-NOW; we render it
 // on the 1024x600 panel with a hand-written LVGL dashboard (dashboard_ui.cpp).
 #include <lvgl.h>
 #include <esp_heap_caps.h>
@@ -30,8 +30,6 @@
 #include "app_ui.h"            // SquareLine Studio UI bridge (src/ui/, LVGL 9 export)
 #include "gps.h"               // u-blox NEO-6M on UART2 (NMEA → serial console)
 #include "gt911.h"             // GT911 capacitive touch on the shared I2C bus
-#include "mpu6050.h"           // MPU6050 6-axis IMU on the shared I2C bus (0x68)
-#include "aht20_bmp280.h"      // AHT20 (0x38) + BMP280 (0x76/0x77) on the shared I2C bus
 
 // ─────────────────────────────────────────────────────────────
 //  Debug macro — routes to UART0 (Serial on this build)
@@ -351,6 +349,10 @@ static portMUX_TYPE  g_payload_mux         = portMUX_INITIALIZER_UNLOCKED;
 static Payload       g_pending_payload     = {};
 static volatile bool g_has_pending_payload = false;
 
+// Latest onboard-sensor readings from the server's Payload, NAN until received
+// or after the link drops. Loop task only.
+static Payload       g_sensor_src          = {};
+
 static volatile bool g_status_dirty  = false;
 static volatile bool g_status_online = false;
 
@@ -395,6 +397,19 @@ static void on_status_change(bool online) {
   DBG("[link] server %s", online ? "ONLINE" : "OFFLINE");
   g_status_online = online;
   g_status_dirty  = true;
+}
+
+/** Mark every server sensor reading unknown so the labels show "--". */
+static void clear_sensor_src() {
+  g_sensor_src.imu_accel_x_ms2  = NAN;
+  g_sensor_src.imu_accel_y_ms2  = NAN;
+  g_sensor_src.imu_accel_z_ms2  = NAN;
+  g_sensor_src.imu_gyro_x_rads  = NAN;
+  g_sensor_src.imu_gyro_y_rads  = NAN;
+  g_sensor_src.imu_gyro_z_rads  = NAN;
+  g_sensor_src.env_temp_c       = NAN;
+  g_sensor_src.env_humidity_pct = NAN;
+  g_sensor_src.env_pressure_hpa = NAN;
 }
 
 // Bring up LVGL, build the dashboard, and start the ESP-NOW receiver. Call this
@@ -516,13 +531,8 @@ void setup() {
   // ── 5. GPS (u-blox NEO-6M on UART2) ───────────────────────
   gps::begin();
 
-  // ── 6. MPU6050 IMU (shared I2C bus, 0x68) ─────────────────
-  // Uses the Wire bus already brought up in step 1 — non-fatal if absent.
-  mpu6050::begin();
-
-  // ── 7. AHT20 + BMP280 env sensor (shared I2C bus, 0x38 / 0x76) ──
-  // Uses the Wire bus already brought up in step 1 — non-fatal per chip.
-  aht20_bmp280::begin();
+  // IMU and temperature/humidity come from the server Payload (sensors moved to its Qwiic port).
+  clear_sensor_src();
 
   backlight_button_init();
 
@@ -538,12 +548,14 @@ void loop() {
     g_has_pending_payload = false;
     portEXIT_CRITICAL(&g_payload_mux);
     app_ui::update(local);
+    g_sensor_src = local;   // sensor fields are valid even without DATA_VALID (server off CAN)
   }
 
   // ── Apply a buffered connection-status change ──
   if (g_status_dirty) {
     g_status_dirty = false;
     app_ui::set_server_status(g_status_online);
+    if (!g_status_online) clear_sensor_src();
   }
 
   // ── Drive LVGL ──
@@ -569,32 +581,27 @@ void loop() {
     app_ui::set_gps_compass(gps::compassText());
   }
 
-  // ── MPU6050: read accel/gyro/temp, print every 500 ms (non-blocking) ──
-  mpu6050::update(t);
-
-  // ── AHT20 + BMP280: read temp/humidity/pressure, print every 500 ms (non-blocking) ──
-  aht20_bmp280::update(t);
-
-  // ── MPU6050 IMU → dashboard labels, refresh ~2 Hz (matches sensor cadence) ──
+  // ── Server IMU → dashboard labels, ~2 Hz (10 Hz noise would redraw every frame) ──
   static uint32_t last_imu_ms = 0;
-  if (mpu6050::isReady() && t - last_imu_ms >= 500) {
+  if (t - last_imu_ms >= 500) {
     last_imu_ms = t;
-    app_ui::set_imu(mpu6050::accelX(), mpu6050::accelY(), mpu6050::accelZ(),
-                    mpu6050::gyroX(),  mpu6050::gyroY(),  mpu6050::gyroZ());
+    app_ui::set_imu(g_sensor_src.imu_accel_x_ms2, g_sensor_src.imu_accel_y_ms2,
+                    g_sensor_src.imu_accel_z_ms2, g_sensor_src.imu_gyro_x_rads,
+                    g_sensor_src.imu_gyro_y_rads, g_sensor_src.imu_gyro_z_rads);
   }
 
-  // ── Ambient temp + humidity (AHT20) → dashboard labels, refresh ~1 Hz ──
+  // ── Server temp + humidity (AHT20) → dashboard labels, ~1 Hz ──
   static uint32_t last_amb_ms = 0;
   if (t - last_amb_ms >= 1000) {
     last_amb_ms = t;
-    float tc = aht20_bmp280::ambientTemperatureC();
+    float tc = g_sensor_src.env_temp_c;
     char buf[12];
     if (isnan(tc)) snprintf(buf, sizeof(buf), "--");
     else           snprintf(buf, sizeof(buf), "%.1f C", tc);  // "XX.X C" — ° glyph
                                                               // not in ui_font_robotoregular28
     app_ui::set_ambient_temperature(buf);
 
-    float rh = aht20_bmp280::ambientHumidity();
+    float rh = g_sensor_src.env_humidity_pct;
     if (isnan(rh)) snprintf(buf, sizeof(buf), "--");
     else           snprintf(buf, sizeof(buf), "%.0f %%", rh);  // "XX %"
     app_ui::set_humidity(buf);
