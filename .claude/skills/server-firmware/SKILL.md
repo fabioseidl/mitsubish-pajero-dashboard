@@ -29,12 +29,27 @@ The built-in TWAI controller is **not** used, despite what a leftover
 `include/pin_config.h` (SPI 11/12/13, CS 10, RST 9, INT 8) — never inline a raw
 GPIO number.
 
+## Onboard Qwiic sensors
+
+`OnboardSensors` (`src/onboard_sensors.cpp`) reads an MPU-6500 IMU (0x68), an AHT20
+(0x38) and a BMP280 (0x76/0x77) from the T-2CAN Qwiic I2C bus. Both ports are
+probed at boot — `PIN_QWIIC_A_*` (SDA=IO2, SCL=IO1 — verified) first, then `PIN_QWIIC_B_*` (IO43/IO44) —
+and the first one that answers wins. Values go into `DataAggregator` slots
+`PID_SENS_*` (0xC0–0xC8); `PayloadBuilder` broadcasts them as NAN when absent or
+older than `SENSOR_STALE_MS`. The IMU is calibrated at boot (gravity + gyro bias
+removed), so power the board up while the vehicle is still.
+
+`env:server_nocan` (`-DSERVER_NO_CAN`) runs without the vehicle bus: no CAN task,
+no deep sleep, radio on at boot, sensor task drives the aggregator clock. Bench
+only — flashed in the car it would never sleep and would drain the battery.
+
 ## FreeRTOS tasks
 
 | Task | Core | Priority | Stack | Touches |
 |---|---|---|---|---|
 | `can_rx_task` | 1 | 5 | 4096 | `CANDriver`, `PIDDictionary`, `PIDTranslator`, `DataAggregator` |
 | `broadcast_task` | 0 | 3 | 4096 | `DerivedCalculator`, `SessionAccumulator`, `PayloadBuilder`, `ESPNowBroadcaster` |
+| `sensor_task` | 1 | 2 | 4096 | `OnboardSensors`, `DataAggregator` (Qwiic I2C only) |
 
 `DataAggregator` is the **only** shared state between the tasks and is
 mutex-protected internally. Do not add a second shared object.

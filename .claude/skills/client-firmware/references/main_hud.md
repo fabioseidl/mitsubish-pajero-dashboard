@@ -3,9 +3,9 @@
 A speed-only client: `speed_kmh` in a very large Roboto Bold face, plus a pair
 of +/- brightness buttons.
 
-Mounted **vertically**: `SCREEN_ROTATION` is 2, so LVGL works in a 320x480
-portrait frame. The panel is natively portrait, so rotation 2 is a plain 180°
-flip of the native frame — no axis swap.
+Mounted **horizontally**: `SCREEN_ROTATION` is 1, so LVGL works in a 480x320
+landscape frame — the natively portrait panel turned 90° clockwise. The canvas
+does the axis swap; `AXS15231BTouch::read()` applies the matching touch transform.
 
 The panel is read directly. There is no windshield-reflection mode: the frame
 reaches the canvas untransformed, and `flushCb` is a straight blit.
@@ -16,7 +16,7 @@ reaches the canvas untransformed, and `flushCb` is a straight blit.
 |---|---|
 | MCU | ESP32-S3-N16R8 — 16 MB flash, 8 MB OPI PSRAM |
 | Panel | 3.5" 320×480 IPS, AXS15231B controller, **QSPI** bus |
-| Orientation | Portrait, `SCREEN_ROTATION` 2 — LVGL sees 320×480 |
+| Orientation | Landscape, `SCREEN_ROTATION` 1 — LVGL sees 480×320 |
 | Touch | AXS15231B capacitive, own I²C bus, address `0x3B` |
 | Backlight | GPIO 1, active-HIGH, LEDC PWM |
 | PlatformIO | `espressif32@6.9.0`, `esp32-s3-devkitc-1`, Arduino, `qio_opi`, `default_16MB.csv` |
@@ -101,19 +101,21 @@ attached **after** the panel is up. `main.cpp` calls `screen.begin()` before
 `src/ui_font_roboto_bold_*.c` are generated, not hand-edited:
 
 ```bash
-lv_font_conv --font ui/client_simple_hud/assets/Roboto-Bold.ttf --size 180 \
+lv_font_conv --font ui/client_simple_hud/assets/Roboto-Bold.ttf --size 260 \
   -r 0x2D -r 0x30-0x39 --bpp 4 --no-compress --format lvgl --lv-include lvgl.h \
-  -o projects/main_hud/src/ui_font_roboto_bold_180.c
+  -o projects/main_hud/src/ui_font_roboto_bold_260.c
 ```
 
-The 180 px face carries digits and `-` only (all the speed readout and its `--`
+The 260 px face carries digits and `-` only (all the speed readout and its `--`
 offline placeholder ever show); the 28 px face carries full ASCII for the button
-labels. Widening the 180 px range costs flash fast — it is ~348 KB as is.
+labels. Widening the 260 px range costs flash fast — the source is ~720 KB as is.
 
-**180 px is a ceiling set by the portrait width.** A Roboto Bold digit advances
-`0.574 × size`, so three digits need `1.72 × size` px: 310 px at 180, against a
-`SCREEN_W` of 320. Anything larger clips the speed at 100 km/h and above. Resize
-the face if `SCREEN_ROTATION` ever goes back to a landscape value.
+**260 px is a ceiling set by the landscape width.** A Roboto Bold digit advances
+`0.574 × size`, so three digits need `1.72 × size` px: ~447 px at 260, against a
+`SCREEN_W` of 480. Anything larger clips the speed at 100 km/h and above. Height
+is not the limit: the 191 px digit box plus the 16 px top margin ends at y≈207,
+clear of the brightness row (y≥250). Resize the face if `SCREEN_ROTATION` goes
+back to portrait (320 px wide caps it near 180).
 
 ## Serial output — read before debugging
 

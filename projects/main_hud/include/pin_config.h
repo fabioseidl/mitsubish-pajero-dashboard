@@ -28,16 +28,16 @@
 #define TOUCH_I2C_ADDR  0x3B
 
 // ── Panel geometry ───────────────────────────────────────────────────────────
-// The glass is natively portrait and the UI runs portrait too, mounted vertically.
+// The glass is natively portrait; the UI runs landscape, mounted horizontally.
 #define PANEL_NATIVE_W  320
 #define PANEL_NATIVE_H  480
 
 // Arduino_GFX rotation applied by the canvas as LVGL writes into it.
-// 0 = portrait in the panel's native frame, no transform. LVGL sees
-// SCREEN_W x SCREEN_H below; AXS15231BTouch::read() matches that frame.
-#define SCREEN_ROTATION 0
-#define SCREEN_W        320
-#define SCREEN_H        480
+// 1 = native frame turned 90° clockwise (landscape). LVGL sees SCREEN_W x
+// SCREEN_H below; AXS15231BTouch::read() maps touches into the same frame.
+#define SCREEN_ROTATION 1
+#define SCREEN_W        480
+#define SCREEN_H        320
 
 // ── Touch calibration ────────────────────────────────────────────────────────
 // Raw controller range, measured at rotation 0. Mapped onto the full panel.

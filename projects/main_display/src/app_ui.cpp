@@ -296,18 +296,23 @@ void set_gps_compass(const char* text) {
 void set_ambient_temperature(const char* text) { set_text(ui_lbambienttemperature, text); }
 void set_humidity(const char* text) { set_text(ui_lbhumidity, text); }
 
+/** Show v with one decimal, or "--" when it is NAN (sensor absent / link down). */
+static void set_axis(lv_obj_t* label, float v) {
+    if (isnan(v)) set_if_changed(label, "%s", "--");
+    else          set_if_changed(label, "%.1f", v);
+}
+
 void set_imu(float ax, float ay, float az, float gx, float gy, float gz) {
     if (ui_lbxaxis == nullptr) return;   // create() not called yet
-    set_if_changed(ui_lbxaxis,       "%.1f", ax);
-    set_if_changed(ui_lbyaxis,       "%.1f", ay);
-    set_if_changed(ui_lbzaxis,       "%.1f", az);
-    set_if_changed(ui_lbgyroxaxis,   "%.1f", gx);
-    set_if_changed(ui_lbgyroyaxis,   "%.1f", gy);
-    set_if_changed(ui_lbgyrozaxis,   "%.1f", gz);
-    // Net linear acceleration magnitude (m/s^2). The axes are already gravity-
-    // corrected in the MPU module, so this reads ~0 at rest and rises only under
-    // real acceleration/braking/cornering.
-    set_if_changed(ui_lbaceleration, "%.1f", sqrtf(ax * ax + ay * ay + az * az));
+    set_axis(ui_lbxaxis,     ax);
+    set_axis(ui_lbyaxis,     ay);
+    set_axis(ui_lbzaxis,     az);
+    set_axis(ui_lbgyroxaxis, gx);
+    set_axis(ui_lbgyroyaxis, gy);
+    set_axis(ui_lbgyrozaxis, gz);
+    // Net linear acceleration magnitude (m/s^2). The server removes gravity from
+    // each axis, so this reads ~0 at rest and rises only under real motion.
+    set_axis(ui_lbaceleration, sqrtf(ax * ax + ay * ay + az * az));
 }
 
 void set_server_status(bool online) {

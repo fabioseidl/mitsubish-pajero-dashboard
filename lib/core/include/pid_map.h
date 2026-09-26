@@ -126,6 +126,19 @@ typedef struct {
 #define CAN_BCAST_GEAR   0x218u
 #define PID_BCAST_FUEL_RAW       0xBCu  // CAN 0x608 (D5<<8|D6), raw injected fuel
 
+// ---------- Server onboard sensors — DataAggregator slot IDs ----------
+// Read from the Qwiic I2C bus by projects/server's OnboardSensors, not from CAN.
+// Slots 0xC0–0xC8 are unused by every Mode 01 PID polled here.
+#define PID_SENS_ACCEL_X         0xC0u  // MPU-6500 accel X (m/s^2, gravity removed)
+#define PID_SENS_ACCEL_Y         0xC1u  // MPU-6500 accel Y (m/s^2, gravity removed)
+#define PID_SENS_ACCEL_Z         0xC2u  // MPU-6500 accel Z (m/s^2, gravity removed)
+#define PID_SENS_GYRO_X          0xC3u  // MPU-6500 gyro X (rad/s, bias removed)
+#define PID_SENS_GYRO_Y          0xC4u  // MPU-6500 gyro Y (rad/s, bias removed)
+#define PID_SENS_GYRO_Z          0xC5u  // MPU-6500 gyro Z (rad/s, bias removed)
+#define PID_SENS_ENV_TEMP        0xC6u  // AHT20 temperature (°C)
+#define PID_SENS_ENV_HUMIDITY    0xC7u  // AHT20 relative humidity (%RH)
+#define PID_SENS_ENV_PRESSURE    0xC8u  // BMP280 absolute pressure (hPa)
+
 // 0x218 gear codes (one nibble of D2). Forward gears are their own value 1..5;
 // the non-driving states use these. Shared by the server decode, the emulator
 // and clients so they all agree on the encoding carried in at_gear_pos.

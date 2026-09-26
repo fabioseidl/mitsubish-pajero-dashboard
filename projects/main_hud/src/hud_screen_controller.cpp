@@ -9,10 +9,10 @@
 #include "pin_config.h"
 
 // Roboto Bold, generated from ui/client_simple_hud/assets/Roboto-Bold.ttf by
-// lv_font_conv (see CLAUDE.md). The 150 px face carries digits and '-' only, so
-// its line height (110 px) is the digit box itself — no ascent padding above.
-// Three digits advance 258 px, inside SCREEN_W with room to spare.
-extern const lv_font_t ui_font_roboto_bold_150;
+// lv_font_conv (see CLAUDE.md). The 260 px face carries digits and '-' only, so
+// its line height (191 px) is the digit box itself — no ascent padding above.
+// Three digits advance ~447 px, inside the 480 px landscape SCREEN_W.
+extern const lv_font_t ui_font_roboto_bold_260;
 extern const lv_font_t ui_font_roboto_bold_28;
 
 // ── Arduino_GFX stack ────────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ void HudScreenController::buildUi() {
     // Speed — the point of the whole device. Sits at the top; the brightness row
     // owns the bottom, so the two never overlap and the number never shifts.
     speed_label_ = lv_label_create(scr);
-    lv_obj_set_style_text_font(speed_label_, &ui_font_roboto_bold_150, LV_PART_MAIN);
+    lv_obj_set_style_text_font(speed_label_, &ui_font_roboto_bold_260, LV_PART_MAIN);
 
     // Brightness row along the bottom edge: '-' left, current percent centred,
     // '+' right. The buttons take opposite corners so a blind tap on a moving
