@@ -5,12 +5,14 @@
 
 #include "ui.h"
 
+
 const ui_theme_variable_t _ui_theme_color_secondarycolor[2] = {0x454545, 0x6A6868};
 const ui_theme_variable_t _ui_theme_alpha_secondarycolor[2] = {255, 255};
 
 const ui_theme_variable_t _ui_theme_color_maincolor[2] = {0xFFFFFF, 0xFFFFFF};
 const ui_theme_variable_t _ui_theme_alpha_maincolor[2] = {255, 255};
 uint8_t ui_theme_idx = UI_THEME_MAINDISPLAY;
+
 
 void ui_theme_set(uint8_t theme_idx)
 {

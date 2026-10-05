@@ -48,6 +48,8 @@ ui/                  SquareLine Studio projects and source assets
 
 ## Commands
 
+macOS / Linux (bash, zsh):
+
 ```bash
 # Build / flash — from the sub-project directory
 cd projects/<name> && pio run
@@ -57,15 +59,32 @@ cd projects/<name> && pio run --target upload
 cd test && pio test -e native_tests
 ```
 
-If `pio` is not on PATH it is at `~/.platformio/penv/bin/pio`.
+Windows (PowerShell 5.1 has no `&&`; use `;` or `-d` to skip the `cd`):
+
+```powershell
+# Build / flash
+pio run -d projects/<name>
+pio run -d projects/<name> --target upload
+
+# Host tests
+pio test -d test -e native_tests
+```
+
+If `pio` is not on PATH it is at `~/.platformio/penv/bin/pio` (macOS/Linux) or
+`$env:USERPROFILE\.platformio\penv\Scripts\pio.exe` (Windows).
 
 **First-time setup** — `lib/core/include/security_config.h` is gitignored and
 nothing builds without it:
 
 ```bash
 cp lib/core/include/security_config.h.example lib/core/include/security_config.h
-# then set a real 16-byte PMK — the same value on every node
 ```
+
+```powershell
+Copy-Item lib/core/include/security_config.h.example lib/core/include/security_config.h
+```
+
+Then set a real 16-byte PMK — the same value on every node.
 
 ## Invariants
 

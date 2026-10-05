@@ -9,7 +9,7 @@
 ///////////////////// VARIABLES ////////////////////
 
 // EVENTS
-lv_obj_t *ui____initial_actions0;
+lv_obj_t * ui____initial_actions0;
 
 // IMAGES AND IMAGE SETS
 
@@ -24,17 +24,20 @@ lv_obj_t *ui____initial_actions0;
 
 ///////////////////// SCREENS ////////////////////
 
-void ui_init( void )
-{LV_EVENT_GET_COMP_CHILD = lv_event_register_id();
+void ui_init(void)
+{
+    LV_EVENT_GET_COMP_CHILD = lv_event_register_id();
 
-lv_disp_t *dispp = lv_display_get_default();
-lv_theme_t *theme = lv_theme_default_init(dispp, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_RED), true, LV_FONT_DEFAULT);
-lv_disp_set_theme(dispp, theme);
-ui_main_screen_init();
-ui____initial_actions0 = lv_obj_create(NULL);
-lv_disp_load_scr( ui_main);
+    lv_disp_t * dispp = lv_display_get_default();
+    lv_theme_t * theme = lv_theme_default_init(dispp, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_RED),
+                                               true, LV_FONT_DEFAULT);
+    lv_disp_set_theme(dispp, theme);
+    ui_main_screen_init();
+    ui____initial_actions0 = lv_obj_create(NULL);
+    lv_disp_load_scr(ui_main);
 }
 
-void ui_destroy( void )
-{ui_main_screen_destroy();
+void ui_destroy(void)
+{
+    ui_main_screen_destroy();
 }

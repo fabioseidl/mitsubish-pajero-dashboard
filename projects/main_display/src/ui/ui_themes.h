@@ -23,8 +23,8 @@ extern const ui_theme_variable_t _ui_theme_alpha_secondarycolor[2];
 extern const ui_theme_variable_t _ui_theme_color_maincolor[2];
 extern const ui_theme_variable_t _ui_theme_alpha_maincolor[2];
 
-extern const uint32_t* ui_theme_colors[2];
-extern const uint8_t* ui_theme_alphas[2];
+extern const uint32_t * ui_theme_colors[2];
+extern const uint8_t * ui_theme_alphas[2];
 extern uint8_t ui_theme_idx;
 
 void ui_theme_set(uint8_t theme_idx);
