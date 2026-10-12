@@ -33,8 +33,8 @@ ESP-NOW ISR → ESPNowReceiver → ServerConnectionMonitor + IScreenController �
 ## Layout
 
 ```
-lib/core/            Shared by every node: payload.h, pid_map.h, ESP-NOW, IDisplay,
-                     brightness, connection monitor
+lib/core/            Shared by every node: payload.h, pid_map.h, dtc.h, ESP-NOW,
+                     IDisplay, brightness, connection monitor
 projects/
   server/            Production server — ESP32-S3 + MCP2515, reads CAN, broadcasts
   server_emulator/   Same broadcast from synthetic data (ESP-IDF) — client dev without the car
@@ -42,7 +42,8 @@ projects/
   main_hud/          Guition 3.5" QSPI portrait display — speed only
   glass_display/     Waveshare ESP32-C6 1.47" — speed only
   client_simple_hud/ CYD 2.4" SPI HUD, LDR auto-brightness
-  sniffer/           CAN sniffer + DBC + monitor.py for reverse engineering
+  sniffer/           CAN sniffer + DBC + monitor.py + web/ live bus monitor
+  diagnostic/        Standalone OBD-II fault scanner — Wi-Fi AP + phone web page
 test/host/           Unity host tests: test_server/, test_lib/, mocks/
 ui/                  SquareLine Studio projects and source assets
 ```
