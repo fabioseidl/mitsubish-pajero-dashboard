@@ -17,8 +17,9 @@ Slash commands: `/build <project>`, `/flash <project>`, `/test`.
 
 ## What this is
 
-A distributed dashboard for a Mitsubishi Pajero Dakar (Pajero IV 3.2 DI-D, 4M41
-diesel). One ESP32 reads OBD-II data from the vehicle CAN bus and broadcasts a
+A distributed dashboard for a Mitsubishi Pajero Dakar (Pajero Sport II, KH8W,
+3.2 DI-D, 4M41 diesel) — Brazilian market, 2016/2017.  Triton-based body-on-frame;
+not the full-size Pajero IV (V80/V90), which shares only the engine. One ESP32 reads OBD-II data from the vehicle CAN bus and broadcasts a
 packed `Payload` struct at 10 Hz over ESP-NOW; several ESP32 clients receive it
 and render it with LVGL.
 

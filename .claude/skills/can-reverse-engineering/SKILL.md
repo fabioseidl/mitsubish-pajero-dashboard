@@ -43,10 +43,18 @@ them on a drive.
 - `projects/sniffer/assets/MITSUBISHI_ADVANCED_PIDS.md` — the full
   reverse-engineering write-up: bus parameters, the UDS request/ISO-TP/response
   cycle step by step, per-engine DID tables for 12 Mitsubishi models (4M41 =
-  Pajero IV 3.2 DI-D), a consolidated DID list, and the igkov broadcast/KWP
+  shared by Pajero IV and Pajero Sport II), a consolidated DID list, and the igkov broadcast/KWP
   second source. Referenced by name from `pid_map.h` comments — keep it there.
 - `projects/sniffer/dumps/` — `candump.log` (passive capture) and `server_log.txt`.
+- `references/bus-inventory.md` — every ID on this bus from `candump.log`: 14
+  total, 5 decoded, 3 candidates, 6 unknown, with rate and per-byte variety.
+  Start here to pick a target. Note `0x236` is in the `WATCH` list but has never
+  appeared on this bus.
 - `projects/sniffer/pajero_dakar.dbc`, `mitsubishi_advanced.dbc` — DBC definitions.
+- `references/mut3-database.md` — what the MUT-III SE service software yields.
+  Short version: no scaling and no broadcast frames, only ECU addressing. On
+  this vehicle every ECU but the engine is K-line, so `0x7E8` really is the only
+  CAN diagnostic responder. Lists other-platform addresses as candidates only.
 
 ## Sniffer modes
 
@@ -68,6 +76,12 @@ ACK bus traffic.
 | `RDLI <req> <lid>` | Legacy KWP ReadDataByLocalIdentifier (service 0x21), e.g. `RDLI 7E1 02` = AT info, `RDLI 7E1 03` = odometer |
 | `T<unix>` | Set the wall-clock base for timestamps |
 | `STOP` / `PASV` | Return to passive logging |
+
+`projects/sniffer/web/` is a browser view of the same stream: every ID with its
+rate and per-byte variety, highlighting the moment a settled byte steps — `ADIFF`
+on the whole bus at once. `--replay ../dumps/candump.log` runs it with no
+hardware. It holds no decode maths (see its README for why); it finds candidates,
+the promotion rule below still governs what gets trusted.
 
 `monitor.py` drives all of this from the host: it syncs the clock on connect,
 forwards stdin lines to the sniffer, and toggles local capture to `candump.log`

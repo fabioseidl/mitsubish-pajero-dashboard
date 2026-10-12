@@ -107,7 +107,7 @@ static constexpr uint16_t BCAST_GEAR = CAN_BCAST_GEAR;
 // "Candidate broadcast frames" block in lib/core/include/pid_map.h for the byte
 // layouts and the decoders — this file deliberately holds NO magic numbers of
 // its own, so a correction there fixes the sniffer and the server together.
-// UNVERIFIED on the Pajero IV: WATCH decodes them so a drive can confirm them.
+// UNVERIFIED on the Pajero Sport: WATCH decodes them so a drive can confirm them.
 
 struct WatchId {
     uint16_t id;
@@ -586,7 +586,7 @@ static int32_t decodeBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc) {
     return 0;
 }
 
-// 0x218 gear code (one nibble of D2). Confirmed on the Pajero IV 4M41 by sweeping
+// 0x218 gear code (one nibble of D2). Confirmed on the Pajero Sport 4M41 by sweeping
 // the selector P→R→N→D→manual: 0x0=N, 0x1..0x5 = forward gears, 0xB=R, 0xD=P.
 // D2 packs target gear in the high nibble and current gear in the low nibble; they
 // match at rest and differ only mid-shift.

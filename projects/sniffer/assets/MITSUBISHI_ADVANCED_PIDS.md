@@ -179,7 +179,7 @@ Notation:
 | Clutch 1 Slip Speed | 0x7E1 | `22 21 4F` | D0,D1 | `SIGNED16(D0×256 + D1) × 0.5` | rpm | −900–1500 |
 | Clutch 2 Slip Speed | 0x7E1 | `22 21 4F` | D2,D3 ⚠ | `SIGNED16(D2×256 + D3) × 0.5` | rpm | −900–1500 |
 
-### 4M41 — Pajero IV 3.2 DI-D
+### 4M41 — 3.2 DI-D (Pajero IV V80 and Pajero Sport II KH8W share this engine)
 | Parameter | ECU | Req | Bytes | Formula | Unit | Range |
 |-----------|-----|-----|-------|---------|------|-------|
 | Fuel Temperature | 0x7E0 | `22 20 F2` | D4 | `D4 − 40` | °C | −40–145 |
@@ -306,7 +306,7 @@ control automatically — simpler, but slower than native TWAI.
 
 ### 8.1 Free-running broadcast frames (no request needed) — **confirmed on this truck**
 
-Both IDs below are already present in `dumps/candump.log` on our Pajero IV (0x608 at
+Both IDs below are already present in `dumps/candump.log` on our Pajero Sport II (0x608 at
 ~5–10 Hz, 0x218 at ~50 Hz). Because they are broadcast continuously, the sniffer reads
 them in **listen-only** mode — zero bus risk.
 
@@ -315,7 +315,7 @@ them in **listen-only** mode — zero bus risk.
 | `0x608` | Diesel injected fuel quantity | D5,D6 | `D5×256 + D6` (raw, 16-bit) | bcomp11 `bcomp.raw_fuel`. **CONFIRMED real injected fuel** by a road `FUELLOG`: snaps to a clean **0** during overrun (coast in gear, off throttle, rpm 2400→1800, speed>0), ~310–340 at idle, up to ~4734 under hard accel. Airflow can't read 0 while the engine spins, so this is fuel, not MAF. |
 | `0x218` | Transmission gear / state | D2 | `D2 & 0x0F` = current gear, `D2 >> 4` = target gear | **Confirmed** by a full selector sweep on the 4M41 (see code map below). D2 packs target gear (high nibble) and current gear (low nibble) — equal at rest, differ only mid-shift. |
 
-**`0x218` D2 gear codes (confirmed on the Pajero IV 4M41):**
+**`0x218` D2 gear codes (confirmed on the Pajero Sport II 4M41):**
 
 | Nibble | Meaning | | Nibble | Meaning |
 |--------|---------|-|--------|---------|

@@ -110,13 +110,13 @@ typedef struct {
 #define PID_M22_INJ_COR_CYL3     0xB8u  // Injector correction cyl 3
 #define PID_M22_INJ_COR_CYL4     0xB9u  // Injector correction cyl 4
 //
-// Mitsubishi advanced PIDs confirmed for the Pajero IV 3.2 DI-D (4M41)
+// Mitsubishi advanced PIDs confirmed for the Pajero Sport II 3.2 DI-D (4M41)
 // (see projects/sniffer/assets/MITSUBISHI_ADVANCED_PIDS.md)
 #define PID_M22_FUEL_TEMP        0xBAu  // Fuel temperature (°C), DID 0x20F2
 #define PID_M22_FAN_DUTY         0xBBu  // Cooling fan duty (%),  DID 0x2151
 
 // ---------- Free-running broadcast frames (no request / response) ----------
-// Confirmed on the Pajero IV 4M41 bus by passive capture (projects/sniffer):
+// Confirmed on the Pajero Sport II 4M41 bus by passive capture (projects/sniffer):
 //   CAN 0x608 — injected fuel quantity in D5,D6 (raw 16-bit); reads 0 on overrun.
 //   CAN 0x218 — gear in D2: low nibble = current gear, high nibble = target.
 //               Codes: 0x0=N, 0x1..0x5 = forward gears, 0xB=R, 0xD=P.
@@ -153,7 +153,7 @@ typedef struct {
 // D5,D6) and 0x218 (gear nibbles in D2) exactly as our own road tests confirmed
 // them above, which is the reason to trust the rest of its map enough to test.
 //
-// STATUS: none of these are confirmed on the Pajero IV (V80 / 4M41) yet, and
+// STATUS: none of these are confirmed on the Pajero Sport II (KH8W / 4M41) yet, and
 // nothing in projects/server reads them. They exist here so the sniffer's WATCH
 // mode can decode them on a drive; promote one to a real payload field only
 // after a capture on THIS vehicle agrees with the decode.

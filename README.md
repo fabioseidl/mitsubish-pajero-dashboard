@@ -4,7 +4,7 @@ Distributed car dashboard built on ESP32. A server node reads vehicle data from
 the OBD-II port via CAN bus and broadcasts it wirelessly over ESP-NOW. Client
 nodes receive the data and render it on displays using LVGL.
 
-Target vehicle: **Mitsubishi Pajero Dakar 3.2 Diesel** (Pajero IV, 4M41).
+Target vehicle: **Mitsubishi Pajero Dakar 3.2 Diesel** (Pajero Sport II, KH8W, 4M41).
 
 ---
 

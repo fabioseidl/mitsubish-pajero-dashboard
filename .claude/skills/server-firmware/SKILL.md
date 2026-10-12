@@ -22,7 +22,7 @@ CAN bus → CANDriver → PIDDictionary + PIDTranslator → DataAggregator (mute
 | MCU | ESP32-S3-DevKitC-1 (`board = esp32-s3-devkitc-1`, Arduino framework) |
 | CAN controller | **MCP2515 over SPI** (`-DUSE_MCP2515`, `autowp/arduino-mcp2515`) |
 | Bus speed | 500 kbps, OBD-II port |
-| Vehicle | Mitsubishi Pajero Dakar / Pajero IV 3.2 DI-D (4M41, diesel) |
+| Vehicle | Mitsubishi Pajero Dakar / Pajero Sport II KH8W 3.2 DI-D (4M41, diesel) |
 
 The built-in TWAI controller is **not** used, despite what a leftover
 `"TWAI initialized successfully"` log line in `main.cpp` claims. Pins live in

@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pajero CAN Bus Monitor</title>
+<style>
+  :root {
+    --bg: #0f1114;
+    --panel: #171a1f;
+    --line: #272c34;
+    --fg: #d7dce3;
+    --dim: #717a88;
+    --decoded: #4ec9a0;
+    --candidate: #d4b35a;
+    --unknown: #e06c6c;
+    --hot: #ff4d4d;
+    --churn: #3d6ea8;
+    --still: #2a2f37;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px;
+    background: var(--bg); color: var(--fg);
+    font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  h1 { font-size: 15px; margin: 0 0 2px; letter-spacing: .04em; }
+  .sub { color: var(--dim); font-size: 12px; margin-bottom: 14px; }
+  .bar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--line);
+  }
+  button, input {
+    font: inherit; color: var(--fg); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--dim); }
+  input { width: 150px; }
+  .stats { margin-left: auto; color: var(--dim); font-size: 12px; }
+  table { border-collapse: collapse; width: 100%; }
+  th {
+    text-align: left; font-weight: 500; color: var(--dim);
+    font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+    padding: 0 8px 6px; border-bottom: 1px solid var(--line);
+  }
+  td { padding: 5px 8px; border-bottom: 1px solid #1d2128; vertical-align: top; }
+  tr:hover td { background: #14171c; }
+  .id { font-weight: 600; }
+  .st-decoded   { color: var(--decoded); }
+  .st-candidate { color: var(--candidate); }
+  .st-unknown   { color: var(--unknown); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bytes { display: flex; gap: 3px; }
+  .by {
+    width: 30px; padding: 3px 0; text-align: center; border-radius: 3px;
+    background: var(--still); color: var(--dim);
+    border: 1px solid transparent; position: relative;
+  }
+  .by.churn { background: #12202f; color: #9dc4ea; }
+  .by small {
+    display: block; font-size: 9px; opacity: .55; line-height: 1.1;
+  }
+  .watch { color: var(--decoded); font-size: 12px; }
+  .flag { color: var(--hot); font-weight: 600; }
+  #log {
+    margin-top: 16px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 6px; padding: 10px 12px; height: 190px; overflow-y: auto;
+  }
+  #log div { white-space: pre-wrap; }
+  .k-CHANGE { color: var(--hot); }
+  .k-DIFF, .k-ADIFF { color: var(--candidate); }
+  .k-sent { color: #7fa7d4; }
+  .k-dev, .k-error { color: var(--dim); }
+  .legend { color: var(--dim); font-size: 11px; margin-top: 10px; }
+  .legend b { color: var(--fg); font-weight: 500; }
+</style>
+</head>
+<body>
+
+<h1>PAJERO CAN BUS MONITOR</h1>
+<div class="sub" id="src">connecting…</div>
+
+<div class="bar">
+  <button data-cmd="DUMP">DUMP</button>
+  <button data-cmd="WATCH">WATCH</button>
+  <button data-cmd="ADIFF">ADIFF</button>
+  <button data-cmd="DIFF">DIFF</button>
+  <button data-cmd="OBD">OBD</button>
+  <button data-cmd="PASV">PASV</button>
+  <button data-cmd="STOP">STOP</button>
+  <input id="free" placeholder="SIG 7E0 20F2" aria-label="command">
+  <button id="send">send</button>
+  <span class="stats" id="stats"></span>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>ID</th><th>name</th><th class="num">Hz</th><th class="num">frames</th>
+      <th>bytes &mdash; value over distinct-value count</th><th>decoded by firmware</th>
+    </tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+
+<div class="legend">
+  <b>grey</b> byte held still &middot;
+  <b style="color:#9dc4ea">blue</b> byte churns on its own (volatile) &middot;
+  <b style="color:#ff4d4d">red</b> a settled byte just stepped &mdash; the ADIFF signal, watched on every ID at once.
+  A byte is &ldquo;settled&rdquo; if it has moved at most 4 times and holds &le;6 distinct values,
+  so ramps never trigger it. Volatile after <span id="bl">8</span> changes.
+</div>
+
+<div id="log"></div>
+
+<script>
+const rowsEl = document.getElementById('rows');
+const logEl  = document.getElementById('log');
+
+// Fade a stable-byte change from hot to neutral over this many seconds.
+const FADE_S = 8;
+
+function byteCell(row, i) {
+  const vol = row.volatile[i];
+  const age = row.age[i];
+  const div = document.createElement('div');
+  div.className = 'by' + (vol ? ' churn' : '');
+  div.innerHTML = row.data[i] + '<small>' + row.distinct[i] + '</small>';
+  // A stable byte that moved after baseline is the whole point: flag it hot.
+  if (!vol && age !== null && age < FADE_S) {
+    const k = 1 - age / FADE_S;
+    div.style.borderColor = 'rgba(255,77,77,' + k.toFixed(2) + ')';
+    div.style.background  = 'rgba(255,77,77,' + (0.30 * k).toFixed(2) + ')';
+    div.style.color = '#fff';
+  }
+  div.title = 'D' + i + '  distinct=' + row.distinct[i] +
+              (vol ? '  (volatile)' : '  (stable)') +
+              (age === null ? '  never changed' : '  last change ' + age + 's ago');
+  return div;
+}
+
+function render(s) {
+  document.getElementById('src').textContent =
+    s.source + ' — ' + s.ids + ' IDs seen, ' + s.total.toLocaleString() + ' frames';
+  document.getElementById('stats').textContent = 'uptime ' + s.uptime + 's';
+  document.getElementById('bl').textContent = s.volatile_changes;
+
+  rowsEl.textContent = '';
+  for (const row of s.rows) {
+    const tr = document.createElement('tr');
+
+    const id = document.createElement('td');
+    id.className = 'id st-' + row.status;
+    id.textContent = '0x' + row.id;
+    tr.appendChild(id);
+
+    const nm = document.createElement('td');
+    nm.className = 'st-' + row.status;
+    nm.textContent = row.label;
+    if (row.events) {
+      const f = document.createElement('span');
+      f.className = 'flag';
+      f.textContent = '  ● ' + row.events;
+      f.title = row.events + ' settled-byte step(s) — candidate discrete events';
+      nm.appendChild(f);
+    }
+    tr.appendChild(nm);
+
+    const hz = document.createElement('td');
+    hz.className = 'num';
+    hz.textContent = row.hz.toFixed(1);
+    tr.appendChild(hz);
+
+    const ct = document.createElement('td');
+    ct.className = 'num';
+    ct.textContent = row.count.toLocaleString();
+    tr.appendChild(ct);
+
+    const bt = document.createElement('td');
+    const wrap = document.createElement('div');
+    wrap.className = 'bytes';
+    for (let i = 0; i < row.dlc; i++) wrap.appendChild(byteCell(row, i));
+    bt.appendChild(wrap);
+    tr.appendChild(bt);
+
+    const w = document.createElement('td');
+    w.className = 'watch';
+    w.textContent = s.watch[row.id] || '';
+    tr.appendChild(w);
+
+    rowsEl.appendChild(tr);
+  }
+
+  const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
+  logEl.textContent = '';
+  for (const e of s.log) {
+    const d = document.createElement('div');
+    d.className = 'k-' + e.kind;
+    d.textContent = String(e.t).padStart(7) + '  ' + e.kind.padEnd(7) + ' ' + e.text;
+    logEl.appendChild(d);
+  }
+  if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+}
+
+const es = new EventSource('/events');
+es.onmessage = (ev) => render(JSON.parse(ev.data));
+es.onerror = () => { document.getElementById('src').textContent = 'disconnected — is bus_monitor.py running?'; };
+
+async function send(cmd) {
+  if (!cmd) return;
+  const r = await fetch('/cmd', { method: 'POST', body: cmd });
+  if (!r.ok) alert(await r.text());
+}
+document.querySelectorAll('button[data-cmd]').forEach(b =>
+  b.addEventListener('click', () => send(b.dataset.cmd)));
+document.getElementById('send').addEventListener('click', () =>
+  send(document.getElementById('free').value));
+document.getElementById('free').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') send(e.target.value);
+});
+</script>
+</body>
+</html>
