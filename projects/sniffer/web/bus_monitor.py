@@ -31,7 +31,12 @@ SNIFFER = os.path.dirname(HERE)
 # Frame IDs the sniffer's WATCH list polls but which the DBCs do not name.
 # Keep in step with the candidate list in src/main.cpp. See
 # .claude/skills/can-reverse-engineering/references/bus-inventory.md
-CANDIDATE_IDS = {0x215, 0x236, 0x424, 0x445, 0x608}
+#
+# CONFIRMED_IDS have been verified against the vehicle itself, so their decode is
+# trusted; CANDIDATE_IDS are still only the igkov/MPS2 decode. A DBC name is used
+# as the row label either way, but it does not downgrade a confirmed frame.
+CONFIRMED_IDS = {0x215, 0x218, 0x424, 0x445, 0x608}
+CANDIDATE_IDS = {0x236}
 
 # Byte classification is cumulative, not windowed. A fixed learning window gets
 # this wrong whenever the window lands in a quiet stretch: on a stationary
@@ -134,12 +139,16 @@ class FrameState:
 
     def snapshot(self, now, names):
         """Serialisable view for the browser."""
-        if self.id in names:
-            status, label = "decoded", names[self.id]
+        # Status is what is known about the frame; the label prefers its DBC name.
+        if self.id in CONFIRMED_IDS:
+            status = "confirmed"
+        elif self.id in names:
+            status = "decoded"
         elif self.id in CANDIDATE_IDS:
-            status, label = "candidate", "candidate"
+            status = "candidate"
         else:
-            status, label = "unknown", "unknown"
+            status = "unknown"
+        label = names.get(self.id, status)
         return dict(
             id=f"{self.id:03X}",
             label=label,
@@ -227,7 +236,7 @@ class Bus:
             watch = dict(self.watch)
             log = list(self.log)
             total, source = self.total, self.source
-        order = {"decoded": 0, "candidate": 1, "unknown": 2}
+        order = {"confirmed": 0, "decoded": 1, "candidate": 2, "unknown": 3}
         rows.sort(key=lambda r: (order[r["status"]], -r["hz"]))
         return dict(
             rows=rows, watch={f"{k:03X}": v for k, v in watch.items()},

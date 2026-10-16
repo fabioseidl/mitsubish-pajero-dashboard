@@ -57,8 +57,8 @@ settled, then fire thousands of false events the moment the truck rolls.
 
 The dot beside a frame's name counts settled-byte steps for that ID.
 
-Row colour follows what is known about the frame: green named in a DBC, amber a
-`WATCH` candidate, red unknown. See
+Row colour follows what is known about the frame: green confirmed on this
+vehicle, blue named in a DBC, amber a `WATCH` candidate, red unknown. See
 `.claude/skills/can-reverse-engineering/references/bus-inventory.md` for the
 inventory this is based on.
 

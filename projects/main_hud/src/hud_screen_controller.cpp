@@ -255,7 +255,7 @@ void HudScreenController::onBrightnessDown(lv_event_t* e) {
 void HudScreenController::onPayloadReceived(const Payload& payload) {
     // Runs in the ESP-NOW callback: just record, let tick() touch the widgets.
     // LVGL is not reentrant and must only be driven from the loop task.
-    speed_kmh_ = payload.speed_kmh;
+    speed_kmh_ = payload_speed_kmh_u8(&payload);
 }
 
 void HudScreenController::onServerStatusChanged(bool online) {

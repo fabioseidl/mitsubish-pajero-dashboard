@@ -42,7 +42,7 @@ Payload SimulationDataGenerator::getPayload() const {
 
     // Core driving data
     p.rpm                      = (uint16_t)rpm;
-    p.speed_kmh                = (uint8_t)speed;
+    p.speed_kmh_x128           = (uint16_t)(speed * 128.0f);
     p.fuel_rate_l_per_h        = fuel_rate;
     p.consumption_km_per_l     = consumption;
     p.avg_consumption_km_per_l = session_.getAvgConsumptionKmPerL();
@@ -117,6 +117,22 @@ Payload SimulationDataGenerator::getPayload() const {
                                ? (float)GEAR_CODE_PARK : (float)gear;
     p.at_gear_pos            = gear_code;
     p.at_target_gear         = gear_code;     // stable — no shift in progress
+
+    // Body control (0x424) and climate (0x445), the other two confirmed broadcast
+    // frames. Low beam on, doors shut while driving; climate on recirculated face
+    // vents with the fan stepping up with speed, so every bit a client reads moves.
+    p.body_flags             = PAYLOAD_BODY_HEAD_LAMP_LO;
+    if (speed > 100.0f) p.body_flags |= PAYLOAD_BODY_HEAD_LAMP_HI;
+    if (profile_ == DrivingProfile::IDLE) p.body_flags |= PAYLOAD_BODY_DRIVER_DOOR;
+    // Right indicator blinking at ~1.4 Hz in city traffic, so a client's turn
+    // arrow has something that actually flashes.
+    if (profile_ == DrivingProfile::CITY && fmodf(t, 1.4f) < 0.7f) {
+        p.body_flags |= PAYLOAD_BODY_RIGHT_TURN;
+    }
+    p.climate_flags          = PAYLOAD_CLIMATE_AC_ON | PAYLOAD_CLIMATE_RECIRC |
+                               PAYLOAD_CLIMATE_VENT_FACE;
+    p.climate_fan            = (uint8_t)(1 + (int)(speed / 30.0f));   // 1..5
+    p.climate_set_temp_c     = 22;                                     // mid-range set point
 
     // -----------------------------------------------------------------------
     // Boost (derived on the real server by DerivedCalculator::computeBoostBar)

@@ -13,10 +13,10 @@ rates are wrong.
 | `0x218` | 45.5 | 6155 | 8 | 6 | **confirmed** — gear, selector sweep |
 | `0x308` | 45.5 | 5401 | 8 | 3 | decoded — Cooling_System (DBC) |
 | `0x312` | 45.5 | 5730 | 8 | 4 | decoded — Throttle_Status (DBC) |
-| `0x608` | 3.5 | 643 | 8 | 3 | **confirmed** — injected fuel qty, FUELLOG |
-| `0x215` | 45.4 | 4787 | 8 | 6 | candidate (igkov), unconfirmed |
-| `0x445` | 22.8 | 2780 | 7 | 4 | candidate (igkov), unconfirmed |
-| `0x424` | 13.0 | 1964 | 8 | 4 | candidate (igkov), unconfirmed |
+| `0x608` | 3.5 | 643 | 8 | 3 | **confirmed** — injected fuel qty (D5,D6), coolant temp (D0) |
+| `0x215` | 45.4 | 4787 | 8 | 6 | **confirmed** — speed D0,D1 (1/128 km/h) |
+| `0x445` | 22.8 | 2780 | 7 | 4 | **confirmed** — auto A/C incl. set point in D0 |
+| `0x424` | 13.0 | 1964 | 8 | 4 | **confirmed** — ETACS low/high beam, turn signals, doors |
 | `0x325` | 45.6 | 5632 | 2 | 0 | **unknown** |
 | `0x418` | 45.3 | 4109 | 7 | 3 | **unknown** |
 | `0x447` | 22.7 | 2588 | 3 | 0 | **unknown** |
@@ -70,8 +70,8 @@ lights, handbrake. This is exactly what `ADIFF` is for: one toggle sweep while
 the whole bus is watched. Note the capture was mostly stationary, so anything
 speed-dependent would also look static here.
 
-**Coverage:** 5 of 14 IDs decoded, 3 unconfirmed candidates, 6 unknown. The
-unknowns are 36% of the bus by ID and include two continuous signals.
+**Coverage:** 8 of 14 IDs decoded or confirmed, 6 unknown. The unknowns are 43%
+of the bus by ID and include two continuous signals.
 
 ## Regenerating
 

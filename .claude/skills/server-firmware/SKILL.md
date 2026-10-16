@@ -60,8 +60,9 @@ The bus is polled one request at a time every `OBD_POLL_INTERVAL_MS` (50 ms). A
 flat round-robin over ~60 PIDs would refresh each value only once per ~3 s, which
 is visible as client lag. Instead `can_rx_task` keeps two lists:
 
-- `FAST_PIDS` — the live dashboard values (RPM, speed, MAF, engine load, both
-  accelerator pedals, MAP). Polled **every** cycle.
+- `FAST_PIDS` — the live dashboard values (RPM, MAF, engine load, both
+  accelerator pedals, MAP). Polled **every** cycle. Speed is **not** here: it
+  comes from the CAN 0x215 broadcast instead.
 - `SLOW_PIDS` — everything else, drip-polled **one per cycle**, round-robin.
 
 So a fast PID refreshes every `(FAST_COUNT + 1)` polls. **Every PID added to
@@ -91,13 +92,29 @@ showing positive responses.
 
 ### Passive broadcast frames (this is where the good data comes from)
 
-The 4M41 free-runs two frames that need no request, captured before the
-request/response filter:
+The 4M41 free-runs five confirmed frames that need no request, captured before
+the request/response filter. Each is decoded through a shared `bcast_*` helper in
+`pid_map.h`, so the sniffer and the server can never disagree:
 
 - `CAN 0x608`, `D5<<8|D6` → raw injected fuel in **mg/s** → slot `PID_BCAST_FUEL_RAW`.
   Reads exactly 0 during deceleration fuel cut-off.
+- `CAN 0x608`, `D0` → coolant temperature, `(D0 - 40)` °C → slot `PID_COOLANT_TEMP`.
+  Mode 01 `0x05` is no longer polled: ~3.5 Hz here against ~0.04 Hz in `SLOW_PIDS`.
 - `CAN 0x218`, `D2` → gear: low nibble = current, high nibble = target.
   Codes `0x0`=N, `0x1..0x5`=forward, `0xB`=R, `0xD`=P (`GEAR_CODE_*` in `pid_map.h`).
+- `CAN 0x215`, `D0,D1` → speed in 1/128 km/h → slot `PID_SPEED`. ~45 Hz, so Mode 01
+  `0x0D` is no longer polled either, and the payload carries the raw 1/128 value
+  (`speed_kmh_x128`, read with `payload_speed_kmh()`).
+- `CAN 0x424` → ETACS low beam, high beam, both turn signals, both door bits →
+  `PID_BCAST_BODY_FLAGS` as a `PAYLOAD_BODY_*` bitfield. The position-lamp bit is
+  deliberately absent — it is the one bit of the frame still unconfirmed.
+- `CAN 0x445` → climate: A/C on, recirculation, vent routing → `PID_BCAST_CLIMATE_FLAGS`
+  as a `PAYLOAD_CLIMATE_*` bitfield, the fan step in `PID_BCAST_CLIMATE_FAN`, and the
+  temperature set point in `PID_BCAST_CLIMATE_TEMP` (°C, or `AUTOAC_TEMP_LO` / `_HI`
+  at the ends of the dial).
+
+Nothing requests any of them, so a frame that stops simply goes stale in the
+aggregator; there is no retry path to add.
 
 ## Power management — the board is on always-on OBD power
 

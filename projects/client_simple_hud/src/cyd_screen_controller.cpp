@@ -127,7 +127,7 @@ void CYDScreenController::tick() {
 
     if (apply_payload) {
         char buf[8];
-        snprintf(buf, sizeof(buf), "%u", (unsigned)payload_copy.speed_kmh);
+        snprintf(buf, sizeof(buf), "%u", (unsigned)payload_speed_kmh_u8(&payload_copy));
         lv_label_set_text(ui_lbSpeed, buf);
 
         snprintf(buf, sizeof(buf), "%u", (unsigned)payload_copy.rpm);

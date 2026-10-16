@@ -41,7 +41,7 @@ static void emulator_task(void* /*param*/) {
                      (int)broadcaster.lastAddPeerErr(), (int)broadcaster.lastSendErr());
         }
         ESP_LOGI(TAG,
-                 "ts=%" PRIu32 "ms | rpm=%u spd=%u km/h fuel_rate=%.2f L/h cons=%.2f km/L avg_cons=%.2f km/L dist=%.3f km | "
+                 "ts=%" PRIu32 "ms | rpm=%u spd=%.1f km/h fuel_rate=%.2f L/h cons=%.2f km/L avg_cons=%.2f km/L dist=%.3f km | "
                  "load=%.1f%% coolant=%.1fc map=%u kPa iat=%.1fc maf=%.2f g/s tps=%.1f%% runtime=%u s | "
                  "mil=%d dtc=%u dist_mil=%u km time_mil=%u min dist_clr=%u km time_clr=%u min warmups=%u | "
                  "fuel_rail=%.1f kPa egr_cmd=%.1f%% egr_err=%.1f%% baro=%u kPa alt=%.0fm cat=%.1fc vbat=%.2f V | "
@@ -49,7 +49,7 @@ static void emulator_task(void* /*param*/) {
                  "stft=%.2f%% ltft=%.2f%% fp=%.1f kPa o2=%.3f abs_load=%.1f%% afr=%.3f amb=%.1fc tps_b=%.1f%% oil=%.1fc obd=%u | "
                  "gear=%.0f tgt_gear=%.0f boost=%.2f bar | flags=0x%02X",
                  payload.timestamp_ms,
-                 (unsigned)payload.rpm, (unsigned)payload.speed_kmh,
+                 (unsigned)payload.rpm, payload_speed_kmh(&payload),
                  payload.fuel_rate_l_per_h, payload.consumption_km_per_l,
                  payload.avg_consumption_km_per_l, payload.distance_km,
                  payload.engine_load_pct, payload.coolant_temp_c,
