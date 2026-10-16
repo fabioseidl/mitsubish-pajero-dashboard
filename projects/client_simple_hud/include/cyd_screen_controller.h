@@ -10,11 +10,10 @@
 // Including FreeRTOS.h here pulls in portmacro.h in the right order; subsequent
 // includes of Arduino.h → FreeRTOS.h are then no-ops due to header guards.
 #include <freertos/FreeRTOS.h>
-#include <src/lvgl.h>
-#else
-struct lv_obj_t;
+#include "simple_hud_ui.h"
 #endif
 
+/** Board side of the CYD HUD: ILI9341 + LVGL driver, LDR, touch and BOOT button; the screens live in SimpleHudUi. */
 class CYDScreenController : public IScreenController {
 public:
     explicit CYDScreenController(BrightnessController& brightness);
@@ -42,5 +41,6 @@ private:
     bool     has_pending_payload_ = false;
 #ifndef UNIT_TEST
     portMUX_TYPE mux_ = portMUX_INITIALIZER_UNLOCKED;
+    SimpleHudUi  ui_;
 #endif
 };

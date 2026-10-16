@@ -42,11 +42,11 @@ projects/
   main_display/      Waveshare 7" 1024×600 RGB dashboard + GPS/IMU/environment sensors; sim/ = native LVGL simulator
   main_hud/          Guition 3.5" QSPI portrait display — speed only; sim/ = native LVGL simulator
   glass_display/     Waveshare ESP32-C6 1.47" — speed only
-  client_simple_hud/ CYD 2.4" SPI HUD, LDR auto-brightness
+  client_simple_hud/ CYD 2.4" SPI HUD, LDR auto-brightness; sim/ = native LVGL simulator
   sniffer/           CAN sniffer + DBC + monitor.py + web/ live bus monitor
   diagnostic/        Standalone OBD-II fault scanner — Wi-Fi AP + phone web page
 test/host/           Unity host tests: test_server/, test_lib/, mocks/
-ui/                  SquareLine Studio projects and source assets
+ui/                  Source assets (TTF, PNG) + convert_assets.sh → projects/*/src/ui_{font,img}_*.c
 ```
 
 ## Commands
@@ -111,10 +111,10 @@ Then set a real 16-byte PMK — the same value on every node.
 - **LVGL is single-threaded.** Copy the payload in the ESP-NOW callback, apply it
   in `tick()`. Never touch a widget from the receive callback.
 - **Pin numbers belong in `include/pin_config.h`**, never inline in code.
-- **Generated files are never hand-edited** — SquareLine exports (`ui/`, `src/ui/`)
-  and `lv_font_conv` output (`ui_font_*.c`). Adapt them from a bridge module.
-  New screens are not built in SquareLine: they are HTML prototypes turned into
-  hand-written LVGL views (see the `lvgl-preview` skill).
+- **Converted assets are never hand-edited** — `ui_font_*.c` / `ui_img_*.c` come
+  from `ui/convert_assets.sh` (`lv_font_conv`, LVGL's `LVGLImage.py`); add a new
+  font or image there and re-run it. Screens are HTML prototypes turned into
+  hand-written LVGL views (see the `lvgl-preview` skill); there is no SquareLine.
 - **Run the host tests before flashing.** They are the only verification that does
   not need the vehicle.
 

@@ -17,7 +17,8 @@ src/<x>_ui.cpp ──env:sim──render_lvgl.sh──► lvgl.png ┘
 ```
 
 Projects with the simulator: **main_hud** (`HudUi`), **main_display**
-(`dashboard_view` + `app_ui`). Others: see *Adding a project*.
+(`dashboard_view` + `app_ui`), **client_simple_hud** (`SimpleHudUi`).
+glass_display: see *Adding a project*.
 
 ## The loop
 
@@ -71,6 +72,7 @@ projects/<project>/.pio/build/sim_sdl/program --fixture projects/<project>/sim/f
 Mouse = touch, `R` reloads the fixture, Esc quits, `--zoom N` scales the window.
 main_hud: ↑/↓ speed ±5, `O` online, `B` buttons (default zoom 2).
 main_display: ↑/↓ speed ±5, ←/→ rpm ±100, `L` backlight step, `O` online (zoom 1).
+client_simple_hud: ↑/↓ speed ±5, ←/→ rpm ±100, `O` online (default zoom 2).
 
 Needs `brew install sdl2`; the headless `sim` env has no dependencies.
 
@@ -90,7 +92,8 @@ The prototype must only use what LVGL can draw, or the conversion is guesswork.
 - **Fonts**: list every font+size in the header comment. Each is one
   `lv_font_conv` file in flash; reuse sizes before adding one, and restrict glyph
   ranges (`-r`) for big numeral faces. `@font-face` points at the repo `.ttf`
-  the LVGL font was generated from.
+  the LVGL font was generated from. New fonts and images go in
+  `ui/convert_assets.sh`, never converted by hand.
 - **Colours** as CSS variables on `:root`, written the way `lv_color_hex()`
   takes them. RGB565 on the panel quantises them; the simulator shows that.
 - **State from the query string** with the same keys as the fixtures, so one
@@ -116,6 +119,8 @@ Keys are whatever the project's `sim_main.cpp` understands (values may contain
 spaces; render_html.sh URL-encodes them):
 
 - main_hud: `speed`, `online`, `brightness`, `buttons`.
+- client_simple_hud: `speed`, `rpm`, `online`, `elapsed_ms` (<3000 = boot
+  screen; the sim renders ~330 ms past it, so 2800 lands mid-fade).
 - main_display: Payload fields (`speed`, `rpm`, `gear`, `target_gear`,
   `fuel_rate`, `consumption`, `avg_consumption`, `distance`, `trip_time_s`,
   `boost`, `load`, `coolant`, `voltage`, `ax`/`ay`/`az`, …), client sensors
@@ -125,20 +130,14 @@ spaces; render_html.sh URL-encodes them):
   backlight readout). Cover at least: normal driving, the
 widest text each label can show, and offline. Unknown keys print a warning.
 
-## Porting a SquareLine screen
+## Refactoring a view without changing it
 
-main_display was ported this way; the same applies to any remaining export.
+Both sides of the comparison can be LVGL. Render every fixture to a baseline
+folder before the change, then `compare.py baseline.png after.png out.png --tol 0`
+must report **100.00%** — any pixel difference is a mistake. main_display and
+client_simple_hud were ported off SquareLine this way.
 
-1. Build `env:sim` against the export as-is (`+<ui/*.c>`; clang needs
-   `-Wno-error=implicit-function-declaration -Wl,-undefined,dynamic_lookup` for
-   `ui_helpers.c`) and render every fixture to a baseline folder.
-2. Hand-write the view: keep the export's `LV_ALIGN_CENTER` offsets (labels
-   re-centre as their text changes), its creation order (z-order), and drop
-   widgets the export permanently `LV_OBJ_FLAG_HIDDEN`s.
-3. `compare.py baseline.png port.png out.png --tol 0` must report **100.00%** —
-   both sides are LVGL, so any pixel difference is a porting mistake.
-4. Fonts and images stay as the converted `.c` files; declare them inside
-   `extern "C" { }` from C++, and compile only the ones the view uses.
+Converted fonts and images are C: declare them inside `extern "C" { }` from C++.
 
 ## Prototype geometry for LV_ALIGN_CENTER
 
@@ -147,7 +146,12 @@ A zero-size flex anchor reproduces it without `transform` (main_display's
 `justify-content: center`. Set `line-height` to the lv_font `line_height` and
 nudge each font role so the CSS baseline lands on LVGL's
 (box top + `line_height` − `base_line`) — measured offsets for Roboto are
-−4 px at 120, −3 at 60, −2 at 50, −1 at 28/20, 0 for Montserrat 16.
+−6 px at 150, −4 at 120, −3 at 60, −2 at 50 and 24, −1 at 28/20, 0 for
+Montserrat 16.
+
+An LVGL screen fade sets each object's opacity separately; CSS `opacity` on a
+container composites it as one layer. Fade the children individually to match
+(client_simple_hud's `fade` fixture).
 
 ## What the simulator does not tell you
 
@@ -170,5 +174,4 @@ nudge each font role so the CSS baseline lands on LVGL's
 4. `sim/fixtures/*.txt` and `sim/prototype.html` (with the `lvgl-screen` meta).
 5. Run `preview.sh <project>` and bring it to a match.
 
-If the project's UI is a SquareLine export, port it first (see *Porting a
-SquareLine screen*). glass_display and client_simple_hud are not done yet.
+glass_display is not done yet.

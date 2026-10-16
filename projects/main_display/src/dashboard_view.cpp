@@ -1,25 +1,25 @@
 #include "dashboard_view.h"
 
-// Assets converted from ui/main_display/assets (lv_font_conv / LVGL image converter); C linkage.
+// Assets converted by ui/convert_assets.sh; C linkage.
 extern "C" {
-LV_FONT_DECLARE(ui_font_robotobold120);
-LV_FONT_DECLARE(ui_font_robotobold60);
-LV_FONT_DECLARE(ui_font_robotoregular20);
-LV_FONT_DECLARE(ui_font_robotoregular28);
-LV_FONT_DECLARE(ui_font_robotoregular50);
-LV_IMAGE_DECLARE(ui_img_background_png);
-LV_IMAGE_DECLARE(ui_img_icon_temperature_png);
+LV_FONT_DECLARE(ui_font_roboto_bold_120);
+LV_FONT_DECLARE(ui_font_roboto_bold_60);
+LV_FONT_DECLARE(ui_font_roboto_regular_20);
+LV_FONT_DECLARE(ui_font_roboto_regular_28);
+LV_FONT_DECLARE(ui_font_roboto_regular_50);
+LV_IMAGE_DECLARE(ui_img_background);
+LV_IMAGE_DECLARE(ui_img_icon_temperature);
 }
 
 namespace dashboard_view {
 namespace {
 
 // Fonts by role. Every widget below uses one of these.
-const lv_font_t* const kHero    = &ui_font_robotobold120;   // speed, gear, status dots
-const lv_font_t* const kLarge   = &ui_font_robotobold60;    // rpm, compass cardinal
-const lv_font_t* const kValue   = &ui_font_robotoregular50; // tile values
-const lv_font_t* const kSmall   = &ui_font_robotoregular28; // secondary values, header
-const lv_font_t* const kTitle   = &ui_font_robotoregular20; // tile titles
+const lv_font_t* const kHero    = &ui_font_roboto_bold_120;   // speed, gear, status dots
+const lv_font_t* const kLarge   = &ui_font_roboto_bold_60;    // rpm, compass cardinal
+const lv_font_t* const kValue   = &ui_font_roboto_regular_50; // tile values
+const lv_font_t* const kSmall   = &ui_font_roboto_regular_28; // secondary values, header
+const lv_font_t* const kTitle   = &ui_font_roboto_regular_20; // tile titles
 const lv_font_t* const kCaption = &lv_font_montserrat_16;   // "AXIS"
 
 /**
@@ -52,7 +52,7 @@ Widgets build(lv_obj_t* scr) {
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
 
     // Tile frames, dividers, tick scales and the logo are all in the background image.
-    image(scr, &ui_img_background_png, 0, 0);
+    image(scr, &ui_img_background, 0, 0);
 
     // Creation order is z-order (the large "." dots overlap their neighbours' boxes),
     // so widgets are listed in stacking order, not reading order.
@@ -89,7 +89,7 @@ Widgets build(lv_obj_t* scr) {
     label(scr, kTitle, -333, -272, "PAJERO DAKAR 3.2 DI-D");
     label(scr, kTitle,  135, 215, "BATTERY");
     w.cabin_temp      = label(scr, kSmall,  278, -273, "0 C");
-    image(scr, &ui_img_icon_temperature_png, 213, -276);
+    image(scr, &ui_img_icon_temperature, 213, -276);
 
     w.compass_cardinal = label(scr, kLarge, -147, -124, "N");
     w.coolant_status   = label(scr, kHero,   307,  229, ".");

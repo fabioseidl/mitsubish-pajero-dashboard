@@ -1,19 +1,19 @@
 #include "cyd_screen_controller.h"
+#include "pin_config.h"
 #include <string.h>
 
 #ifndef UNIT_TEST
 #include <Arduino.h>
 #include "lgfx_config.h"
 #include <src/lvgl.h>
-#include "ui.h"
 #include <esp_timer.h>
 
 static LGFX s_lgfx;
 
 // Double-buffered, 8-line partial render buffers aligned for DMA
 // (reduced from 10 lines to reclaim ~2.5 KB of DRAM; negligible perf impact)
-static uint8_t s_draw_buf_1[320 * 8 * 2] __attribute__((aligned(32)));
-static uint8_t s_draw_buf_2[320 * 8 * 2] __attribute__((aligned(32)));
+static uint8_t s_draw_buf_1[SCREEN_W * 8 * 2] __attribute__((aligned(32)));
+static uint8_t s_draw_buf_2[SCREEN_W * 8 * 2] __attribute__((aligned(32)));
 
 static void rounder_event_cb(lv_event_t* e) {
     lv_area_t* area = lv_event_get_invalidated_area(e);
@@ -78,7 +78,7 @@ bool CYDScreenController::begin() {
     Serial.println("[SCREEN] lv_init OK");
 
     // Register LVGL display driver
-    lv_display_t* disp = lv_display_create(320, 240);
+    lv_display_t* disp = lv_display_create(SCREEN_W, SCREEN_H);
     lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565_SWAPPED);
     lv_display_set_flush_cb(disp, lvgl_flush_cb);
     lv_display_set_buffers(disp, s_draw_buf_1, s_draw_buf_2,
@@ -86,7 +86,7 @@ bool CYDScreenController::begin() {
     lv_display_add_event_cb(disp, rounder_event_cb, LV_EVENT_INVALIDATE_AREA, NULL);
     Serial.println("[SCREEN] LVGL display registered");
 
-    ui_init();
+    ui_.build();
     Serial.println("[SCREEN] UI init OK");
 #endif
     return true;
@@ -105,11 +105,11 @@ void CYDScreenController::onPayloadReceived(const Payload& payload) {
 }
 
 void CYDScreenController::onServerStatusChanged(bool online) {
-    if (online) {
-        lv_obj_add_flag(ui_iconserverdisconected, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_remove_flag(ui_iconserverdisconected, LV_OBJ_FLAG_HIDDEN);
-    }
+#ifndef UNIT_TEST
+    ui_.setServerOnline(online);
+#else
+    (void)online;
+#endif
 }
 
 void CYDScreenController::tick() {
@@ -126,19 +126,8 @@ void CYDScreenController::tick() {
     portEXIT_CRITICAL(&mux_);
 
     if (apply_payload) {
-        char buf[8];
-        snprintf(buf, sizeof(buf), "%u", (unsigned)payload_speed_kmh_u8(&payload_copy));
-        lv_label_set_text(ui_lbSpeed, buf);
-
-        snprintf(buf, sizeof(buf), "%u", (unsigned)payload_copy.rpm);
-        lv_label_set_text(ui_lbrpm, buf);
-
-        if (payload_copy.avg_consumption_km_per_l > 0.0f) {
-            snprintf(buf, sizeof(buf), "%.1f", (float)payload_copy.avg_consumption_km_per_l);
-        } else {
-            snprintf(buf, sizeof(buf), "--");
-        }
-        lv_label_set_text(ui_lbavgconsumption, buf);
+        ui_.setSpeed(payload_speed_kmh_u8(&payload_copy));
+        ui_.setRpm(payload_copy.rpm);
     }
 
     lv_tick_inc(delta_ms);

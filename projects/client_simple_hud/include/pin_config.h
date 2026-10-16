@@ -2,6 +2,10 @@
 
 #include <stdint.h>
 
+// ILI9341 panel in landscape.
+static constexpr int32_t SCREEN_W = 320;
+static constexpr int32_t SCREEN_H = 240;
+
 // Backlight PWM (LEDC) — confirmed by board definition: DISPLAY_BCKL=27.
 // This is the only backlight control pin; there is no secondary enable.
 static constexpr int GPIO_BACKLIGHT_PIN = 27;

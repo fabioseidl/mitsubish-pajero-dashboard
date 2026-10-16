@@ -64,11 +64,10 @@ Corollaries that keep showing up:
   server**, or the client receives nothing, silently. It is gitignored; create it
   from `security_config.h.example`.
 - All nodes stay on WiFi **channel 1**.
-- Generated files — SquareLine Studio exports (`ui/`, `src/ui/`) and
-  `lv_font_conv` font tables (`ui_font_*.c`) — are **never hand-edited**. They are
-  overwritten on the next export. Put adaptation code in a bridge module
-  (`app_ui.cpp` in `main_display` is the pattern). New screens skip SquareLine:
-  see the `lvgl-preview` skill.
+- Converted fonts and images (`ui_font_*.c`, `ui_img_*.c`) are **never
+  hand-edited**: `ui/convert_assets.sh` regenerates all of them from
+  `ui/<project>/assets`. Screens are hand-written pure-LVGL views (`HudUi`,
+  `dashboard_view`, `SimpleHudUi`) designed with the `lvgl-preview` skill.
 - LVGL is v9 throughout. The v8 APIs (`lv_disp_drv_t`, `lv_indev_drv_t`) are gone;
   use `lv_display_create()` / `lv_indev_create()`.
 

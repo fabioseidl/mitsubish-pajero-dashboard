@@ -1,0 +1,5 @@
+# HUD while driving, server online.
+speed=87
+rpm=2150
+online=1
+elapsed_ms=4000

@@ -15,9 +15,5 @@ build/
 # logs
 logs/
 
-# backups
-
-ui/main_display/backup/
-
 # Claude Code local (per-machine) settings
 .claude/settings.local.json

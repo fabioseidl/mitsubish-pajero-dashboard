@@ -1,0 +1,5 @@
+# Widest values: three-digit speed, four-digit rpm.
+speed=188
+rpm=4850
+online=1
+elapsed_ms=4000
