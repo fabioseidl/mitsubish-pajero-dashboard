@@ -23,7 +23,7 @@ Payload PayloadBuilder::build(const DataAggregator& aggregator,
 
     // Core driving data
     p.rpm                      = (uint16_t)aggregator.get(PID_RPM);
-    p.speed_kmh                = (uint8_t)aggregator.get(PID_SPEED);
+    p.speed_kmh_x128           = (uint16_t)(aggregator.get(PID_SPEED) * 128.0f);
     p.fuel_rate_l_per_h        = DerivedCalculator::computeFuelRate(aggregator);
     p.consumption_km_per_l     = consumption;
     p.avg_consumption_km_per_l = session.getAvgConsumptionKmPerL();
@@ -78,6 +78,10 @@ Payload PayloadBuilder::build(const DataAggregator& aggregator,
     // — every Mode 22 field was removed in PAYLOAD_VERSION 5 (see payload.h).
     p.at_gear_pos              = aggregator.get(PID_M22_AT_GEAR_POS);
     p.at_target_gear           = aggregator.get(PID_M22_AT_TARGET_GEAR);
+    p.body_flags               = (uint8_t)aggregator.get(PID_BCAST_BODY_FLAGS);
+    p.climate_flags            = (uint8_t)aggregator.get(PID_BCAST_CLIMATE_FLAGS);
+    p.climate_fan              = (uint8_t)aggregator.get(PID_BCAST_CLIMATE_FAN);
+    p.climate_set_temp_c       = (uint8_t)aggregator.get(PID_BCAST_CLIMATE_TEMP);
 
     // Boost is derived, not read: PID_M22_BOOST_PRES is one of the speculative
     // 0xF3xx DIDs this ECU never answers, so it was always 0. Computed from

@@ -23,9 +23,45 @@ BO_ 776 Cooling_System_308: 8 ECU
 
 BO_ 536 Injection_System_218: 8 ECU
  SG_ Fuel_Rail_Pressure : 8|24@1+ (1,0) [0|200000] "kPa" ESP32
+ SG_ Current_Gear : 16|4@1+ (1,0) [0|15] "" ESP32
+ SG_ Target_Gear : 20|4@1+ (1,0) [0|15] "" ESP32
+
+BO_ 1544 Fuel_Injection_608: 8 ECU
+ SG_ Coolant_Temp_608 : 0|8@1+ (1,-40) [-40|215] "C" ESP32
+ SG_ Injected_Fuel_Qty : 39|16@0+ (1,0) [0|65535] "mg/s" ESP32
+
+BO_ 533 Vehicle_Speed_215: 8 ECU
+ SG_ Vehicle_Speed_215 : 7|16@0+ (0.0078125,0) [0|250] "km/h" ESP32
+ SG_ Distance_Counter : 23|16@0+ (1,0) [0|65535] "counts" ESP32
+
+BO_ 1060 Body_Control_424: 8 ECU
+ SG_ Turn_Right : 8|1@1+ (1,0) [0|1] "" ESP32
+ SG_ Turn_Left : 9|1@1+ (1,0) [0|1] "" ESP32
+ SG_ Head_Lamp_High : 10|1@1+ (1,0) [0|1] "" ESP32
+ SG_ Head_Lamp_Low : 13|1@1+ (1,0) [0|1] "" ESP32
+ SG_ Other_Door_Open : 16|1@1+ (1,0) [0|1] "" ESP32
+ SG_ Driver_Door_Open : 17|1@1+ (1,0) [0|1] "" ESP32
+
+BO_ 1093 Auto_AC_445: 7 ECU
+ SG_ Set_Temp_Raw : 0|8@1+ (1,0) [0|255] "raw" ESP32
+ SG_ Recirculate : 25|1@1+ (1,0) [0|1] "" ESP32
+ SG_ AC_On : 27|1@1+ (1,0) [0|1] "" ESP32
+ SG_ Vent_Face : 41|1@1+ (1,0) [0|1] "" ESP32
+ SG_ Vent_Feet : 42|1@1+ (1,0) [0|1] "" ESP32
+ SG_ Vent_Windscreen : 43|1@1+ (1,0) [0|1] "" ESP32
+ SG_ Fan_Speed : 44|4@1+ (1,0) [0|15] "step" ESP32
 
 
 CM_ BU_ ECU "Unidade de Controle do Motor (Mitsubishi Pajero Dakar)";
 CM_ BU_ ESP32 "Módulo Receptor de Telemetria via ESP-NOW";
 CM_ SG_ 530 Engine_RPM "Rotação do motor calculada com fator multiplicador de 0.125";
 CM_ SG_ 786 Accelerator_Pedal_Sensor_1 "Sinal percentual interpolado com base na resolução de 12 bits (100 / 4095)";
+CM_ SG_ 1544 Coolant_Temp_608 "Temperatura do motor em D0, (D0 - 40) C. Confirmada neste veiculo; o projects/server le daqui em vez de pedir o PID 0x05.";
+CM_ SG_ 1544 Injected_Fuel_Qty "Vazao massica de combustivel injetado em D5,D6. Confirmada por FUELLOG de estrada: 0 em overrun, ~310-340 em marcha lenta.";
+CM_ SG_ 533 Vehicle_Speed_215 "Velocidade confirmada no veiculo contra o velocimetro: D0,D1 big-endian, 1/128 km/h. Fonte da velocidade no projects/server.";
+CM_ SG_ 533 Distance_Counter "Contador de distancia D2,D3. Nao confirmado: counts/km (BCAST_TRIP_COUNTS_PER_KM) ainda e o valor do painel MPS2.";
+CM_ SG_ 536 Current_Gear "Marcha atual, nibble baixo de D2. Confirmada por varredura do seletor. Conflita com Fuel_Rail_Pressure, que cobre os mesmos bits e nunca foi confirmada neste veiculo.";
+CM_ SG_ 536 Target_Gear "Marcha alvo, nibble alto de D2. Difere de Current_Gear somente durante a troca.";
+CM_ BO_ 1060 "ETACS. Farol baixo, farol alto, as duas setas e os dois bits de porta confirmados no veiculo; so a lanterna vem do mapa MPS2 e nao foi exercitada.";
+CM_ BO_ 1093 "Ar condicionado automatico. Ventilacao, recirculacao, A/C ligado, ventilador e temperatura confirmados no veiculo.";
+CM_ SG_ 1093 Set_Temp_Raw "Temperatura ajustada, valor bruto de D0: 50=LO, 64=20 C com 2 contagens por grau ate 82=29 C, 96=30 C, 98=HI. Nao linear nas pontas, por isso fica como raw aqui; bcast_ac_set_temp() converte.";

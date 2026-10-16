@@ -25,7 +25,37 @@ static void test_build_copies_speed_from_aggregator() {
     SessionAccumulator sess;
     agg.update(PID_SPEED, 80.0f);
     Payload p = PayloadBuilder::build(agg, sess, 0.0f, 0);
-    TEST_ASSERT_EQUAL_UINT8(80, p.speed_kmh);
+    TEST_ASSERT_EQUAL_UINT16(80 * 128, p.speed_kmh_x128);
+    TEST_ASSERT_EQUAL_FLOAT(80.0f, payload_speed_kmh(&p));
+}
+
+// 0x215 resolves to 1/128 km/h; the wire field must keep the fraction the old
+// uint8_t speed truncated away.
+static void test_build_keeps_fractional_speed() {
+    DataAggregator agg;
+    SessionAccumulator sess;
+    agg.update(PID_SPEED, 42.5f);
+    Payload p = PayloadBuilder::build(agg, sess, 0.0f, 0);
+    TEST_ASSERT_EQUAL_UINT16(5440, p.speed_kmh_x128);      // 42.5 * 128
+    TEST_ASSERT_EQUAL_FLOAT(42.5f, payload_speed_kmh(&p));
+    TEST_ASSERT_EQUAL_UINT8(43, payload_speed_kmh_u8(&p)); // rounds for display
+}
+
+// The broadcast bitfields land in the payload as whole bytes.
+static void test_build_copies_body_and_climate_flags() {
+    DataAggregator agg;
+    SessionAccumulator sess;
+    agg.update(PID_BCAST_BODY_FLAGS,
+               (float)(PAYLOAD_BODY_HEAD_LAMP_LO | PAYLOAD_BODY_DRIVER_DOOR));
+    agg.update(PID_BCAST_CLIMATE_FLAGS,
+               (float)(PAYLOAD_CLIMATE_AC_ON | PAYLOAD_CLIMATE_VENT_FACE));
+    agg.update(PID_BCAST_CLIMATE_FAN, 4.0f);
+    Payload p = PayloadBuilder::build(agg, sess, 0.0f, 0);
+    TEST_ASSERT_EQUAL_UINT8(PAYLOAD_BODY_HEAD_LAMP_LO | PAYLOAD_BODY_DRIVER_DOOR,
+                            p.body_flags);
+    TEST_ASSERT_EQUAL_UINT8(PAYLOAD_CLIMATE_AC_ON | PAYLOAD_CLIMATE_VENT_FACE,
+                            p.climate_flags);
+    TEST_ASSERT_EQUAL_UINT8(4, p.climate_fan);
 }
 
 static void test_build_copies_fuel_rate_from_aggregator() {
@@ -172,6 +202,8 @@ void run_payload_builder_tests() {
     RUN_TEST(test_build_sets_version_correctly);
     RUN_TEST(test_build_copies_rpm_from_aggregator);
     RUN_TEST(test_build_copies_speed_from_aggregator);
+    RUN_TEST(test_build_keeps_fractional_speed);
+    RUN_TEST(test_build_copies_body_and_climate_flags);
     RUN_TEST(test_build_copies_fuel_rate_from_aggregator);
     RUN_TEST(test_build_copies_instantaneous_consumption);
     RUN_TEST(test_build_copies_avg_consumption_from_session);

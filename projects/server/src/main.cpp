@@ -216,9 +216,11 @@ static void can_rx_task(void* /*param*/) {
     // refreshes each value only once per ~3 s (the visible client lag). Instead
     // we poll a small FAST list (the live dashboard values) every cycle and one
     // SLOW PID per cycle, so the fast PIDs refresh every (FAST_COUNT + 1) polls.
+    // Speed is absent on purpose: CAN 0x215 broadcasts it at ~45 Hz, so polling
+    // PID_SPEED (0x0D) would only add a slower, redundant copy. Dropping it frees
+    // one slot per cycle, which speeds up every remaining fast PID.
     static const uint8_t FAST_PIDS[] = {
         PID_RPM,
-        PID_SPEED,
         PID_MAF,             // feeds fuel rate / consumption
         PID_ENGINE_LOAD,
         PID_ACCEL_D,         // overrun fuel-cut detection needs a live pedal — a
@@ -229,10 +231,11 @@ static void can_rx_task(void* /*param*/) {
 
     // Everything else — changes slowly, rarely, or is unsupported. Drip-polled
     // one per cycle, round-robin (Mode 01 entries first, then Mode 22 DIDs).
+    // Coolant temperature is absent on purpose: CAN 0x608 D0 carries it at ~3.5 Hz,
+    // against the ~0.04 Hz a slow round-robin slot gives it.
     static const uint8_t SLOW_PIDS[] = {
         // Verified
         PID_MONITOR_STATUS,
-        PID_COOLANT_TEMP,
         PID_INTAKE_AIR_TEMP,
         PID_THROTTLE,
         PID_OBD_STANDARDS,
@@ -363,17 +366,36 @@ static void can_rx_task(void* /*param*/) {
                 }
 
                 // --- Free-running broadcast frames (passive; no request sent) ---
-                // The 4M41 broadcasts injected fuel (0x608) and gear (0x218)
-                // continuously. Capture them here before the request/response
-                // filter below. See projects/sniffer/assets/MITSUBISHI_ADVANCED_PIDS.md.
+                // The 4M41 broadcasts speed (0x215), injected fuel (0x608) and
+                // gear (0x218) continuously. Capture them here before the
+                // request/response filter below.
+                // See projects/sniffer/assets/MITSUBISHI_ADVANCED_PIDS.md.
+                if (frame.id == CAN_BCAST_SPEED && frame.dlc >= 2) {
+                    // Fills the PID_SPEED slot the poll list no longer requests.
+                    aggregator.update(PID_SPEED, bcast_speed_kmh(frame.data));
+                    continue;
+                }
                 if (frame.id == CAN_BCAST_FUEL && frame.dlc >= 7) {
                     float raw = (float)(((uint16_t)frame.data[5] << 8) | frame.data[6]);
                     aggregator.update(PID_BCAST_FUEL_RAW, raw);
+                    // D0 of the same frame is coolant temperature, so the slow
+                    // poll list no longer requests PID_COOLANT_TEMP (0x05).
+                    aggregator.update(PID_COOLANT_TEMP, bcast_coolant_temp_c(frame.data));
                     continue;
                 }
                 if (frame.id == CAN_BCAST_GEAR && frame.dlc >= 3) {
                     aggregator.update(PID_M22_AT_GEAR_POS,    (float)(frame.data[2] & 0x0F));
                     aggregator.update(PID_M22_AT_TARGET_GEAR, (float)(frame.data[2] >> 4));
+                    continue;
+                }
+                if (frame.id == CAN_BCAST_ETACS && frame.dlc >= 3) {
+                    aggregator.update(PID_BCAST_BODY_FLAGS, (float)bcast_body_flags(frame.data));
+                    continue;
+                }
+                if (frame.id == CAN_BCAST_AUTOAC && frame.dlc >= 6) {
+                    aggregator.update(PID_BCAST_CLIMATE_FLAGS, (float)bcast_climate_flags(frame.data));
+                    aggregator.update(PID_BCAST_CLIMATE_FAN,   (float)bcast_ac_fan_speed(frame.data));
+                    aggregator.update(PID_BCAST_CLIMATE_TEMP,  (float)bcast_ac_set_temp(frame.data));
                     continue;
                 }
 
@@ -549,7 +571,7 @@ static void broadcast_task(void* /*param*/) {
 #ifdef VERBOSE_TX
         Serial.printf(
             "[TX #%lu %s ok=%lu fail=%lu] ver=%u t=%lums\n"
-            "  rpm=%u spd=%ukm/h fuel_rate=%.2fL/h cons=%.2fkm/L avg=%.2fkm/L dist=%.2fkm\n"
+            "  rpm=%u spd=%.1fkm/h fuel_rate=%.2fL/h cons=%.2fkm/L avg=%.2fkm/L dist=%.2fkm\n"
             "  mil=%d dtc=%u flags=0x%02X\n"
             "  load=%.1f%% coolant=%.1fC map=%ukPa iat=%.1fC maf=%.2fg/s throttle=%.1f%%\n"
             "  runtime=%us dist_mil=%ukm fuel_rail=%.1fkPa egr_cmd=%.1f%% egr_err=%.1f%%\n"
@@ -562,7 +584,7 @@ static void broadcast_task(void* /*param*/) {
             (unsigned long)send_count, sent ? "OK" : "FAIL",
             (unsigned long)send_count, (unsigned long)fail_count,
             (unsigned)payload.version, (unsigned long)payload.timestamp_ms,
-            (unsigned)payload.rpm, (unsigned)payload.speed_kmh,
+            (unsigned)payload.rpm, payload_speed_kmh(&payload),
             payload.fuel_rate_l_per_h, payload.consumption_km_per_l,
             payload.avg_consumption_km_per_l, payload.distance_km,
             (int)payload.mil_on, (unsigned)payload.dtc_count, payload.flags,
@@ -590,10 +612,10 @@ static void broadcast_task(void* /*param*/) {
         if (++log_divider >= 10) {
             log_divider = 0;
             Serial.printf(
-                "[TX #%lu %s fail=%lu] rpm=%u spd=%u load=%.0f%% maf=%.1f "
+                "[TX #%lu %s fail=%lu] rpm=%u spd=%.1f load=%.0f%% maf=%.1f "
                 "fuel=%.2fL/h cons=%.1f avg=%.1f dist=%.1fkm boost=%.2f flags=0x%02X\n",
                 (unsigned long)send_count, sent ? "OK" : "FAIL", (unsigned long)fail_count,
-                (unsigned)payload.rpm, (unsigned)payload.speed_kmh,
+                (unsigned)payload.rpm, payload_speed_kmh(&payload),
                 payload.engine_load_pct, payload.maf_g_per_s,
                 payload.fuel_rate_l_per_h, payload.consumption_km_per_l,
                 payload.avg_consumption_km_per_l, payload.distance_km,

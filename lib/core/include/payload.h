@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define PAYLOAD_VERSION 7
+#define PAYLOAD_VERSION 8
 
 // Wire budget. ESP-NOW caps a single broadcast at 250 bytes, so every field here
 // is spent out of a fixed allowance. Only fields some code path can actually
@@ -17,7 +17,8 @@ typedef struct __attribute__((packed)) {
 
     // --- Core driving data ---
     uint16_t rpm;                       // PID_RPM        (0x0C)  rpm
-    uint8_t  speed_kmh;                 // PID_SPEED       (0x0D)  km/h
+    uint16_t speed_kmh_x128;            // CAN 0x215 D0,D1 — km/h * 128 (raw frame
+                                        // value). Use payload_speed_kmh().
     float    fuel_rate_l_per_h;         // PID_FUEL_RATE   (0x5E)  L/h
     float    consumption_km_per_l;      // derived
     float    avg_consumption_km_per_l;  // session derived
@@ -76,6 +77,13 @@ typedef struct __attribute__((packed)) {
     float    at_gear_pos;               // 0x218 D2 low nibble  — current gear
     float    at_target_gear;            // 0x218 D2 high nibble — target gear
 
+    // Body control from CAN 0x424 and climate from CAN 0x445. Bit meanings are
+    // the PAYLOAD_BODY_* / PAYLOAD_CLIMATE_* masks below.
+    uint8_t  body_flags;                // 0x424 — head lamps, doors
+    uint8_t  climate_flags;             // 0x445 — A/C on, recirculation, vents
+    uint8_t  climate_fan;               // 0x445 D5 high nibble — fan step 0..15
+    uint8_t  climate_set_temp_c;        // 0x445 D0 — °C, or AUTOAC_TEMP_LO / _HI
+
     // --- Derived ---
     float    boost_pres;                // bar (gauge) = MAP - ambient, computed
                                         // server-side by DerivedCalculator
@@ -99,7 +107,35 @@ typedef struct __attribute__((packed)) {
 #define PAYLOAD_FLAG_DATA_VALID     (1 << 0)
 #define PAYLOAD_FLAG_ENGINE_RUNNING (1 << 1)
 
-static_assert(sizeof(Payload) == 189,
+// body_flags — CAN 0x424 (ETACS). Confirmed bits only; the frame's position-lamp
+// bit is still unverified on this vehicle, so it is absent.
+#define PAYLOAD_BODY_HEAD_LAMP_LO   (1 << 0)
+#define PAYLOAD_BODY_HEAD_LAMP_HI   (1 << 1)
+#define PAYLOAD_BODY_DRIVER_DOOR    (1 << 2)
+#define PAYLOAD_BODY_OTHER_DOOR     (1 << 3)
+#define PAYLOAD_BODY_LEFT_TURN      (1 << 4)
+#define PAYLOAD_BODY_RIGHT_TURN     (1 << 5)
+
+// climate_flags — CAN 0x445. The set point rides in climate_set_temp_c, where 0 is
+// the panel's LO and 0xFF its HI (AUTOAC_TEMP_LO / _HI in pid_map.h).
+#define PAYLOAD_CLIMATE_AC_ON       (1 << 0)
+#define PAYLOAD_CLIMATE_RECIRC      (1 << 1)
+#define PAYLOAD_CLIMATE_VENT_FACE   (1 << 2)
+#define PAYLOAD_CLIMATE_VENT_FEET   (1 << 3)
+#define PAYLOAD_CLIMATE_VENT_WIND   (1 << 4)
+
+/** Vehicle speed in km/h, un-scaled from the raw 0x215 frame value. */
+static inline float payload_speed_kmh(const Payload* p) {
+    return (float)p->speed_kmh_x128 / 128.0f;
+}
+
+/** Vehicle speed rounded to whole km/h, clamped, for integer speed readouts. */
+static inline uint8_t payload_speed_kmh_u8(const Payload* p) {
+    float v = payload_speed_kmh(p) + 0.5f;
+    return (v >= 255.0f) ? (uint8_t)255 : (uint8_t)v;
+}
+
+static_assert(sizeof(Payload) == 194,
     "Payload size mismatch - check struct fields and packing");
 static_assert(sizeof(Payload) <= PAYLOAD_MAX_WIRE_BYTES,
     "Payload exceeds the 250-byte ESP-NOW broadcast limit");
