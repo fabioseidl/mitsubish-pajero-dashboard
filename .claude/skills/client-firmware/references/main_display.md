@@ -1,6 +1,6 @@
 # `main_display` — Waveshare ESP32-S3-Touch-LCD-7B
 
-The 7" main dashboard: a SquareLine Studio LVGL UI showing the ESP-NOW payload
+The 7" main dashboard: a hand-written LVGL UI showing the ESP-NOW payload
 plus onboard GPS, IMU and environment sensors.
 
 Verified working as of 2026-05 with **LVGL 9.5.0 + LovyanGFX 1.1.16** under the
@@ -109,8 +109,9 @@ Other connectors are not plain UART: GPIO 15/16 = RS-485, GPIO 19/20 = CAN.
 | File | Role |
 |---|---|
 | `main.cpp` | Board bring-up (PCF8574, LovyanGFX, LVGL), ESP-NOW, loop; IMU + temp/humidity come from the server Payload |
-| `app_ui.{h,cpp}` | The **only** bridge to the SquareLine export in `src/ui/` |
-| `ui/` | SquareLine Studio LVGL 9 export — **generated, never hand-edit** |
+| `dashboard_view.{h,cpp}` | Pure-LVGL widget tree; also built by the `sim` env (`lvgl-preview` skill) |
+| `app_ui.{h,cpp}` | Formats data and writes the view's labels; backlight readout + dim overlay |
+| `ui/` | Converted fonts and images (generated, never hand-edit). The old SquareLine screen code is still here but not compiled — `[dashboard] ui_src` in `platformio.ini` lists what is |
 | `gps.{h,cpp}` | TinyGPSPlus on UART0/GPIO 44 |
 | `gt911.{h,cpp}` | Capacitive touch (silent on this unit) |
 | `main_display.cpp`, `dashboard_ui.cpp`, `dashboard_widgets.cpp` | Legacy hand-written UI, excluded via `build_src_filter` |
@@ -125,7 +126,9 @@ thread.
 `lv_layer_top()`**. The on-screen button exists, but since the GT911 does not
 answer here, the physical **button on GPIO 6** is what actually works.
 
-`extra_scripts = pre:scripts/clean_dupes.py` runs before the build.
+`extra_scripts = pre:scripts/clean_dupes.py` runs before the build. It removes
+cloud-sync conflict copies from SquareLine exports; with the explicit
+`build_src_filter` those copies are no longer compiled anyway.
 
 ## LVGL 9 integration
 

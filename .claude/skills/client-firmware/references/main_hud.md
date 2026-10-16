@@ -80,7 +80,8 @@ leave it off-centre in the display's normal state.
 
 | Class | File | Responsibility |
 |---|---|---|
-| `HudScreenController` | `include/hud_screen_controller.h` | LVGL UI, brightness buttons, touch routing |
+| `HudScreenController` | `include/hud_screen_controller.h` | Panel/LVGL drivers, touch routing, button auto-hide |
+| `HudUi` | `include/hud_ui.h` | Pure-LVGL widgets; also built by the `sim` env (`lvgl-preview` skill) |
 | `HudDisplay` | `include/hud_display.h` | `IDisplay` — LEDC backlight on GPIO 1 |
 | `AXS15231BTouch` | `include/axs15231b_touch.h` | Touch controller I²C protocol |
 | `StepBrightness` | `lib/core/include/step_brightness.h` | Shared 10 levels; `increase()`/`decrease()` clamp |

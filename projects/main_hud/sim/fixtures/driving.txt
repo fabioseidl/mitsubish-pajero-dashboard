@@ -1,0 +1,5 @@
+# Normal driving: buttons auto-hidden, speed alone on screen.
+speed=87
+online=1
+brightness=50
+buttons=0

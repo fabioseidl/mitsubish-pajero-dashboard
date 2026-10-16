@@ -12,6 +12,7 @@ only what is true everywhere.
 | `payload-protocol` | `Payload`, `pid_map.h`, ESP-NOW — the contract between them |
 | `host-tests` | The Unity suites under `test/host` |
 | `can-reverse-engineering` | `projects/sniffer`: finding and confirming new vehicle data |
+| `lvgl-preview` | HTML prototype → hand-written LVGL → native simulator, diffed pixel-by-pixel |
 
 Slash commands: `/build <project>`, `/flash <project>`, `/test`.
 
@@ -38,8 +39,8 @@ lib/core/            Shared by every node: payload.h, pid_map.h, dtc.h, ESP-NOW,
 projects/
   server/            Production server — ESP32-S3 + MCP2515, reads CAN, broadcasts
   server_emulator/   Same broadcast from synthetic data (ESP-IDF) — client dev without the car
-  main_display/      Waveshare 7" 1024×600 RGB dashboard + GPS/IMU/environment sensors
-  main_hud/          Guition 3.5" QSPI portrait display — speed only
+  main_display/      Waveshare 7" 1024×600 RGB dashboard + GPS/IMU/environment sensors; sim/ = native LVGL simulator
+  main_hud/          Guition 3.5" QSPI portrait display — speed only; sim/ = native LVGL simulator
   glass_display/     Waveshare ESP32-C6 1.47" — speed only
   client_simple_hud/ CYD 2.4" SPI HUD, LDR auto-brightness
   sniffer/           CAN sniffer + DBC + monitor.py + web/ live bus monitor
@@ -112,6 +113,8 @@ Then set a real 16-byte PMK — the same value on every node.
 - **Pin numbers belong in `include/pin_config.h`**, never inline in code.
 - **Generated files are never hand-edited** — SquareLine exports (`ui/`, `src/ui/`)
   and `lv_font_conv` output (`ui_font_*.c`). Adapt them from a bridge module.
+  New screens are not built in SquareLine: they are HTML prototypes turned into
+  hand-written LVGL views (see the `lvgl-preview` skill).
 - **Run the host tests before flashing.** They are the only verification that does
   not need the vehicle.
 

@@ -8,10 +8,12 @@
 #include "i_screen_controller.h"
 #include "step_brightness.h"
 #include "axs15231b_touch.h"
+#include "hud_ui.h"
 
 /**
- * The whole UI: one very large speed readout, a brightness readout, and a pair
- * of +/- brightness buttons.
+ * Board side of the HUD: QSPI panel, touch, LVGL display/input drivers and the
+ * button auto-hide timing. The widgets themselves live in HudUi, which also
+ * builds in the native simulator.
  *
  * The panel is read directly — LVGL's frame reaches the canvas untransformed.
  */
@@ -36,22 +38,20 @@ private:
 
     bool initDisplay();
     bool initLvgl();
-    void buildUi();
     void refreshBrightnessLabel();
-    void setButtonsVisible(bool visible);
-    void repaint();
 
     // LVGL C callbacks — they reach the live instance through instance_.
     static void flushCb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
     static void touchReadCb(lv_indev_t* indev, lv_indev_data_t* data);
     static uint32_t tickCb();
-    static void onBrightnessUp(lv_event_t* e);
-    static void onBrightnessDown(lv_event_t* e);
+    static void onBrightnessUp(void* ctx);
+    static void onBrightnessDown(void* ctx);
 
     static HudScreenController* instance_;
 
     StepBrightness&  brightness_;
     AXS15231BTouch  touch_;
+    HudUi           ui_;
 
     // Written from the ESP-NOW callback, read by tick().
     volatile uint8_t speed_kmh_ = 0;
@@ -78,14 +78,6 @@ private:
     // button appeared under the finger.
     bool wake_only_ = false;
 
-    // Buttons start visible so they can be found; tick() hides them once
-    // BUTTONS_IDLE_HIDE_MS passes with no touch.
-    bool buttons_visible_ = true;
-
-    lv_obj_t* speed_label_      = nullptr;
-    lv_obj_t* bright_up_btn_    = nullptr;
-    lv_obj_t* bright_down_btn_  = nullptr;
-    lv_obj_t* bright_pct_label_ = nullptr;
 };
 
 #endif // UNIT_TEST

@@ -1,0 +1,12 @@
+# Just powered on: no server yet, no GPS fix, backlight readout visible.
+online=0
+gear=13
+target_gear=13
+coolant=22
+voltage=12.4
+gps_time=--
+altitude=--
+course=--
+env_temp=nan
+humidity=nan
+elapsed_ms=0

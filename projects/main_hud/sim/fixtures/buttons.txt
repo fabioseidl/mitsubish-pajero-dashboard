@@ -1,0 +1,5 @@
+# Widest speed text with the brightness row shown at its widest label.
+speed=128
+online=1
+brightness=100
+buttons=1
