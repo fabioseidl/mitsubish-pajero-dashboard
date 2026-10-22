@@ -195,6 +195,7 @@ void update(const Payload& p) {
     if (ui_lbrpm == nullptr) return;                   // create() not called yet
     if (!(p.flags & PAYLOAD_FLAG_DATA_VALID)) return;
 
+    set_if_changed(ui_lbspeed,              "%u",   (unsigned)p.speed_kmh);
     set_if_changed(ui_lbrpm,                "%u",   (unsigned)p.rpm);
     set_if_changed(ui_lbfuelrate,           "%.1f", p.fuel_rate_l_per_h);
     // Economy readout is capped at 99 km/l — anything higher shows "99+".
