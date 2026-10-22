@@ -1,0 +1,3 @@
+# HUD with no server: zeros and the offline icon.
+online=0
+elapsed_ms=4000

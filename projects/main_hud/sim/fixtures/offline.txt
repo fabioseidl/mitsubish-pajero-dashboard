@@ -1,0 +1,5 @@
+# No server: grey dashes; buttons shown as at boot.
+speed=0
+online=0
+brightness=50
+buttons=1

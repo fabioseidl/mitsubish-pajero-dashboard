@@ -18,10 +18,30 @@ Do not redo this work:
   road `FUELLOG`: a clean 0 during overrun (coasting in gear, off throttle, rpm
   2400→1800, speed > 0), ~310–340 at idle, ~4734 under hard acceleration. Airflow
   cannot read 0 while the engine spins, so this is fuel, not MAF.
+- `CAN 0x608` D0 — coolant temperature, `(D0 - 40)` °C. Confirmed on this vehicle.
+  `projects/server` takes coolant from here and no longer polls Mode 01 `0x05`:
+  the frame runs at ~3.5 Hz against the ~0.04 Hz a slow round-robin slot gave it.
 - `CAN 0x218` D2 — low nibble = current gear, high nibble = target gear. Confirmed
   by a full selector sweep (`P→R→N→D→1→2→3→2→D`): `0x0`=N, `0x1`=D stopped/manual 1,
   `0x2..0x4`=2nd–4th, `0x5`=5th (inferred from the pattern), `0xB`=R, `0xD`=P.
   Mixed nibbles appear mid-shift (`0xBD` = Park→Reverse).
+- `CAN 0x215` D0,D1 — vehicle speed, 1/128 km/h. Confirmed on the live bus monitor
+  against the dash speedometer. `projects/server` now takes speed from this frame
+  and no longer polls Mode 01 `0x0D`: the broadcast runs at ~45 Hz against a poll
+  slot's ~1.5 Hz, and dropping it speeds up every other fast PID. D2,D3 is a
+  distance counter whose counts-per-km (`BCAST_TRIP_COUNTS_PER_KM`) is still
+  MPS2's number — nothing uses it; session distance is integrated from speed.
+- `CAN 0x424` — ETACS body control. Low beam (`D1 & 0x20`), high beam
+  (`D1 & 0x04`), left and right turn signals (`D1 & 0x02`, `D1 & 0x01`) and the
+  two door bits (`D2 & 0x02` driver, `D2 & 0x01` other) confirmed by a lamp,
+  indicator and door sweep. Only the position-lamp bit is still MPS2's guess.
+- `CAN 0x445` — auto A/C. Fan speed (`D5` high nibble), vent routing,
+  recirculation and A/C-on track the panel. `D0` is the temperature set point,
+  pinned by a dial sweep on this vehicle: `50` = LO, `64` = 20 °C then 2 counts
+  per °C to `82` = 29 °C, `96` = 30 °C (the last click jumps 14 counts), `98` =
+  HI. It reads like a blend-door target in half-degrees that saturates past the
+  displayed range. `bcast_ac_set_temp()` reports what the panel shows; MPS2's
+  `D0 - 63` offset was wrong for this truck.
 - The Mode 01 PIDs marked `verified` in `pid_map.h`.
 
 **Rejected — the ECUs do not implement UDS service 0x22.** A DID sweep answered
@@ -31,22 +51,31 @@ every DID. The documented Mitsubishi advanced PIDs for the 4M41 (fuel temp
 available on this truck**, even though the tables list them. The polling path is
 gated off (`POLL_MODE22 = false`) and the ISO-TP reassembly code is kept dormant.
 
-**Unverified candidates** — `pid_map.h` carries a block of frames decoded by the
-independent igkov/MPS2 Pajero Sport 2 dash (0x215 speed/distance, 0x236 steering
-angle, and others). That project reads 0x608 and 0x218 exactly as our own road
-tests confirmed, which is why the rest of its map is worth testing. **Nothing in
-`projects/server` reads them.** They exist so the sniffer's `WATCH` mode can decode
-them on a drive.
+**Unverified candidates** — `pid_map.h` still carries a block of frames decoded by
+the independent igkov/MPS2 Pajero Sport 2 dash (0x236 steering angle, 0x308 rpm,
+0x312 torque). That project reads 0x608 and 0x218 exactly as our own road tests
+confirmed, which is why the rest of its map was worth testing — and 0x215, 0x424
+and 0x445 have since been confirmed here. **Nothing in `projects/server` reads
+what is left.** They exist so the sniffer's `WATCH` mode can decode them on a
+drive. Note 0x236 has never appeared on this bus at all.
 
 ## Reference material
 
 - `projects/sniffer/assets/MITSUBISHI_ADVANCED_PIDS.md` — the full
   reverse-engineering write-up: bus parameters, the UDS request/ISO-TP/response
   cycle step by step, per-engine DID tables for 12 Mitsubishi models (4M41 =
-  Pajero IV 3.2 DI-D), a consolidated DID list, and the igkov broadcast/KWP
+  shared by Pajero IV and Pajero Sport II), a consolidated DID list, and the igkov broadcast/KWP
   second source. Referenced by name from `pid_map.h` comments — keep it there.
 - `projects/sniffer/dumps/` — `candump.log` (passive capture) and `server_log.txt`.
+- `references/bus-inventory.md` — every ID on this bus from `candump.log`: 14
+  total, 5 decoded, 3 candidates, 6 unknown, with rate and per-byte variety.
+  Start here to pick a target. Note `0x236` is in the `WATCH` list but has never
+  appeared on this bus.
 - `projects/sniffer/pajero_dakar.dbc`, `mitsubishi_advanced.dbc` — DBC definitions.
+- `references/mut3-database.md` — what the MUT-III SE service software yields.
+  Short version: no scaling and no broadcast frames, only ECU addressing. On
+  this vehicle every ECU but the engine is K-line, so `0x7E8` really is the only
+  CAN diagnostic responder. Lists other-platform addresses as candidates only.
 
 ## Sniffer modes
 
@@ -68,6 +97,12 @@ ACK bus traffic.
 | `RDLI <req> <lid>` | Legacy KWP ReadDataByLocalIdentifier (service 0x21), e.g. `RDLI 7E1 02` = AT info, `RDLI 7E1 03` = odometer |
 | `T<unix>` | Set the wall-clock base for timestamps |
 | `STOP` / `PASV` | Return to passive logging |
+
+`projects/sniffer/web/` is a browser view of the same stream: every ID with its
+rate and per-byte variety, highlighting the moment a settled byte steps — `ADIFF`
+on the whole bus at once. `--replay ../dumps/candump.log` runs it with no
+hardware. It holds no decode maths (see its README for why); it finds candidates,
+the promotion rule below still governs what gets trusted.
 
 `monitor.py` drives all of this from the host: it syncs the clock on connect,
 forwards stdin lines to the sniffer, and toggles local capture to `candump.log`

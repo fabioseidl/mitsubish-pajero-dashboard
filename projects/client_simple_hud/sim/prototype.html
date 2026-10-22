@@ -1,0 +1,102 @@
+<!doctype html>
+<!--
+  client_simple_hud prototype — the design reference SimpleHudUi is built from.
+
+  Rules (see the lvgl-preview skill): fixed px canvas, LVGL-mappable CSS only,
+  fonts limited to the lv_font_conv sizes listed below. State comes from the
+  query string with the same keys as sim/fixtures/*.txt.
+
+  Fonts in flash: Roboto Bold 150, Roboto Regular 24 (ASCII).
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="lvgl-screen" content="320x240">
+<title>client_simple_hud prototype</title>
+<style>
+  @font-face { font-family: "Roboto LVGL"; src: url("../../../ui/client_simple_hud/assets/Roboto-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Roboto LVGL"; src: url("../../../ui/client_simple_hud/assets/Roboto-Bold.ttf");    font-weight: 700; }
+
+  :root {
+    --bg: #15171a;      /* LVGL default dark theme screen */
+    --text: #fafafa;    /* LVGL default dark theme text */
+    --speed: #ffffff;
+  }
+  html, body { margin: 0; background: #111; }
+
+  #screen {
+    position: relative;
+    width: 320px;
+    height: 240px;
+    overflow: hidden;
+    font-family: "Roboto LVGL";
+    color: var(--text);
+  }
+  .layer { position: absolute; inset: 0; background: var(--bg); }
+
+  /* LV_ALIGN_CENTER: a zero-size anchor at the centre point; flex centres the text on it. */
+  .c {
+    position: absolute;
+    left: 160px;
+    top: 120px;
+    width: 0;
+    height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+  }
+  .c > span { position: relative; top: var(--nudge); }
+
+  /* LV_ALIGN_BOTTOM_MID, 10 px above the bottom edge. */
+  .bottom {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 10px;
+    text-align: center;
+  }
+  .bottom > span { position: relative; top: var(--nudge); }
+
+  /* Font roles: line-height is the lv_font line_height; --nudge moves the CSS baseline onto LVGL's. */
+  .hero  { font-size: 150px; font-weight: 700; line-height: 158px; --nudge: -6px; }
+  .small { font-size: 24px;  font-weight: 400; line-height: 26px;  --nudge: -2px; }
+
+  #logo { position: absolute; left: 0; top: -20px; }
+  #speed { color: var(--speed); }
+  #server-icon { position: absolute; right: 5px; top: 5px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="screen">
+  <div class="layer" id="boot">
+    <img id="logo" src="../../../ui/client_simple_hud/assets/mitsubishi_logo.png" alt="">
+    <div class="bottom small"><span>PAJERO DAKAR</span></div>
+  </div>
+  <div class="layer" id="hud">
+    <div class="c hero"><span id="speed">0</span></div>
+    <div class="bottom small"><span id="rpm">0</span></div>
+    <img id="server-icon" src="../../../ui/client_simple_hud/assets/icon_server.png" alt="">
+  </div>
+</div>
+<script>
+  // Same keys and defaults as sim/sim_main.cpp's SimState.
+  const q = new URLSearchParams(location.search);
+  const num = (k, d = 0) => (q.has(k) ? Number(q.get(k)) : d);
+
+  document.getElementById("speed").textContent = String(Math.trunc(num("speed")));
+  document.getElementById("rpm").textContent = String(Math.trunc(num("rpm")));
+  document.getElementById("server-icon").classList.toggle("hidden", num("online", 0) !== 0);
+
+  // Boot screen for 3000 ms, then the HUD fades in over 200 ms. The sim renders
+  // 10 frames (33 ms each) past elapsed_ms, so the same clock is used here.
+  const t = (Math.floor(num("elapsed_ms") / 33) + 10) * 33;
+  // LVGL fades every object with its own opacity rather than the screen as one layer.
+  const fade = Math.min(Math.max((t - 3000) / 200, 0), 1);
+  const hud = document.getElementById("hud");
+  hud.style.background = `rgba(21, 23, 26, ${fade})`;
+  for (const child of hud.children) child.style.opacity = fade;
+</script>
+</body>
+</html>

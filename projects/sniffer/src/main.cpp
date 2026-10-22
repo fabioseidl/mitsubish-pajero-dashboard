@@ -37,7 +37,9 @@
 //   T<unix>                 set wall-clock base for timestamps (e.g. T1716394391)
 //   DUMP                    toggle passive candump printing on/off (default off)
 //   WATCH [id ...]          decode broadcast frames (hex IDs); no args watches all
-//                           known candidates: 608 218 215 308 312 236 424 445
+//                           known frames: 608 218 215 424 445 (confirmed on this
+//                           vehicle) and 308 312 236 (igkov map, unverified; 236
+//                           has never appeared on this bus at all)
 //   DIFF [id]               isolate a slow field in one frame; no arg = 218 (gear)
 //   ADIFF                   whole-bus DIFF: hold still to learn, then toggle an
 //                           input; the changed ID/byte is printed (unknown frames)
@@ -107,7 +109,7 @@ static constexpr uint16_t BCAST_GEAR = CAN_BCAST_GEAR;
 // "Candidate broadcast frames" block in lib/core/include/pid_map.h for the byte
 // layouts and the decoders — this file deliberately holds NO magic numbers of
 // its own, so a correction there fixes the sniffer and the server together.
-// UNVERIFIED on the Pajero IV: WATCH decodes them so a drive can confirm them.
+// UNVERIFIED on the Pajero Sport: WATCH decodes them so a drive can confirm them.
 
 struct WatchId {
     uint16_t id;
@@ -569,8 +571,10 @@ static void sigTick() {
 }
 
 // ---------------------------------------------------------------------------
-// Broadcast frame decoding (igkov bcomp11 reverse-engineering). Returns a
-// headline integer used for change-detection; prints the decoded interpretation.
+// Broadcast frame decoding. 0x608, 0x218, 0x215, 0x424 and 0x445 are confirmed on
+// this vehicle and projects/server reads them; 0x308, 0x312 and 0x236 are still
+// only the igkov bcomp11 map. Returns a headline integer used for
+// change-detection; prints the decoded interpretation.
 // ---------------------------------------------------------------------------
 static int32_t decodeBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc) {
     if (id == BCAST_FUEL      && dlc >= 7) return (d[5] << 8) | d[6];   // injected fuel raw
@@ -586,7 +590,7 @@ static int32_t decodeBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc) {
     return 0;
 }
 
-// 0x218 gear code (one nibble of D2). Confirmed on the Pajero IV 4M41 by sweeping
+// 0x218 gear code (one nibble of D2). Confirmed on the Pajero Sport 4M41 by sweeping
 // the selector P→R→N→D→manual: 0x0=N, 0x1..0x5 = forward gears, 0xB=R, 0xD=P.
 // D2 packs target gear in the high nibble and current gear in the low nibble; they
 // match at rest and differ only mid-shift.
@@ -610,18 +614,18 @@ static void printBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc, uint64_t 
     for (uint8_t i = 0; i < dlc; ++i) Serial.printf("%02X", d[i]);
 
     if (id == BCAST_FUEL && dlc >= 7) {
-        // D0 is very likely coolant temp: the MPS2 dash reads this exact byte as
-        // (D0 - 40) degC, and our own captures (0x4D -> 37 C cold, 0x7A -> 82 C
-        // warm) fit that curve. Printed decoded so a drive can confirm it.
-        Serial.printf("  fuel_raw=%d (D5D6)  D0=%u (coolant? %d C)",
-                      (d[5] << 8) | d[6], d[0], (int)d[0] - 40);
+        // D0 is coolant temperature, (D0 - 40) degC — confirmed on this vehicle.
+        // The server reads it from here instead of polling Mode 01 0x05.
+        Serial.printf("  fuel_raw=%d (D5D6)  coolant=%.0f C",
+                      (d[5] << 8) | d[6], bcast_coolant_temp_c(d));
     } else if (id == BCAST_GEAR && dlc >= 3) {
         uint8_t cur = d[2] & 0x0F, tgt = d[2] >> 4;
         Serial.printf("  gear=%s", gearName(cur));
         if (tgt != cur) Serial.printf(" (shifting->%s)", gearName(tgt));
     } else if (id == CAN_BCAST_SPEED && dlc >= 4) {
-        // Cross-check against the speedo: 1/128 km/h resolution, and the D2,D3
-        // counter should climb ~BCAST_TRIP_COUNTS_PER_KM per km driven.
+        // Speed is confirmed against the speedo at 1/128 km/h and is what the
+        // server broadcasts. The D2,D3 counter is not: it should climb
+        // ~BCAST_TRIP_COUNTS_PER_KM per km, which is still MPS2's number.
         Serial.printf("  speed=%.2f km/h  trip_cnt=%u", bcast_speed_kmh(d), bcast_trip_counts(d));
     } else if (id == CAN_BCAST_RPM && dlc >= 3) {
         Serial.printf("  rpm=%u", bcast_rpm(d));
@@ -631,8 +635,9 @@ static void printBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc, uint64_t 
         // Sign/centre are calibration dependent: straight ahead should read ~0.
         Serial.printf("  steer=%ld (raw=%u)", (long)bcast_steer_angle(d), (d[0] << 8) | d[1]);
     } else if (id == CAN_BCAST_ETACS && dlc >= 3) {
+        // Everything here is confirmed except the position lamp (MPS2's guess).
         Serial.printf("  lamps[%s%s%s] turn[%s%s] doors[%s%s]",
-                      (d[0] & ETACS_D0_POSITION_LAMP) ? "pos "  : "",
+                      (d[0] & ETACS_D0_POSITION_LAMP) ? "pos? " : "",
                       (d[1] & ETACS_D1_HEAD_LAMP_LO)  ? "lo "   : "",
                       (d[1] & ETACS_D1_HEAD_LAMP_HI)  ? "hi "   : "",
                       (d[1] & ETACS_D1_LEFT_TURN)     ? "L"     : "-",
@@ -640,9 +645,15 @@ static void printBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc, uint64_t 
                       (d[2] & ETACS_D2_DRIVER_DOOR)   ? "drv "  : "",
                       (d[2] & ETACS_D2_OTHER_DOOR)    ? "other" : "");
     } else if (id == CAN_BCAST_AUTOAC && dlc >= 6) {
-        Serial.printf("  ac=%s temp=%u fan=%u vent[%s%s%s] %s%s",
+        // Set point prints LO / HI at the ends of the dial, a number in between.
+        uint8_t set_temp = bcast_ac_set_temp(d);
+        char temp_str[8];
+        if      (set_temp == AUTOAC_TEMP_LO) snprintf(temp_str, sizeof(temp_str), "LO");
+        else if (set_temp == AUTOAC_TEMP_HI) snprintf(temp_str, sizeof(temp_str), "HI");
+        else                                 snprintf(temp_str, sizeof(temp_str), "%uC", set_temp);
+        Serial.printf("  ac=%s temp=%s(raw %u) fan=%u vent[%s%s%s] %s%s",
                       (d[3] & AUTOAC_D3_AC_ON)       ? "on"  : "off",
-                      bcast_ac_set_temp(d), bcast_ac_fan_speed(d),
+                      temp_str, d[0], bcast_ac_fan_speed(d),
                       (d[5] & AUTOAC_D5_VENT_UP)     ? "face " : "",
                       (d[5] & AUTOAC_D5_VENT_DOWN)   ? "foot " : "",
                       (d[5] & AUTOAC_D5_VENT_WIND)   ? "wind"  : "",

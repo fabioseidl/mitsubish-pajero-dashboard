@@ -1,15 +1,14 @@
 #include "app_ui.h"
 
+#ifdef ARDUINO
 #include <Arduino.h>
+#endif
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
-// SquareLine Studio generated UI (LVGL 9 export). Do NOT edit anything under
-// src/ui/ — it is regenerated on every SquareLine export. ui.h declares ui_init()
-// and the ui_lb* label handles used below.
-#include "ui/ui.h"
+#include "dashboard_view.h"
 
 #include "i_display.h"
 #include "step_brightness.h"
@@ -33,15 +32,11 @@ namespace {
 // The backlight itself stays latched ON; main.cpp's 1 s 0xFF re-assert is
 // untouched and nothing here contends with it.
 //
-// The button is built here rather than in SquareLine on purpose. It used to bind
-// to an exported `ui_btnbacklight`, which silently disappeared on a re-export and
-// broke the build — a generated symbol is not a stable contract. Owning the
-// widget keeps this feature working no matter what the next export contains.
 // Both widgets live on lv_layer_top() so they survive a screen load; the button
 // is created *before* the dim overlay so the overlay covers it and it dims along
 // with everything else, rather than staying glaringly lit at night.
 
-// Matches the geometry of the old SquareLine button (171x32, near the top-left).
+// Readout geometry: 171x32, top-left, just under the header bar.
 constexpr int16_t BL_BTN_W = 171;
 constexpr int16_t BL_BTN_H = 32;
 constexpr int16_t BL_BTN_X = 13;
@@ -56,6 +51,8 @@ lv_obj_t*   s_backlight_btn   = nullptr;
 lv_obj_t*   s_backlight_label = nullptr;
 lv_timer_t* s_hide_timer      = nullptr;
 
+dashboard_view::Widgets s_w{};
+
 class OverlayDimmer : public IDisplay {
 public:
     bool begin() override { return true; }
@@ -66,7 +63,9 @@ public:
         // 100% → fully transparent (nothing over the UI); 10% → nearly opaque.
         const uint8_t alpha = (uint8_t)(((100 - (uint16_t)percent) * 255) / 100);
         lv_obj_set_style_bg_opa(s_dim_overlay, alpha, LV_PART_MAIN);
+#ifdef ARDUINO
         Serial.printf("[BACKLIGHT] %3u%%  overlay alpha=%u\n", percent, alpha);
+#endif
     }
 };
 
@@ -118,7 +117,7 @@ void build_backlight_control() {
     lv_obj_set_style_text_color(s_backlight_label, lv_color_hex(0xC0C0C0), LV_PART_MAIN);
     lv_obj_center(s_backlight_label);
 
-    // The dim layer lives on lv_layer_top() rather than on ui_main: the top
+    // The dim layer lives on lv_layer_top() rather than on the screen: the top
     // layer sits above every screen and survives a screen load, so the chosen
     // level cannot be undone by the UI being rebuilt. It is click-through, so
     // it never swallows a touch meant for the button or the widgets underneath.
@@ -183,48 +182,42 @@ void cycle_backlight() {
 }
 
 void create() {
-    // Builds the widget tree and loads ui_main as the active screen.
     // Must run after lv_init() and after the LVGL display is registered.
-    ui_init();
-
-    // After ui_init(): ui_btnbacklight does not exist until the export has run.
+    s_w = dashboard_view::build(lv_screen_active());
     build_backlight_control();
 }
 
 void update(const Payload& p) {
-    if (ui_lbrpm == nullptr) return;                   // create() not called yet
+    if (s_w.rpm == nullptr) return;                   // create() not called yet
     if (!(p.flags & PAYLOAD_FLAG_DATA_VALID)) return;
 
-    set_if_changed(ui_lbspeed,              "%u",   (unsigned)p.speed_kmh);
-    set_if_changed(ui_lbrpm,                "%u",   (unsigned)p.rpm);
-    set_if_changed(ui_lbfuelrate,           "%.1f", p.fuel_rate_l_per_h);
+    set_if_changed(s_w.speed,              "%u",   (unsigned)payload_speed_kmh_u8(&p));
+    set_if_changed(s_w.rpm,                "%u",   (unsigned)p.rpm);
+    set_if_changed(s_w.fuel_rate,          "%.1f", p.fuel_rate_l_per_h);
     // Economy readout is capped at 99 km/l — anything higher shows "99+".
     if (p.consumption_km_per_l > 99.0f)
-        set_if_changed(ui_lbconsumptionkml, "99+");
+        set_if_changed(s_w.consumption, "99+");
     else
-        set_if_changed(ui_lbconsumptionkml, "%.1f", p.consumption_km_per_l);
-    set_if_changed(ui_lbavgconsumptionkml,  "%.1f", p.avg_consumption_km_per_l);
-    set_if_changed(ui_lbdistancekm,         "%.1f", p.distance_km);
+        set_if_changed(s_w.consumption, "%.1f", p.consumption_km_per_l);
+    set_if_changed(s_w.avg_consumption,  "%.1f", p.avg_consumption_km_per_l);
+    set_if_changed(s_w.distance,         "%.1f", p.distance_km);
     // Trip time is the server's engine-on counter (Payload.trip_time_s), not this
     // client's uptime: it survives the server's deep sleep and resets with the
     // rest of the trip totals, so it stays consistent with TRIP km.
-    set_if_changed(ui_lbtriptime,           "%02u:%02u:%02u",
+    set_if_changed(s_w.trip_time,           "%02u:%02u:%02u",
                    (unsigned)(p.trip_time_s / 3600u),
                    (unsigned)((p.trip_time_s % 3600u) / 60u),
                    (unsigned)(p.trip_time_s % 60u));
-    set_if_changed(ui_lbbarometerpressure,  "%u",   (unsigned)p.baro_pressure_kpa);
-    set_if_changed(ui_lbambientetemperature,"%.0f", p.ambient_temp_c);
     // Boost is derived from MAP - ambient, both whole-kPa, so the data resolves to
     // ~0.01 bar. Two decimals show that; "%.1f" quantised it to 0.1 bar steps and
     // hid all movement below a tenth of a bar.
-    set_if_changed(ui_lbboostpressure,      "%.2f", p.boost_pres);
-    set_if_changed(ui_lbengineload,         "%.0f", p.engine_load_pct);
-    set_if_changed(ui_lbthrottle,           "%.0f", p.throttle_pct);
-    set_if_changed(ui_lbcoolanttemp,        "%.0f", p.coolant_temp_c);
+    set_if_changed(s_w.boost,      "%.2f", p.boost_pres);
+    set_if_changed(s_w.engine_load,         "%.0f", p.engine_load_pct);
+    set_if_changed(s_w.coolant,        "%.0f", p.coolant_temp_c);
     // Coolant status dot: blue < 70 °C (cold), green 70–90 °C (normal),
     // red > 90 °C (hot). Only restyle on a bucket change to avoid needless
     // redraws (flicker) on the single-framebuffer panel.
-    if (ui_iconcoolantstatus != nullptr) {
+    if (s_w.coolant_status != nullptr) {
         int bucket = (p.coolant_temp_c < 70.0f) ? 0
                    : (p.coolant_temp_c > 90.0f) ? 2
                                                 : 1;
@@ -232,27 +225,19 @@ void update(const Payload& p) {
         if (bucket != last_bucket) {
             last_bucket = bucket;
             static const uint32_t kColors[3] = { 0x3B8EE0, 0x29CC5B, 0xE03B3B };
-            lv_obj_set_style_text_color(ui_iconcoolantstatus, lv_color_hex(kColors[bucket]),
+            lv_obj_set_style_text_color(s_w.coolant_status, lv_color_hex(kColors[bucket]),
                                         LV_PART_MAIN | LV_STATE_DEFAULT);
         }
     }
-    // DPF soot had no data behind it: it came from a 0xF3xx Mode 22 DID this
-    // vehicle's ECU rejects, so the field was always 0 and the label always read
-    // "0" — indistinguishable from a genuinely clean filter. PAYLOAD_VERSION 5
-    // removed the field; the label stays (it is a generated SquareLine widget)
-    // and now reads "--", which is the honest value. Give it a real source and
-    // this becomes a set_if_changed on that.
-    set_if_changed(ui_lbdpfsoot,            "%s", "--");
-    // ui_lbaltitude is driven by GPS altitude (set_gps_altitude), not the OBD
-    // barometric altitude — see set_gps_* below.
-    set_if_changed(ui_lbvoltage,            "%.1f", p.module_voltage_v);
+    // The altitude label is GPS altitude (set_gps_altitude), not the OBD baro altitude.
+    set_if_changed(s_w.voltage,            "%.1f", p.module_voltage_v);
 
     // Two gear readouts on the new screen: current AT gear and AT target gear.
     // Both decode with the same gear table — swap the sources here if the labels
     // should show different values.
     char gbuf[8];
-    set_if_changed(ui_lbatgearposition, "%s", gear_text(p.at_gear_pos,    gbuf, sizeof(gbuf)));
-    set_if_changed(ui_lbgearposition,   "%s", gear_text(p.at_target_gear, gbuf, sizeof(gbuf)));
+    set_if_changed(s_w.gear, "%s", gear_text(p.at_gear_pos,    gbuf, sizeof(gbuf)));
+    set_if_changed(s_w.target_gear,   "%s", gear_text(p.at_target_gear, gbuf, sizeof(gbuf)));
 }
 
 // Set a label from a pre-formatted string, skipping no-op writes (every redraw
@@ -271,17 +256,17 @@ void set_gps_datetime(const char* text) {
         memcpy(hhmm, text + 11, 5);   // chars 11..15 = "HH:MM"
         hhmm[5] = '\0';
     }
-    set_text(ui_lbdatetime, hhmm);
+    set_text(s_w.datetime, hhmm);
 }
-void set_gps_altitude(const char* text) { set_text(ui_lbaltitude, text); }
+void set_gps_altitude(const char* text) { set_text(s_w.altitude, text); }
 void set_gps_compass(const char* text) {
-    set_text(ui_lbcompass, text);
+    set_text(s_w.compass, text);
 
     // Derive the 16-point cardinal from the course-over-ground value shown in
-    // ui_lbcompass ("--" when there is no fix). The arrow icon stays static.
+    // s_w.compass ("--" when there is no fix). The arrow icon stays static.
     float deg = 0.0f;
     if (text == nullptr || sscanf(text, "%f", &deg) != 1) {
-        set_text(ui_lbcompasscardial, "--");
+        set_text(s_w.compass_cardinal, "--");
         return;
     }
     deg = fmodf(deg, 360.0f);                   // normalise to [0, 360)
@@ -292,10 +277,10 @@ void set_gps_compass(const char* text) {
         "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
         "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW" };
     int idx = ((int)lroundf(deg / 22.5f)) % 16;
-    set_text(ui_lbcompasscardial, kCardinals[idx]);
+    set_text(s_w.compass_cardinal, kCardinals[idx]);
 }
-void set_ambient_temperature(const char* text) { set_text(ui_lbambienttemperature, text); }
-void set_humidity(const char* text) { set_text(ui_lbhumidity, text); }
+void set_ambient_temperature(const char* text) { set_text(s_w.cabin_temp, text); }
+void set_humidity(const char* text) { set_text(s_w.humidity, text); }
 
 /** Show v with one decimal, or "--" when it is NAN (sensor absent / link down). */
 static void set_axis(lv_obj_t* label, float v) {
@@ -304,24 +289,22 @@ static void set_axis(lv_obj_t* label, float v) {
 }
 
 void set_imu(float ax, float ay, float az, float gx, float gy, float gz) {
-    if (ui_lbxaxis == nullptr) return;   // create() not called yet
-    set_axis(ui_lbxaxis,     ax);
-    set_axis(ui_lbyaxis,     ay);
-    set_axis(ui_lbzaxis,     az);
-    set_axis(ui_lbgyroxaxis, gx);
-    set_axis(ui_lbgyroyaxis, gy);
-    set_axis(ui_lbgyrozaxis, gz);
+    LV_UNUSED(gx); LV_UNUSED(gy); LV_UNUSED(gz);  // the layout has no gyro readout
+    if (s_w.axis_x == nullptr) return;   // create() not called yet
+    set_axis(s_w.axis_x,     ax);
+    set_axis(s_w.axis_y,     ay);
+    set_axis(s_w.axis_z,     az);
     // Net linear acceleration magnitude (m/s^2). The server removes gravity from
     // each axis, so this reads ~0 at rest and rises only under real motion.
-    set_axis(ui_lbaceleration, sqrtf(ax * ax + ay * ay + az * az));
+    set_axis(s_w.acceleration, sqrtf(ax * ax + ay * ay + az * az));
 }
 
 void set_server_status(bool online) {
-    if (ui_lbserverstatus == nullptr) return;
+    if (s_w.server_status == nullptr) return;
     // Only recolour the status indicator (its text is left as designed):
     // green when ONLINE, red when OFFLINE.
     lv_obj_set_style_text_color(
-        ui_lbserverstatus,
+        s_w.server_status,
         online ? lv_color_hex(0x29CC5B) : lv_color_hex(0xE03B3B),
         LV_PART_MAIN | LV_STATE_DEFAULT);
 }

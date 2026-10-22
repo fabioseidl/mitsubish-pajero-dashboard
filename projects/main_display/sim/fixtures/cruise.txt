@@ -1,0 +1,26 @@
+# Highway cruise, warm engine, GPS fix; backlight readout already auto-hidden.
+speed=112
+rpm=2150
+gear=5
+target_gear=5
+fuel_rate=9.4
+consumption=11.9
+avg_consumption=10.7
+distance=184.3
+trip_time_s=7520
+boost=0.84
+load=46
+coolant=86
+voltage=14.2
+ambient=27
+ax=0.3
+ay=-0.1
+az=0.0
+env_temp=24.5
+humidity=62
+gps_time=2026-10-16 14:35:00
+altitude=812
+course=47
+online=1
+elapsed_ms=4000
+brightness=100

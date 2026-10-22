@@ -122,7 +122,7 @@ void GlassScreenController::flushCb(lv_display_t* disp, const lv_area_t* area, u
 void GlassScreenController::onPayloadReceived(const Payload& payload) {
     // Runs in the ESP-NOW callback: just record, let tick() touch the widgets.
     // LVGL is not reentrant and must only be driven from the loop task.
-    speed_kmh_ = payload.speed_kmh;
+    speed_kmh_ = payload_speed_kmh_u8(&payload);
 }
 
 void GlassScreenController::onServerStatusChanged(bool online) {

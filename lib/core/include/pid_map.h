@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
+#include "payload.h"   // PAYLOAD_BODY_* / PAYLOAD_CLIMATE_* masks for the decoders
 
 typedef enum {
     FORMULA_LINEAR,
@@ -110,21 +111,87 @@ typedef struct {
 #define PID_M22_INJ_COR_CYL3     0xB8u  // Injector correction cyl 3
 #define PID_M22_INJ_COR_CYL4     0xB9u  // Injector correction cyl 4
 //
-// Mitsubishi advanced PIDs confirmed for the Pajero IV 3.2 DI-D (4M41)
+// Mitsubishi advanced PIDs confirmed for the Pajero Sport II 3.2 DI-D (4M41)
 // (see projects/sniffer/assets/MITSUBISHI_ADVANCED_PIDS.md)
 #define PID_M22_FUEL_TEMP        0xBAu  // Fuel temperature (°C), DID 0x20F2
 #define PID_M22_FAN_DUTY         0xBBu  // Cooling fan duty (%),  DID 0x2151
 
 // ---------- Free-running broadcast frames (no request / response) ----------
-// Confirmed on the Pajero IV 4M41 bus by passive capture (projects/sniffer):
+// Confirmed on the Pajero Sport II 4M41 bus by passive capture (projects/sniffer):
 //   CAN 0x608 — injected fuel quantity in D5,D6 (raw 16-bit); reads 0 on overrun.
+//               D0 = coolant temperature, (D0 - 40) °C, confirmed on this vehicle
+//               against the gauge and the Mode 01 0x05 reading.
 //   CAN 0x218 — gear in D2: low nibble = current gear, high nibble = target.
 //               Codes: 0x0=N, 0x1..0x5 = forward gears, 0xB=R, 0xD=P.
-// The gear feeds the existing AT slots PID_M22_AT_GEAR_POS / _TARGET_GEAR; the
-// fuel quantity gets its own slot below and drives DerivedCalculator.
+//   CAN 0x215 — vehicle speed in D0,D1 (1/128 km/h); D2,D3 = distance counter.
+//               Confirmed on this vehicle against the dash speedometer with the
+//               sniffer's live bus monitor (projects/sniffer/web).
+//   CAN 0x424 — ETACS body control. Low beam, high beam, both turn signals and
+//               the two door bits confirmed on this vehicle by a lamp/door sweep
+//               on the live bus monitor. Only the position-lamp bit in the same
+//               frame is still unconfirmed — see the mask list below.
+//   CAN 0x445 — auto A/C: fan speed, vent routing, recirculation, A/C on and the
+//               temperature set point in D0, all confirmed on this vehicle by a
+//               dial sweep watched on the live bus monitor.
+// The gear feeds the existing AT slots PID_M22_AT_GEAR_POS / _TARGET_GEAR; speed
+// feeds PID_SPEED (0x0D) and coolant temperature PID_COOLANT_TEMP (0x05)
+// directly, which is why neither needs a slot of its own; the fuel quantity gets
+// its own slot below and drives DerivedCalculator.
 #define CAN_BCAST_FUEL   0x608u
 #define CAN_BCAST_GEAR   0x218u
+#define CAN_BCAST_SPEED  0x215u
+#define CAN_BCAST_ETACS  0x424u
+#define CAN_BCAST_AUTOAC 0x445u
+#define PID_BCAST_CLIMATE_TEMP   0xABu  // CAN 0x445 D0 decoded, see bcast_ac_set_temp
 #define PID_BCAST_FUEL_RAW       0xBCu  // CAN 0x608 (D5<<8|D6), raw injected fuel
+#define PID_BCAST_BODY_FLAGS     0xBDu  // CAN 0x424, PAYLOAD_BODY_* bitfield
+#define PID_BCAST_CLIMATE_FLAGS  0xBEu  // CAN 0x445, PAYLOAD_CLIMATE_* bitfield
+#define PID_BCAST_CLIMATE_FAN    0xBFu  // CAN 0x445 D5 high nibble, fan step 0..15
+
+// 0x424 ETACS bit masks (byte index, then mask within that byte). The six marked
+// confirmed were toggled one at a time and watched on the live bus monitor; the
+// position lamp comes from the MPS2 map and has not been exercised here.
+#define ETACS_D1_HEAD_LAMP_LO    0x20u   // confirmed
+#define ETACS_D1_HEAD_LAMP_HI    0x04u   // confirmed
+#define ETACS_D1_LEFT_TURN       0x02u   // confirmed
+#define ETACS_D1_RIGHT_TURN      0x01u   // confirmed
+#define ETACS_D2_DRIVER_DOOR     0x02u   // confirmed
+#define ETACS_D2_OTHER_DOOR      0x01u   // confirmed
+#define ETACS_D0_POSITION_LAMP   0x04u   // unconfirmed (MPS2)
+// NB: MPS2 declares front/rear fog lamps but never assigns them — those bits are
+// unknown in that project too, so they are deliberately absent here.
+
+// 0x445 auto A/C bit masks. Fan speed, vent routing, recirculation and A/C-on
+// track the climate panel on this vehicle; the mirror-heat bit is MPS2's and has
+// not been exercised here.
+#define AUTOAC_D3_RECIRCULATE    0x02u
+#define AUTOAC_D3_AC_ON          0x08u
+#define AUTOAC_D4_MIRROR_HEAT    0x20u   // unconfirmed (MPS2)
+#define AUTOAC_D5_VENT_UP        0x02u   // face vents
+#define AUTOAC_D5_VENT_DOWN      0x04u   // footwell
+#define AUTOAC_D5_VENT_WIND      0x08u   // windscreen / defrost
+#define AUTOAC_D5_FAN_MASK       0xF0u   // fan speed in the high nibble
+// Set-point temperature is D0, confirmed by a dial sweep on this vehicle:
+//   50  min (LO) — the panel shows no number
+//   64  20 °C, then 2 counts per °C up to 82 = 29 °C
+//   96  30 °C — the last click jumps 14 counts, not 2
+//   98  max (HI)
+// D0 reads like a blend-door target in half-degrees that saturates past the range
+// the panel displays, which is why both ends run away from the 2-counts-per-°C
+// line. The decode below reports what the panel shows, not that raw target.
+#define AUTOAC_D0_TEMP_MIN_RAW   50   // LO / full cold
+#define AUTOAC_D0_TEMP_20C_RAW   64   // first numeric step
+#define AUTOAC_D0_TEMP_29C_RAW   82   // last step of the 2-counts-per-°C run
+#define AUTOAC_D0_TEMP_30C_RAW   96   // the panel's 30
+#define AUTOAC_D0_TEMP_MAX_RAW   98   // HI / full hot
+#define AUTOAC_TEMP_LO           0u    // reported for min / LO
+#define AUTOAC_TEMP_HI           0xFFu // reported for max / HI
+
+// 0x215 distance counter → km. An empirically measured constant (counts per km)
+// taken from the MPS2 dash; not yet re-derived on this truck. To tune it, drive a
+// known distance and divide the counter delta by it. Nothing in projects/server
+// uses it — the session distance is integrated from speed.
+#define BCAST_TRIP_COUNTS_PER_KM  25700.0f
 
 // ---------- Server onboard sensors — DataAggregator slot IDs ----------
 // Read from the Qwiic I2C bus by projects/server's OnboardSensors, not from CAN.
@@ -153,57 +220,23 @@ typedef struct {
 // D5,D6) and 0x218 (gear nibbles in D2) exactly as our own road tests confirmed
 // them above, which is the reason to trust the rest of its map enough to test.
 //
-// STATUS: none of these are confirmed on the Pajero IV (V80 / 4M41) yet, and
+// STATUS: 0x215 (speed), 0x424 (lamps, doors) and 0x445 (climate) graduated to
+// the confirmed section above. None of the frames below are confirmed on the Pajero Sport II (KH8W / 4M41) yet, and
 // nothing in projects/server reads them. They exist here so the sniffer's WATCH
 // mode can decode them on a drive; promote one to a real payload field only
 // after a capture on THIS vehicle agrees with the decode.
 //
 // Frame layouts (all big-endian, D0 = first data byte):
-//   0x215 D0,D1 = speed (1/128 km/h);  D2,D3 = distance counter (16-bit, wraps)
 //   0x236 D0,D1 = steering angle, raw; centre is a per-sensor calibration
 //   0x308 D1,D2 = engine rpm (direct, no scaling)
 //   0x312 D0,D1 = engine torque, ((D0<<8|D1)/4) - 500
-//   0x424 body-control (ETACS): lamps, turn signals, doors — see masks below
-//   0x445 auto A/C: set temp, fan speed, vent routing, recirculation, mirror heat
-#define CAN_BCAST_SPEED  0x215u
 #define CAN_BCAST_STEER  0x236u
 #define CAN_BCAST_RPM    0x308u
 #define CAN_BCAST_TORQUE 0x312u
-#define CAN_BCAST_ETACS  0x424u
-#define CAN_BCAST_AUTOAC 0x445u
-
-// 0x215 distance counter → km. MPS2 calls this an empirically measured constant
-// (counts per km), so it is the first thing to re-derive on our truck: drive a
-// known distance and divide the counter delta by it.
-#define BCAST_TRIP_COUNTS_PER_KM  25700.0f
 
 // 0x236 steering: raw value at the straight-ahead position. MPS2's comment marks
 // this as sensor-calibration dependent, so expect to re-zero it on our vehicle.
 #define BCAST_STEER_CENTRE_RAW    0x1001
-
-// 0x424 ETACS bit masks (byte index, then mask within that byte).
-#define ETACS_D0_POSITION_LAMP   0x04u
-#define ETACS_D1_RIGHT_TURN      0x01u
-#define ETACS_D1_LEFT_TURN       0x02u
-#define ETACS_D1_HEAD_LAMP_HI    0x04u
-#define ETACS_D1_HEAD_LAMP_LO    0x20u
-#define ETACS_D2_OTHER_DOOR      0x01u
-#define ETACS_D2_DRIVER_DOOR     0x02u
-// NB: MPS2 declares front/rear fog lamps but never assigns them — those bits are
-// unknown in that project too, so they are deliberately absent here.
-
-// 0x445 auto A/C bit masks.
-#define AUTOAC_D3_RECIRCULATE    0x02u
-#define AUTOAC_D3_AC_ON          0x08u
-#define AUTOAC_D4_MIRROR_HEAT    0x20u
-#define AUTOAC_D5_VENT_UP        0x02u   // face vents
-#define AUTOAC_D5_VENT_DOWN      0x04u   // footwell
-#define AUTOAC_D5_VENT_WIND      0x08u   // windscreen / defrost
-#define AUTOAC_D5_FAN_MASK       0xF0u   // fan speed in the high nibble
-// Set-point temperature is D0 with an offset; values at or below the floor mean
-// the display shows no numeric set point (A/C off / full-cold).
-#define AUTOAC_D0_TEMP_OFFSET    63
-#define AUTOAC_D0_TEMP_FLOOR     50
 
 // --- Shared decoders. Keep every magic number above in ONE place so the sniffer
 // and the server can never disagree about how a frame is read. Each takes the
@@ -214,8 +247,39 @@ static inline int32_t bcast_steer_angle(const uint8_t* d) { return BCAST_STEER_C
 static inline uint16_t bcast_rpm(const uint8_t* d)        { return (uint16_t)((d[1] << 8) | d[2]); }
 static inline int32_t bcast_torque_nm(const uint8_t* d)   { return (((d[0] << 8) | d[1]) / 4) - 500; }
 static inline uint8_t bcast_ac_fan_speed(const uint8_t* d){ return (uint8_t)((d[5] & AUTOAC_D5_FAN_MASK) >> 4); }
+/** Climate set point in C from a CAN 0x445 frame, or AUTOAC_TEMP_LO / _HI. */
 static inline uint8_t bcast_ac_set_temp(const uint8_t* d) {
-    return (d[0] <= AUTOAC_D0_TEMP_FLOOR) ? 0u : (uint8_t)(d[0] - AUTOAC_D0_TEMP_OFFSET);
+    uint8_t raw = d[0];
+    if (raw >= AUTOAC_D0_TEMP_MAX_RAW)  return AUTOAC_TEMP_HI;
+    if (raw >  AUTOAC_D0_TEMP_29C_RAW)  return 30u;   // only 96 observed in this gap
+    if (raw >= AUTOAC_D0_TEMP_20C_RAW)  return (uint8_t)(20 + (raw - AUTOAC_D0_TEMP_20C_RAW) / 2);
+    return AUTOAC_TEMP_LO;
+}
+
+/** Coolant temperature in C from a CAN 0x608 frame. Caller must have DLC >= 1. */
+static inline float bcast_coolant_temp_c(const uint8_t* d) { return (float)d[0] - 40.0f; }
+
+/** Payload body_flags from a CAN 0x424 frame. Caller must have DLC >= 3. */
+static inline uint8_t bcast_body_flags(const uint8_t* d) {
+    uint8_t f = 0;
+    if (d[1] & ETACS_D1_HEAD_LAMP_LO) f |= PAYLOAD_BODY_HEAD_LAMP_LO;
+    if (d[1] & ETACS_D1_HEAD_LAMP_HI) f |= PAYLOAD_BODY_HEAD_LAMP_HI;
+    if (d[1] & ETACS_D1_LEFT_TURN)    f |= PAYLOAD_BODY_LEFT_TURN;
+    if (d[1] & ETACS_D1_RIGHT_TURN)   f |= PAYLOAD_BODY_RIGHT_TURN;
+    if (d[2] & ETACS_D2_DRIVER_DOOR)  f |= PAYLOAD_BODY_DRIVER_DOOR;
+    if (d[2] & ETACS_D2_OTHER_DOOR)   f |= PAYLOAD_BODY_OTHER_DOOR;
+    return f;
+}
+
+/** Payload climate_flags from a CAN 0x445 frame. Caller must have DLC >= 6. */
+static inline uint8_t bcast_climate_flags(const uint8_t* d) {
+    uint8_t f = 0;
+    if (d[3] & AUTOAC_D3_AC_ON)       f |= PAYLOAD_CLIMATE_AC_ON;
+    if (d[3] & AUTOAC_D3_RECIRCULATE) f |= PAYLOAD_CLIMATE_RECIRC;
+    if (d[5] & AUTOAC_D5_VENT_UP)     f |= PAYLOAD_CLIMATE_VENT_FACE;
+    if (d[5] & AUTOAC_D5_VENT_DOWN)   f |= PAYLOAD_CLIMATE_VENT_FEET;
+    if (d[5] & AUTOAC_D5_VENT_WIND)   f |= PAYLOAD_CLIMATE_VENT_WIND;
+    return f;
 }
 
 static const PidDefinition PID_MAP[] = {

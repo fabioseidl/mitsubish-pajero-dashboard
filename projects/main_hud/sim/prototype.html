@@ -1,0 +1,109 @@
+<!doctype html>
+<!--
+  main_hud prototype — the design reference HudUi is built from.
+
+  Rules (see the lvgl-preview skill): fixed px canvas, LVGL-mappable CSS only,
+  fonts limited to the lv_font_conv sizes listed below. State comes from the
+  query string with the same keys as sim/fixtures/*.txt.
+
+  Fonts in flash: Roboto Bold 260 (digits and '-' only), Roboto Bold 28.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="lvgl-screen" content="480x320">
+<title>main_hud prototype</title>
+<style>
+  @font-face {
+    font-family: "Roboto LVGL";
+    src: url("../../../ui/client_simple_hud/assets/Roboto-Bold.ttf");
+    font-weight: 700;
+  }
+  :root {
+    --bg: #000000;
+    --speed: #ffffff;
+    --speed-offline: #505050;
+    --btn-bg: #202020;
+    --btn-border: #606060;
+    --muted: #c0c0c0;
+  }
+  html, body { margin: 0; background: #111; }
+  body { font-family: "Roboto LVGL"; font-weight: 700; }
+
+  #screen {
+    position: relative;
+    width: 480px;
+    height: 320px;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  /* LVGL puts the digit top at y=16; CSS centres the glyph 4 px higher in a 191 px line box. */
+  #speed {
+    position: absolute;
+    top: 20px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 260px;
+    line-height: 191px;
+    color: var(--speed);
+  }
+  #speed.offline { color: var(--speed-offline); }
+
+  .btn {
+    position: absolute;
+    bottom: 8px;
+    box-sizing: border-box;
+    width: 74px;
+    height: 62px;
+    background: var(--btn-bg);
+    border: 1px solid var(--btn-border);
+    border-radius: 8px;
+    color: var(--muted);
+    font-size: 28px;
+    line-height: 33px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #down { left: 8px; }
+  #up   { right: 8px; }
+
+  /* Text middle on the button row's middle: 320 - 8 - 62/2 = 281. */
+  #pct {
+    position: absolute;
+    top: calc(281px - 33px / 2);
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 28px;
+    line-height: 33px;
+    color: var(--muted);
+  }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div id="screen">
+  <div id="speed">87</div>
+  <div class="btn row" id="down">-</div>
+  <div class="row" id="pct">50%</div>
+  <div class="btn row" id="up">+</div>
+</div>
+<script>
+  // Same keys and defaults as sim/sim_main.cpp's SimState.
+  const q = new URLSearchParams(location.search);
+  const num = (k, d) => (q.has(k) ? Number(q.get(k)) : d);
+  const online = num("online", 1) !== 0;
+
+  const speed = document.getElementById("speed");
+  speed.textContent = online ? String(num("speed", 0)) : "--";
+  speed.classList.toggle("offline", !online);
+  document.getElementById("pct").textContent = num("brightness", 50) + "%";
+  for (const el of document.querySelectorAll(".row")) {
+    el.classList.toggle("hidden", num("buttons", 1) === 0);
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+# Boot screen, before the fade to the HUD.
+elapsed_ms=0

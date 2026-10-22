@@ -1,0 +1,25 @@
+# Widest text every label can show, to catch overlaps and clipping.
+speed=188
+rpm=4850
+gear=11
+target_gear=3
+fuel_rate=38.6
+consumption=120
+avg_consumption=99.9
+distance=1234.5
+trip_time_s=359999
+boost=1.92
+load=100
+coolant=104
+voltage=14.8
+ax=-12.4
+ay=10.8
+az=-9.9
+env_temp=-10.5
+humidity=100
+gps_time=2026-10-16 23:59:00
+altitude=4321
+course=337
+online=1
+elapsed_ms=4000
+brightness=100

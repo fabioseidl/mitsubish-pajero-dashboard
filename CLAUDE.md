@@ -12,13 +12,15 @@ only what is true everywhere.
 | `payload-protocol` | `Payload`, `pid_map.h`, ESP-NOW — the contract between them |
 | `host-tests` | The Unity suites under `test/host` |
 | `can-reverse-engineering` | `projects/sniffer`: finding and confirming new vehicle data |
+| `lvgl-preview` | HTML prototype → hand-written LVGL → native simulator, diffed pixel-by-pixel |
 
 Slash commands: `/build <project>`, `/flash <project>`, `/test`.
 
 ## What this is
 
-A distributed dashboard for a Mitsubishi Pajero Dakar (Pajero IV 3.2 DI-D, 4M41
-diesel). One ESP32 reads OBD-II data from the vehicle CAN bus and broadcasts a
+A distributed dashboard for a Mitsubishi Pajero Dakar (Pajero Sport II, KH8W,
+3.2 DI-D, 4M41 diesel) — Brazilian market, 2016/2017.  Triton-based body-on-frame;
+not the full-size Pajero IV (V80/V90), which shares only the engine. One ESP32 reads OBD-II data from the vehicle CAN bus and broadcasts a
 packed `Payload` struct at 10 Hz over ESP-NOW; several ESP32 clients receive it
 and render it with LVGL.
 
@@ -32,18 +34,19 @@ ESP-NOW ISR → ESPNowReceiver → ServerConnectionMonitor + IScreenController �
 ## Layout
 
 ```
-lib/core/            Shared by every node: payload.h, pid_map.h, ESP-NOW, IDisplay,
-                     brightness, connection monitor
+lib/core/            Shared by every node: payload.h, pid_map.h, dtc.h, ESP-NOW,
+                     IDisplay, brightness, connection monitor
 projects/
   server/            Production server — ESP32-S3 + MCP2515, reads CAN, broadcasts
   server_emulator/   Same broadcast from synthetic data (ESP-IDF) — client dev without the car
-  main_display/      Waveshare 7" 1024×600 RGB dashboard + GPS/IMU/environment sensors
-  main_hud/          Guition 3.5" QSPI portrait display — speed only
+  main_display/      Waveshare 7" 1024×600 RGB dashboard + GPS/IMU/environment sensors; sim/ = native LVGL simulator
+  main_hud/          Guition 3.5" QSPI portrait display — speed only; sim/ = native LVGL simulator
   glass_display/     Waveshare ESP32-C6 1.47" — speed only
-  client_simple_hud/ CYD 2.4" SPI HUD, LDR auto-brightness
-  sniffer/           CAN sniffer + DBC + monitor.py for reverse engineering
+  client_simple_hud/ CYD 2.4" SPI HUD, LDR auto-brightness; sim/ = native LVGL simulator
+  sniffer/           CAN sniffer + DBC + monitor.py + web/ live bus monitor
+  diagnostic/        Standalone OBD-II fault scanner — Wi-Fi AP + phone web page
 test/host/           Unity host tests: test_server/, test_lib/, mocks/
-ui/                  SquareLine Studio projects and source assets
+ui/                  Source assets (TTF, PNG) + convert_assets.sh → projects/*/src/ui_{font,img}_*.c
 ```
 
 ## Commands
@@ -89,7 +92,7 @@ Then set a real 16-byte PMK — the same value on every node.
 ## Invariants
 
 - **`Payload` is a packed struct with a `static_assert` on its exact size**
-  (currently 189 bytes; ESP-NOW's broadcast ceiling is 250). Change a field →
+  (currently 194 bytes; ESP-NOW's broadcast ceiling is 250). Change a field →
   update the assert, bump `PAYLOAD_VERSION`, update `PayloadBuilder` *and* the
   emulator, update the field table in `test/host/test_server/test_payload_coverage.cpp`
   (it fails until every byte is accounted for), and reflash every client. See the
@@ -108,8 +111,10 @@ Then set a real 16-byte PMK — the same value on every node.
 - **LVGL is single-threaded.** Copy the payload in the ESP-NOW callback, apply it
   in `tick()`. Never touch a widget from the receive callback.
 - **Pin numbers belong in `include/pin_config.h`**, never inline in code.
-- **Generated files are never hand-edited** — SquareLine exports (`ui/`, `src/ui/`)
-  and `lv_font_conv` output (`ui_font_*.c`). Adapt them from a bridge module.
+- **Converted assets are never hand-edited** — `ui_font_*.c` / `ui_img_*.c` come
+  from `ui/convert_assets.sh` (`lv_font_conv`, LVGL's `LVGLImage.py`); add a new
+  font or image there and re-run it. Screens are HTML prototypes turned into
+  hand-written LVGL views (see the `lvgl-preview` skill); there is no SquareLine.
 - **Run the host tests before flashing.** They are the only verification that does
   not need the vehicle.
 

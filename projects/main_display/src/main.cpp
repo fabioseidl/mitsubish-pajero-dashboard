@@ -27,7 +27,7 @@
 #include "espnow_receiver.h"
 #include "server_connection_monitor.h"
 #include "security_config.h"   // PMK_KEY (gitignored — created from .example)
-#include "app_ui.h"            // SquareLine Studio UI bridge (src/ui/, LVGL 9 export)
+#include "app_ui.h"            // dashboard UI bridge (dashboard_view + data formatting)
 #include "gps.h"               // u-blox NEO-6M on UART2 (NMEA → serial console)
 #include "gt911.h"             // GT911 capacitive touch on the shared I2C bus
 
@@ -454,7 +454,7 @@ static void app_init() {
 
   app_ui::create();
   app_ui::set_server_status(false);   // start OFFLINE until the first payload
-  DBG("[lvgl] SquareLine UI created (1024x600)");
+  DBG("[lvgl] dashboard UI created (1024x600)");
 
   // ── ESP-NOW link to the server ──
   g_conn_monitor.setStatusChangeCallback(on_status_change);

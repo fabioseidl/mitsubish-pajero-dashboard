@@ -1,0 +1,4 @@
+# Mid-fade from boot to HUD: the sim runs ~330 ms past elapsed_ms, landing ~100 ms into the 200 ms fade.
+speed=0
+online=0
+elapsed_ms=2800

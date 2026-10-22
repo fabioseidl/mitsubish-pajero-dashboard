@@ -131,7 +131,7 @@ void update(const Payload& p) {
     if (w.speed == nullptr) return;            // create() not called yet
     if (!(p.flags & PAYLOAD_FLAG_DATA_VALID)) return;
 
-    set_if_changed(w.speed,           "%u",   (unsigned)p.speed_kmh);
+    set_if_changed(w.speed,           "%u",   (unsigned)payload_speed_kmh_u8(&p));
     set_if_changed(w.rpm,             "%u",   (unsigned)p.rpm);
     set_if_changed(w.intake_air_temp, "%.0f", p.intake_air_temp_c);
     set_if_changed(w.consumption,     "%.1f", p.consumption_km_per_l);
