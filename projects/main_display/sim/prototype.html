@@ -1,35 +1,51 @@
 <!doctype html>
 <!--
-  main_display prototype — the design reference src/dashboard_view.cpp is built from.
+  main_display prototype v2 — panel-and-tile layout, not yet implemented in LVGL.
 
   Rules (see the lvgl-preview skill): fixed px canvas, LVGL-mappable CSS only,
-  fonts limited to the lv_font_conv sizes below. State comes from the query
-  string with the same keys as sim/fixtures/*.txt.
+  fonts limited to the lv_font_conv sizes already in flash. State comes from the
+  query string with the same keys as sim/fixtures/*.txt.
 
-  Positions mirror LVGL's LV_ALIGN_CENTER: each label is centred on
-  (512 + --x, 300 + --y), the dx/dy passed to label() in dashboard_view.cpp.
+  Geometry is LV_ALIGN_TOP_LEFT: every panel is an lv_obj at (left, top) with
+  pad 0 and border 1, so its children sit at (left, top) inside the border.
 
   Fonts in flash: Roboto Bold 120 / 60, Roboto Regular 50 / 28 / 20 (ASCII),
-  Montserrat Medium 16 (LVGL built-in).
+  Montserrat Medium 16 (LVGL built-in, includes U+00B0 for the °C units). New for v2: Material Design Icons
+  (Pictogrammers Free License) at 24 (-r 0xF050F,0xF0717,0xF0210,0xF0D61,0xF0482,0xF006A,
+  0xF0731,0xF0734,0xF01FA,0xF0C4A,0xF0C4C,0xF0B6B,0xF029A,0xF07B1,0xF0298,0xF0462,
+  0xF051B,0xF03C8,0xF0D43,0xF010C,0xF0238,0xF02F5)
+  and 16 (-r 0xF0731), not yet in ui/convert_assets.sh.
+
+  Keys not yet parsed by sim_main.cpp: iat, cat, mil, dtc, body, climate, fan,
+  set_temp (body / climate are the raw Payload bitmasks).
 -->
 <html>
 <head>
 <meta charset="utf-8">
 <meta name="lvgl-screen" content="1024x600">
-<title>main_display prototype</title>
+<title>main_display prototype v2</title>
 <style>
   @font-face { font-family: "Roboto LVGL"; src: url("../../../ui/main_display/assets/Roboto-Regular.ttf"); font-weight: 400; }
   @font-face { font-family: "Roboto LVGL"; src: url("../../../ui/main_display/assets/Roboto-Bold.ttf");    font-weight: 700; }
   @font-face { font-family: "Montserrat LVGL"; src: url("../../../ui/main_display/assets/Montserrat-Medium.ttf"); }
+  @font-face { font-family: "MDI LVGL"; src: url("../../../ui/main_display/assets/MaterialDesignIcons.ttf"); }
 
   :root {
-    --text: #fafafa;          /* LVGL default dark theme text */
+    --text: #fafafa;
+    --muted: #8a9099;         /* titles and units */
+    --dim: #3a3f47;           /* inactive chips and gear cells */
+    --panel: #0f1114;
+    --panel-top: #15181d;
+    --panel-bot: #0c0e11;
+    --line: #23272e;
+    --track: #1d2026;         /* bar background */
+    --redline: #4a1a1c;       /* RPM track past 4000 */
     --online: #29cc5b;
     --offline: #e03b3b;
     --cold: #3b8ee0;
+    --warn: #f0a020;
     --btn-bg: #202020;
     --btn-border: #606060;
-    --muted: #c0c0c0;
   }
   html, body { margin: 0; background: #111; }
 
@@ -38,42 +54,105 @@
     width: 1024px;
     height: 600px;
     overflow: hidden;
-    background: #000 url("../../../ui/main_display/assets/background.png") no-repeat;
+    background: #000;
     color: var(--text);
     font-family: "Roboto LVGL";
   }
 
-  /* LV_ALIGN_CENTER: a zero-size anchor at the centre point; flex centres the text on it. */
-  .c {
-    position: absolute;
-    left: calc(512px + var(--x) * 1px);
-    top: calc(300px + var(--y) * 1px);
-    width: 0;
-    height: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    white-space: nowrap;
-  }
-  .c > span { position: relative; top: var(--nudge); }
-
-  /*
-   * Font roles. line-height is the lv_font line_height; --nudge moves the CSS
-   * baseline onto LVGL's (box top + line_height - base_line).
-   */
+  /* Labels: line-height is the lv_font line_height; --nudge puts the CSS baseline on LVGL's. */
+  .t { position: absolute; white-space: nowrap; }
+  .t > span, .chip > span { position: relative; top: var(--nudge); }
   .hero    { font-size: 120px; font-weight: 700; line-height: 127px; --nudge: -4px; }
   .large   { font-size: 60px;  font-weight: 700; line-height: 63px;  --nudge: -3px; }
   .value   { font-size: 50px;  font-weight: 400; line-height: 54px;  --nudge: -2px; }
   .small   { font-size: 28px;  font-weight: 400; line-height: 31px;  --nudge: -1px; }
-  .title   { font-size: 20px;  font-weight: 400; line-height: 22px;  --nudge: -1px; }
+  .title   { font-size: 20px;  font-weight: 400; line-height: 22px;  --nudge: -1px; color: var(--muted); }
   .caption { font-family: "Montserrat LVGL"; font-size: 16px; line-height: 18px; --nudge: 0px; }
+  .center  { left: 0; right: 0; text-align: center; }
 
-  #temp-icon { position: absolute; left: calc(512px + 213px - 12px); top: calc(300px - 276px - 12px); }  /* 24x24, centred */
+  /* Panels: vertical two-stop gradient (bg_grad_dir VER) for depth; --panel is its colour mid-height. */
+  .panel {
+    position: absolute;
+    box-sizing: border-box;
+    background: linear-gradient(180deg, var(--panel-top), var(--panel-bot));
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
 
-  /* Backlight readout and dimmer live on LVGL's top layer, above the dashboard. */
+  /* lv_bar: .bar is the main part, .ind the indicator. */
+  .bar { position: absolute; background: var(--track); border-radius: 4px; overflow: hidden; }
+  .ind { height: 100%; width: 0; border-radius: 4px; background: var(--muted); }
+
+  /* Header */
+  #hdr-line { position: absolute; left: 0; top: 48px; width: 1024px; height: 1px; background: var(--line); }
+  #link-dot { position: absolute; left: 16px; top: 18px; width: 12px; height: 12px; border-radius: 6px; }
+  /* Header pills: flex rows of icon glyphs and labels, each lit by colour; unlit = --dim. */
+  .pill {
+    position: absolute;
+    top: 6px;
+    box-sizing: border-box;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    display: flex; align-items: center; gap: 10px;
+    color: var(--dim);
+  }
+  .pill > .t { position: static; }
+  .icon  { font-family: "MDI LVGL"; font-size: 24px; line-height: 24px; --nudge: 0px; color: var(--dim); }
+
+  /* Status pill: turn signals bracket engine fault, head lamps, doors. */
+  #status { left: 130px; }
+  .sep { width: 1px; height: 20px; background: var(--line); }
+
+  /* Climate pill: cabin temperature | A/C, set point, fan, defrost, vent mode, recirculation. */
+  #climate { right: 16px; }
+  #cabin_temp { color: var(--text); }
+  .arrow { font-family: "MDI LVGL"; font-size: 16px; line-height: 16px; --nudge: 0px; color: var(--cold); }
+  #vent { position: relative; width: 40px; height: 24px; }
+  #fan { display: flex; align-items: flex-end; gap: 2px; height: 18px; }
+  #fan > i { width: 4px; border-radius: 1px; background: var(--dim); }
+  #fan > i.lit { background: var(--cold); }
+
+  /* Gear strip: P R N 1-5, current filled, target outlined. */
+  #gears { position: absolute; left: 18px; top: 240px; display: flex; gap: 6px; }
+  .cell {
+    box-sizing: border-box;
+    width: 36px; height: 48px;
+    border-radius: 8px;
+    border: 2px solid var(--track);
+    background: var(--track);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--dim);
+  }
+  .cell.cur { background: var(--text); border-color: var(--text); color: #000; }
+  .cell.tgt { border-color: var(--warn); color: var(--warn); }
+
+  /* Tiles: optional status strip on the left edge, title + icon, value + unit. */
+  .tile { width: 188px; height: 96px; }
+  .strip { position: absolute; left: 0; top: 14px; width: 4px; height: 66px; border-radius: 0 2px 2px 0; }
+  .tile > .icon { right: 12px; top: 8px; color: var(--dim); }
+  /* Value + unit: the unit is LV_ALIGN_OUT_RIGHT_BOTTOM of the value, lifted onto its baseline. */
+  .tval { position: absolute; left: 14px; top: 34px; display: flex; align-items: flex-end; gap: 6px; }
+  .tval > .t { position: static; }
+  .unit { color: var(--muted); padding-bottom: 10px; }
+
+  /*
+   * Compass card, heading-up: an lv_scale in LV_SCALE_MODE_ROUND_INNER, 360° range,
+   * rotated by -heading each update. The scale draws its own radial ticks (SVG here)
+   * and upright labels; the disk, lubber mark and centre readout stay fixed.
+   */
+  #dial  { position: absolute; left: 31px; top: 58px; width: 236px; height: 236px; box-sizing: border-box;
+           border-radius: 50%; border: 1px solid var(--line); background: #0a0c0f; }
+  #scale { position: absolute; left: 31px; top: 58px; width: 236px; height: 236px; }
+  #scale-labels > .a { position: absolute; width: 0; height: 0; display: flex; align-items: center; justify-content: center; }
+  #lubber { position: absolute; left: 147px; top: 50px; width: 4px; height: 18px; border-radius: 2px; background: var(--warn); }
+  .card-off { opacity: 0.3; }
+
+  /* Backlight readout and dimmer live on LVGL's top layer; the readout covers the chips while shown. */
   #bl-btn {
     position: absolute;
-    left: 13px; top: 52px;
+    left: 426px; top: 8px;
     box-sizing: border-box;
     width: 171px; height: 32px;
     background: var(--btn-bg);
@@ -89,127 +168,250 @@
 </head>
 <body>
 <div id="screen">
-  <!-- Header bar -->
-  <div class="c hero"  style="--x:482;--y:-303"><span id="server_status">.</span></div>
-  <div class="c title" style="--x:-333;--y:-272"><span>PAJERO DAKAR 3.2 DI-D</span></div>
-  <img id="temp-icon" src="../../../ui/main_display/assets/icon_temperature.png" alt="">
-  <div class="c small" style="--x:278;--y:-273"><span id="cabin_temp">0 C</span></div>
-  <div class="c small" style="--x:392;--y:-273"><span id="datetime">00:00</span></div>
+  <!-- Header: link + clock | status pill | climate pill -->
+  <div id="link-dot"></div>
+  <div class="t small" style="left:38px;top:8px"><span id="datetime">00:00</span></div>
+  <div id="status" class="pill">
+    <div class="t icon" id="turn-l"><span>&#xF0731;</span></div>
+    <div class="sep"></div>
+    <div class="t icon" id="i-engine"><span>&#xF01FA;</span></div>
+    <div class="t small hidden" id="dtc"><span id="dtc_count">0</span></div>
+    <div class="t icon" id="i-lamp"><span id="lamp">&#xF0C4A;</span></div>
+    <div class="t icon" id="i-door"><span>&#xF0B6B;</span></div>
+    <div class="sep"></div>
+    <div class="t icon" id="turn-r"><span>&#xF0734;</span></div>
+  </div>
+  <div id="climate" class="pill">
+    <div class="t icon" style="color:var(--muted)"><span>&#xF050F;</span></div>
+    <div class="t small"><span id="cabin_temp">0 C</span></div>
+    <div class="sep"></div>
+    <div class="t icon" id="i-ac"><span>&#xF0717;</span></div>
+    <div class="t small" id="set-temp"><span id="set_temp">--</span></div>
+    <div class="t icon" id="i-fan"><span>&#xF0210;</span></div>
+    <div id="fan"><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="t icon" id="i-defrost"><span>&#xF0D61;</span></div>
+    <!-- Vent mode: seated figure facing right, arrows from the dash at face / feet height -->
+    <div id="vent">
+      <div class="t icon" id="i-seat" style="left:0;top:0"><span>&#xF0482;</span></div>
+      <div class="t arrow" id="v-face" style="left:22px;top:-3px"><span>&#xF0731;</span></div>
+      <div class="t arrow" id="v-feet" style="left:25px;top:11px"><span>&#xF0731;</span></div>
+    </div>
+    <div class="t icon" id="i-rec"><span>&#xF006A;</span></div>
+  </div>
+  <div id="hdr-line"></div>
 
-  <!-- Speed tile -->
-  <div class="c hero"  style="--x:-360;--y:-114"><span id="speed">0</span></div>
-  <div class="c large" style="--x:-147;--y:-124"><span id="compass_cardinal">N</span></div>
-  <div class="c small" style="--x:-146;--y:-66"><span id="compass">0</span></div>
+  <!-- Engine panel: RPM with redline, boost / load / throttle bars -->
+  <div class="panel" style="left:16px;top:60px;width:300px;height:308px">
+    <div class="t title" style="left:16px;top:14px"><span>RPM</span></div>
+    <div class="t large" style="left:16px;top:34px"><span id="rpm">0</span></div>
+    <!-- Redline 4000-4500 tinted into the track: bg_grad HOR, main_stop = grad_stop = 227 (4000/4500 of 255) -->
+    <div class="bar" style="left:16px;top:106px;width:266px;height:18px;background:linear-gradient(90deg,var(--track) 88.9%,var(--redline) 88.9%)"><div class="ind" id="rpm-bar"></div></div>
 
-  <!-- RPM tile -->
-  <div class="c title" style="--x:42;--y:-178"><span>RPM</span></div>
-  <div class="c large" style="--x:253;--y:-110"><span id="rpm">0</span></div>
-  <div class="c hero"  style="--x:461;--y:-141"><span id="gear">-</span></div>
-  <div class="c value" style="--x:473;--y:-59"><span id="target_gear">-</span></div>
+    <div class="t title" style="left:16px;top:154px"><span>BOOST</span></div>
+    <div class="t small" style="right:16px;top:148px"><span id="boost">0</span></div>
+    <div class="bar" style="left:16px;top:182px;width:266px;height:8px"><div class="ind" id="boost-bar" style="background:var(--cold)"></div></div>
 
-  <!-- Middle row -->
-  <div class="c title" style="--x:-375;--y:10"><span>ALTITUDE</span></div>
-  <div class="c value" style="--x:-380;--y:56"><span id="altitude">0</span></div>
-  <div class="c title" style="--x:-130;--y:10"><span>HUMIDITY %</span></div>
-  <div class="c value" style="--x:-130;--y:56"><span id="humidity">0</span></div>
-  <div class="c title" style="--x:135;--y:10"><span>ACCELERATION</span></div>
-  <div class="c value" style="--x:132;--y:56"><span id="acceleration">0</span></div>
-  <div class="c title" style="--x:385;--y:10"><span>ROTATION</span></div>
-  <div class="c caption" style="--x:289;--y:55"><span>AXIS</span></div>
-  <div class="c small" style="--x:346;--y:55"><span id="axis_x">0</span></div>
-  <div class="c small" style="--x:403;--y:55"><span id="axis_y">0</span></div>
-  <div class="c small" style="--x:462;--y:55"><span id="axis_z">0</span></div>
+    <div class="t title" style="left:16px;top:208px"><span>LOAD</span></div>
+    <div class="t small" style="right:16px;top:202px"><span id="engine_load">0</span></div>
+    <div class="bar" style="left:16px;top:236px;width:266px;height:8px"><div class="ind" id="load-bar"></div></div>
 
-  <!-- Third row -->
-  <div class="c title" style="--x:-375;--y:110"><span>AVG km/L</span></div>
-  <div class="c value" style="--x:-380;--y:159"><span id="avg_consumption">0</span></div>
-  <div class="c small" style="--x:-297;--y:164"><span id="consumption">0</span></div>
-  <div class="c title" style="--x:-130;--y:110"><span>FUEL L/h</span></div>
-  <div class="c value" style="--x:-130;--y:158"><span id="fuel_rate">0</span></div>
-  <div class="c title" style="--x:135;--y:110"><span>BOOST bar</span></div>
-  <div class="c value" style="--x:128;--y:159"><span id="boost">0</span></div>
-  <div class="c title" style="--x:385;--y:110"><span>LOAD %</span></div>
-  <div class="c value" style="--x:381;--y:159"><span id="engine_load">0</span></div>
+    <div class="t title" style="left:16px;top:262px"><span>THROTTLE</span></div>
+    <div class="t small" style="right:16px;top:256px"><span id="throttle">0</span></div>
+    <div class="bar" style="left:16px;top:290px;width:266px;height:8px"><div class="ind" id="throttle-bar"></div></div>
+  </div>
 
-  <!-- Bottom row -->
-  <div class="c title" style="--x:-375;--y:213"><span>TRIP km</span></div>
-  <div class="c value" style="--x:-380;--y:260"><span id="distance">0</span></div>
-  <div class="c title" style="--x:-130;--y:215"><span>TRIP Time</span></div>
-  <div class="c value" style="--x:-130;--y:262"><span id="trip_time">0</span></div>
-  <div class="c title" style="--x:135;--y:215"><span>BATTERY</span></div>
-  <div class="c value" style="--x:132;--y:261"><span id="voltage">0</span></div>
-  <div class="c title" style="--x:385;--y:215"><span>COOLANT C</span></div>
-  <div class="c hero"  style="--x:307;--y:229"><span id="coolant_status">.</span></div>
-  <div class="c value" style="--x:376;--y:260"><span id="coolant">0</span></div>
+  <!-- Speed panel: hero speed, gear strip -->
+  <div class="panel" style="left:328px;top:60px;width:368px;height:308px">
+    <div class="t hero center" style="top:40px"><span id="speed">0</span></div>
+    <div class="t title center" style="top:168px"><span>km/h</span></div>
+    <div class="t title" style="left:18px;top:212px"><span>GEAR</span></div>
+    <div id="gears" class="small"></div>
+  </div>
+
+  <!-- Heading panel: heading-up compass card under a fixed lubber mark, cardinal + degrees in the centre -->
+  <div class="panel" style="left:708px;top:60px;width:300px;height:308px">
+    <div class="t title" style="left:16px;top:14px"><span>HEADING</span></div>
+    <div id="dial"></div>
+    <div id="card">
+      <svg id="scale" viewBox="0 0 236 236"></svg>
+      <div id="scale-labels"></div>
+    </div>
+    <div id="lubber"></div>
+    <div class="t large center" style="top:140px"><span id="compass">000</span></div>
+    <div class="t small center" style="top:203px;color:var(--muted)"><span id="compass_cardinal">N</span></div>
+  </div>
+
+  <!-- Tiles (built by makeTile below): row 1 fuel and trip, row 2 temperatures, electrics, position -->
+  <div id="tiles"></div>
 
   <div id="bl-btn">50%</div>
   <div id="dim"></div>
 </div>
 <script>
-  // Same keys and defaults as sim/sim_main.cpp's SimState; formatting mirrors src/app_ui.cpp.
+  // Same keys and defaults as sim/sim_main.cpp's SimState, plus the v2 keys listed in the header.
   const q = new URLSearchParams(location.search);
   const num = (k, d = 0) => (q.has(k) ? Number(q.get(k)) : d);
   const str = (k, d) => (q.has(k) ? q.get(k) : d);
-  const set = (id, text) => { document.getElementById(id).textContent = text; };
+  const $ = (id) => document.getElementById(id);
+  const set = (id, text) => { $(id).textContent = text; };
   const f1 = (v) => v.toFixed(1);
-  const axis = (v) => (Number.isNaN(v) ? "--" : f1(v));
   const pad = (n) => String(n).padStart(2, "0");
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-  function gear(raw) {
-    const g = Math.round(raw);
-    if (g === 0) return "N";
-    if (g === 11) return "R";
-    if (g === 13) return "P";
-    return g >= 1 && g <= 5 ? String(g) : "-";
+  /** Sets an lv_bar indicator: value mapped onto the bar's own pixel width. */
+  function bar(id, v, max, color) {
+    const ind = $(id);
+    ind.style.width = `${Math.round((clamp(v, 0, max) / max) * ind.parentElement.offsetWidth)}px`;
+    if (color) ind.style.background = color;
   }
-  const CARDINALS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
-                     "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+
+  /** Lights a header glyph or label: `color` when on, the pill's --dim when off. */
+  const lit = (id, on, color = "var(--text)") => { $(id).style.color = on ? color : ""; };
+
+  // Gear codes from CAN 0x218: 0=N, 1..5 forward, 11=R, 13=P.
+  const GEARS = [["P", 13], ["R", 11], ["N", 0], ["1", 1], ["2", 2], ["3", 3], ["4", 4], ["5", 5]];
+  const gear = Math.round(num("gear", -1)), target = Math.round(num("target_gear", -1));
+  for (const [name, code] of GEARS) {
+    const cell = document.createElement("div");
+    cell.className = "cell" + (code === gear ? " cur" : code === target ? " tgt" : "");
+    cell.innerHTML = `<span style="position:relative;top:-1px">${name}</span>`;
+    $("gears").appendChild(cell);
+  }
+
+  // Tiles: [id, title, unit, MDI glyph, status strip?]; 5 per row, 188 wide, 13 px gaps.
+  const TILES = [
+    ["consumption", "NOW", "km/L", 0xF029A], ["avg_consumption", "AVERAGE", "km/L", 0xF07B1],
+    ["fuel_rate", "FUEL RATE", "L/h", 0xF0298], ["distance", "TRIP", "km", 0xF0462],
+    ["trip_time", "TRIP TIME", "h", 0xF051B],
+    ["coolant", "COOLANT", "&deg;C", 0xF03C8, true], ["iat", "INTAKE AIR", "&deg;C", 0xF0D43],
+    ["voltage", "BATTERY", "V", 0xF010C, true], ["catalyst", "CATALYST", "&deg;C", 0xF0238],
+    ["altitude", "ALTITUDE", "m", 0xF02F5],
+  ];
+  /** Builds one tile; LVGL counterpart is a makeTile() helper with the same arguments. */
+  function makeTile([id, title, unit, glyph, strip], i) {
+    const tile = document.createElement("div");
+    tile.className = "panel tile";
+    tile.style.left = `${16 + (i % 5) * 201}px`;
+    tile.style.top = `${380 + Math.trunc(i / 5) * 108}px`;
+    tile.innerHTML = (strip ? `<div class="strip" id="${id}-strip"></div>` : "")
+      + `<div class="t title" style="left:14px;top:10px"><span>${title}</span></div>`
+      + `<div class="t icon"><span>&#x${glyph.toString(16)};</span></div>`
+      + `<div class="tval"><div class="t value"><span id="${id}">0</span></div>`
+      + `<div class="t caption unit"><span>${unit}</span></div></div>`;
+    $("tiles").appendChild(tile);
+  }
+  TILES.forEach(makeTile);
+
+  // Engine panel. Redline zone starts at 4000 rpm.
+  const rpm = Math.trunc(num("rpm"));
+  set("rpm", String(rpm));
+  bar("rpm-bar", rpm, 4500, rpm >= 4000 ? "var(--offline)" : rpm >= 3500 ? "var(--warn)" : "var(--online)");
+  set("boost", `${num("boost").toFixed(2)} bar`);
+  bar("boost-bar", num("boost"), 2.0);
+  set("engine_load", `${num("load").toFixed(0)} %`);
+  bar("load-bar", num("load"), 100);
+  set("throttle", `${num("throttle").toFixed(0)} %`);
+  bar("throttle-bar", num("throttle"), 100);
 
   set("speed", String(Math.round(num("speed"))));
-  set("rpm", String(Math.trunc(num("rpm"))));
-  set("fuel_rate", f1(num("fuel_rate")));
+
+  // Tiles.
   set("consumption", num("consumption") > 99 ? "99+" : f1(num("consumption")));
   set("avg_consumption", f1(num("avg_consumption")));
-  set("distance", f1(num("distance")));
+  set("fuel_rate", f1(num("fuel_rate")));
+  set("distance", num("distance") >= 1000 ? num("distance").toFixed(0) : f1(num("distance")));
   const t = Math.trunc(num("trip_time_s"));
-  set("trip_time", `${pad(Math.trunc(t / 3600))}:${pad(Math.trunc((t % 3600) / 60))}:${pad(t % 60)}`);
-  set("boost", num("boost").toFixed(2));
-  set("engine_load", num("load").toFixed(0));
-  set("coolant", num("coolant").toFixed(0));
-  set("voltage", f1(num("voltage")));
-  set("gear", gear(num("gear")));
-  set("target_gear", gear(num("target_gear")));
+  set("trip_time", `${Math.trunc(t / 3600)}:${pad(Math.trunc((t % 3600) / 60))}`);
 
   const c = num("coolant");
-  document.getElementById("coolant_status").style.color =
-    c < 70 ? "var(--cold)" : c > 90 ? "var(--offline)" : "var(--online)";
-  document.getElementById("server_status").style.color =
-    num("online", 1) ? "var(--online)" : "var(--offline)";
-
-  const time = str("gps_time", "2026-10-16 14:35:00");
-  set("datetime", time.length >= 16 ? time.slice(11, 16) : "--");
+  set("coolant", c.toFixed(0));
+  $("coolant-strip").style.background = c < 70 ? "var(--cold)" : c > 100 ? "var(--offline)" : "var(--online)";
+  set("iat", num("iat").toFixed(0));
+  const v = num("voltage");
+  set("voltage", f1(v));
+  $("voltage-strip").style.background = v < 12.2 || v > 15.0 ? "var(--offline)" : v < 13.2 ? "var(--warn)" : "var(--online)";
+  set("catalyst", num("cat").toFixed(0));
   set("altitude", str("altitude", "812"));
-  const course = str("course", "47");
-  set("compass", course);
-  const deg = parseFloat(course);
-  set("compass_cardinal", Number.isNaN(deg) ? "--"
-      : CARDINALS[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16]);
 
-  const ax = num("ax"), ay = num("ay"), az = num("az");
-  set("axis_x", axis(ax));
-  set("axis_y", axis(ay));
-  set("axis_z", axis(az));
-  set("acceleration", axis(Math.sqrt(ax * ax + ay * ay + az * az)));
+  // Compass card. Ticks every 5° (minor), 30° (major), 90° (cardinal); labels N/E/S/W and 30° steps.
+  const CARDINALS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+                     "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+  const deg = parseFloat(str("course", "47"));
+  const fix = !Number.isNaN(deg);
+  const hdg = fix ? ((Math.round(deg) % 360) + 360) % 360 : 0;
+  const DIAL_R = 117, LABEL_R = 84, CX = 118, CY = 118;     // in #scale coordinates
+  const polar = (bearing, r) => {
+    const a = ((bearing - hdg) * Math.PI) / 180;            // heading-up: rotate the card by -hdg
+    return [CX + r * Math.sin(a), CY - r * Math.cos(a)];
+  };
+  let ticks = "", labels = "";
+  for (let b = 0; b < 360; b += 5) {
+    const card = b % 90 === 0, major = b % 30 === 0;
+    const len = card ? 12 : major ? 9 : 5;
+    const [x1, y1] = polar(b, DIAL_R - 2), [x2, y2] = polar(b, DIAL_R - 2 - len);
+    const color = b === 0 ? "var(--offline)" : card ? "var(--text)" : major ? "var(--muted)" : "var(--dim)";
+    ticks += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${card ? 3 : major ? 2 : 1.5}" stroke-linecap="round"/>`;
+    if (!major) continue;
+    const [lx, ly] = polar(b, LABEL_R);
+    const text = card ? CARDINALS[b / 22.5] : String(b);
+    const cls = card ? "small" : "caption";
+    labels += `<div class="a t ${cls}" style="left:${31 + lx}px;top:${58 + ly}px;color:${card ? color : "var(--muted)"}"><span>${text}</span></div>`;
+  }
+  $("scale").innerHTML = ticks;
+  $("scale-labels").innerHTML = labels;
+  $("card").classList.toggle("card-off", !fix);
+  $("lubber").classList.toggle("hidden", !fix);
+  set("compass_cardinal", fix ? CARDINALS[Math.round(hdg / 22.5) % 16] : "NO FIX");
+  set("compass", fix ? String(hdg).padStart(3, "0") : "--");
 
-  const temp = num("env_temp", 24.5), hum = num("humidity", 62);
+  // Header. body / climate bits are PAYLOAD_BODY_* / PAYLOAD_CLIMATE_* from payload.h.
+  $("link-dot").style.background = num("online", 1) ? "var(--online)" : "var(--offline)";
+  const time = str("gps_time", "2026-10-16 14:35:00");
+  set("datetime", time.length >= 16 ? time.slice(11, 16) : "--:--");
+
+  // Engine fault: red with the MIL lit, amber when codes are stored but the lamp is off; count beside it.
+  const mil = num("mil") !== 0, dtc = num("dtc");
+  const fault = mil ? "var(--offline)" : "var(--warn)";
+  lit("i-engine", mil || dtc > 0, fault);
+  set("dtc_count", String(dtc));
+  $("dtc").style.color = fault;
+  $("dtc").classList.toggle("hidden", dtc <= 0);
+
+  // Head lamps: dipped glyph green, main-beam glyph blue (the dashboard's high-beam colour).
+  const body = num("body");
+  const hi = body & (1 << 1), lo = body & (1 << 0);
+  $("lamp").innerHTML = hi ? "&#xF0C4C;" : "&#xF0C4A;";
+  lit("i-lamp", hi || lo, hi ? "var(--cold)" : "var(--online)");
+  lit("i-door", body & ((1 << 2) | (1 << 3)), "var(--offline)");
+  lit("turn-l", body & (1 << 4), "var(--online)");
+  lit("turn-r", body & (1 << 5), "var(--online)");
+
+  // Climate. Fan step 0 = system off; the compressor (A/C bit) can be off while the fan runs.
+  const climate = num("climate"), set_temp = num("set_temp"), fan = clamp(num("fan"), 0, 15);
+  const ac = (climate & 1) !== 0, running = fan > 0;
+  lit("i-ac", running && ac, "var(--cold)");
+  set("set_temp", set_temp === 0 ? "LO" : set_temp === 255 ? "HI" : `${set_temp} C`);
+  lit("set-temp", running);
+  lit("i-fan", running);
+  // Five bars, 3 fan steps each, rising 6..18 px.
+  [...$("fan").children].forEach((bar, i) => {
+    bar.style.height = `${6 + i * 3}px`;
+    bar.classList.toggle("lit", fan > i * 3);
+  });
+  lit("i-defrost", running && climate & 16, "var(--warn)");
+  lit("i-seat", running && climate & (4 | 8));
+  $("v-face").classList.toggle("hidden", !(running && climate & 4));
+  $("v-feet").classList.toggle("hidden", !(running && climate & 8));
+  lit("i-rec", running && climate & 2, "var(--online)");
+
+  const temp = num("env_temp", 24.5);
   set("cabin_temp", Number.isNaN(temp) ? "--" : `${f1(temp)} C`);
-  set("humidity", Number.isNaN(hum) ? "--" : `${hum.toFixed(0)} %`);
 
   // Backlight: StepBrightness level as overlay opacity; the readout hides 3 s after the last change.
   const pct = num("brightness", 50);
   set("bl-btn", `${pct}%`);
-  document.getElementById("dim").style.opacity = Math.floor(((100 - pct) * 255) / 100) / 255;
-  document.getElementById("bl-btn").classList.toggle("hidden", num("elapsed_ms") >= 3000);
+  $("dim").style.opacity = Math.floor(((100 - pct) * 255) / 100) / 255;
+  $("bl-btn").classList.toggle("hidden", num("elapsed_ms") >= 3000);
 </script>
 </body>
 </html>

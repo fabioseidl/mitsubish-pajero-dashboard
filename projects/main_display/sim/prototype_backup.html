@@ -1,0 +1,215 @@
+<!doctype html>
+<!--
+  main_display prototype — the design reference src/dashboard_view.cpp is built from.
+
+  Rules (see the lvgl-preview skill): fixed px canvas, LVGL-mappable CSS only,
+  fonts limited to the lv_font_conv sizes below. State comes from the query
+  string with the same keys as sim/fixtures/*.txt.
+
+  Positions mirror LVGL's LV_ALIGN_CENTER: each label is centred on
+  (512 + --x, 300 + --y), the dx/dy passed to label() in dashboard_view.cpp.
+
+  Fonts in flash: Roboto Bold 120 / 60, Roboto Regular 50 / 28 / 20 (ASCII),
+  Montserrat Medium 16 (LVGL built-in).
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="lvgl-screen" content="1024x600">
+<title>main_display prototype</title>
+<style>
+  @font-face { font-family: "Roboto LVGL"; src: url("../../../ui/main_display/assets/Roboto-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Roboto LVGL"; src: url("../../../ui/main_display/assets/Roboto-Bold.ttf");    font-weight: 700; }
+  @font-face { font-family: "Montserrat LVGL"; src: url("../../../ui/main_display/assets/Montserrat-Medium.ttf"); }
+
+  :root {
+    --text: #fafafa;          /* LVGL default dark theme text */
+    --online: #29cc5b;
+    --offline: #e03b3b;
+    --cold: #3b8ee0;
+    --btn-bg: #202020;
+    --btn-border: #606060;
+    --muted: #c0c0c0;
+  }
+  html, body { margin: 0; background: #111; }
+
+  #screen {
+    position: relative;
+    width: 1024px;
+    height: 600px;
+    overflow: hidden;
+    background: #000 url("../../../ui/main_display/assets/background.png") no-repeat;
+    color: var(--text);
+    font-family: "Roboto LVGL";
+  }
+
+  /* LV_ALIGN_CENTER: a zero-size anchor at the centre point; flex centres the text on it. */
+  .c {
+    position: absolute;
+    left: calc(512px + var(--x) * 1px);
+    top: calc(300px + var(--y) * 1px);
+    width: 0;
+    height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+  }
+  .c > span { position: relative; top: var(--nudge); }
+
+  /*
+   * Font roles. line-height is the lv_font line_height; --nudge moves the CSS
+   * baseline onto LVGL's (box top + line_height - base_line).
+   */
+  .hero    { font-size: 120px; font-weight: 700; line-height: 127px; --nudge: -4px; }
+  .large   { font-size: 60px;  font-weight: 700; line-height: 63px;  --nudge: -3px; }
+  .value   { font-size: 50px;  font-weight: 400; line-height: 54px;  --nudge: -2px; }
+  .small   { font-size: 28px;  font-weight: 400; line-height: 31px;  --nudge: -1px; }
+  .title   { font-size: 20px;  font-weight: 400; line-height: 22px;  --nudge: -1px; }
+  .caption { font-family: "Montserrat LVGL"; font-size: 16px; line-height: 18px; --nudge: 0px; }
+
+  #temp-icon { position: absolute; left: calc(512px + 213px - 12px); top: calc(300px - 276px - 12px); }  /* 24x24, centred */
+
+  /* Backlight readout and dimmer live on LVGL's top layer, above the dashboard. */
+  #bl-btn {
+    position: absolute;
+    left: 13px; top: 52px;
+    box-sizing: border-box;
+    width: 171px; height: 32px;
+    background: var(--btn-bg);
+    border: 1px solid var(--btn-border);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Montserrat LVGL"; font-size: 16px; line-height: 18px;
+    color: var(--muted);
+  }
+  #dim { position: absolute; inset: 0; background: #000; pointer-events: none; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="screen">
+  <!-- Header bar -->
+  <div class="c hero"  style="--x:482;--y:-303"><span id="server_status">.</span></div>
+  <div class="c title" style="--x:-333;--y:-272"><span>PAJERO DAKAR 3.2 DI-D</span></div>
+  <img id="temp-icon" src="../../../ui/main_display/assets/icon_temperature.png" alt="">
+  <div class="c small" style="--x:278;--y:-273"><span id="cabin_temp">0 C</span></div>
+  <div class="c small" style="--x:392;--y:-273"><span id="datetime">00:00</span></div>
+
+  <!-- Speed tile -->
+  <div class="c hero"  style="--x:-360;--y:-114"><span id="speed">0</span></div>
+  <div class="c large" style="--x:-147;--y:-124"><span id="compass_cardinal">N</span></div>
+  <div class="c small" style="--x:-146;--y:-66"><span id="compass">0</span></div>
+
+  <!-- RPM tile -->
+  <div class="c title" style="--x:42;--y:-178"><span>RPM</span></div>
+  <div class="c large" style="--x:253;--y:-110"><span id="rpm">0</span></div>
+  <div class="c hero"  style="--x:461;--y:-141"><span id="gear">-</span></div>
+  <div class="c value" style="--x:473;--y:-59"><span id="target_gear">-</span></div>
+
+  <!-- Middle row -->
+  <div class="c title" style="--x:-375;--y:10"><span>ALTITUDE</span></div>
+  <div class="c value" style="--x:-380;--y:56"><span id="altitude">0</span></div>
+  <div class="c title" style="--x:-130;--y:10"><span>HUMIDITY %</span></div>
+  <div class="c value" style="--x:-130;--y:56"><span id="humidity">0</span></div>
+  <div class="c title" style="--x:135;--y:10"><span>ACCELERATION</span></div>
+  <div class="c value" style="--x:132;--y:56"><span id="acceleration">0</span></div>
+  <div class="c title" style="--x:385;--y:10"><span>ROTATION</span></div>
+  <div class="c caption" style="--x:289;--y:55"><span>AXIS</span></div>
+  <div class="c small" style="--x:346;--y:55"><span id="axis_x">0</span></div>
+  <div class="c small" style="--x:403;--y:55"><span id="axis_y">0</span></div>
+  <div class="c small" style="--x:462;--y:55"><span id="axis_z">0</span></div>
+
+  <!-- Third row -->
+  <div class="c title" style="--x:-375;--y:110"><span>AVG km/L</span></div>
+  <div class="c value" style="--x:-380;--y:159"><span id="avg_consumption">0</span></div>
+  <div class="c small" style="--x:-297;--y:164"><span id="consumption">0</span></div>
+  <div class="c title" style="--x:-130;--y:110"><span>FUEL L/h</span></div>
+  <div class="c value" style="--x:-130;--y:158"><span id="fuel_rate">0</span></div>
+  <div class="c title" style="--x:135;--y:110"><span>BOOST bar</span></div>
+  <div class="c value" style="--x:128;--y:159"><span id="boost">0</span></div>
+  <div class="c title" style="--x:385;--y:110"><span>LOAD %</span></div>
+  <div class="c value" style="--x:381;--y:159"><span id="engine_load">0</span></div>
+
+  <!-- Bottom row -->
+  <div class="c title" style="--x:-375;--y:213"><span>TRIP km</span></div>
+  <div class="c value" style="--x:-380;--y:260"><span id="distance">0</span></div>
+  <div class="c title" style="--x:-130;--y:215"><span>TRIP Time</span></div>
+  <div class="c value" style="--x:-130;--y:262"><span id="trip_time">0</span></div>
+  <div class="c title" style="--x:135;--y:215"><span>BATTERY</span></div>
+  <div class="c value" style="--x:132;--y:261"><span id="voltage">0</span></div>
+  <div class="c title" style="--x:385;--y:215"><span>COOLANT C</span></div>
+  <div class="c hero"  style="--x:307;--y:229"><span id="coolant_status">.</span></div>
+  <div class="c value" style="--x:376;--y:260"><span id="coolant">0</span></div>
+
+  <div id="bl-btn">50%</div>
+  <div id="dim"></div>
+</div>
+<script>
+  // Same keys and defaults as sim/sim_main.cpp's SimState; formatting mirrors src/app_ui.cpp.
+  const q = new URLSearchParams(location.search);
+  const num = (k, d = 0) => (q.has(k) ? Number(q.get(k)) : d);
+  const str = (k, d) => (q.has(k) ? q.get(k) : d);
+  const set = (id, text) => { document.getElementById(id).textContent = text; };
+  const f1 = (v) => v.toFixed(1);
+  const axis = (v) => (Number.isNaN(v) ? "--" : f1(v));
+  const pad = (n) => String(n).padStart(2, "0");
+
+  function gear(raw) {
+    const g = Math.round(raw);
+    if (g === 0) return "N";
+    if (g === 11) return "R";
+    if (g === 13) return "P";
+    return g >= 1 && g <= 5 ? String(g) : "-";
+  }
+  const CARDINALS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+                     "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+
+  set("speed", String(Math.round(num("speed"))));
+  set("rpm", String(Math.trunc(num("rpm"))));
+  set("fuel_rate", f1(num("fuel_rate")));
+  set("consumption", num("consumption") > 99 ? "99+" : f1(num("consumption")));
+  set("avg_consumption", f1(num("avg_consumption")));
+  set("distance", f1(num("distance")));
+  const t = Math.trunc(num("trip_time_s"));
+  set("trip_time", `${pad(Math.trunc(t / 3600))}:${pad(Math.trunc((t % 3600) / 60))}:${pad(t % 60)}`);
+  set("boost", num("boost").toFixed(2));
+  set("engine_load", num("load").toFixed(0));
+  set("coolant", num("coolant").toFixed(0));
+  set("voltage", f1(num("voltage")));
+  set("gear", gear(num("gear")));
+  set("target_gear", gear(num("target_gear")));
+
+  const c = num("coolant");
+  document.getElementById("coolant_status").style.color =
+    c < 70 ? "var(--cold)" : c > 90 ? "var(--offline)" : "var(--online)";
+  document.getElementById("server_status").style.color =
+    num("online", 1) ? "var(--online)" : "var(--offline)";
+
+  const time = str("gps_time", "2026-10-16 14:35:00");
+  set("datetime", time.length >= 16 ? time.slice(11, 16) : "--");
+  set("altitude", str("altitude", "812"));
+  const course = str("course", "47");
+  set("compass", course);
+  const deg = parseFloat(course);
+  set("compass_cardinal", Number.isNaN(deg) ? "--"
+      : CARDINALS[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16]);
+
+  const ax = num("ax"), ay = num("ay"), az = num("az");
+  set("axis_x", axis(ax));
+  set("axis_y", axis(ay));
+  set("axis_z", axis(az));
+  set("acceleration", axis(Math.sqrt(ax * ax + ay * ay + az * az)));
+
+  const temp = num("env_temp", 24.5), hum = num("humidity", 62);
+  set("cabin_temp", Number.isNaN(temp) ? "--" : `${f1(temp)} C`);
+  set("humidity", Number.isNaN(hum) ? "--" : `${hum.toFixed(0)} %`);
+
+  // Backlight: StepBrightness level as overlay opacity; the readout hides 3 s after the last change.
+  const pct = num("brightness", 50);
+  set("bl-btn", `${pct}%`);
+  document.getElementById("dim").style.opacity = Math.floor(((100 - pct) * 255) / 100) / 255;
+  document.getElementById("bl-btn").classList.toggle("hidden", num("elapsed_ms") >= 3000);
+</script>
+</body>
+</html>
