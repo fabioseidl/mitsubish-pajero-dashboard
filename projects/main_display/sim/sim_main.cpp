@@ -34,7 +34,6 @@ struct SimState {
     char    altitude[12] = "812";
     char    course[12]   = "47";
     float   env_temp_c   = 24.5f;
-    float   humidity_pct = 62.0f;
     uint8_t  brightness  = 50;   // StepBrightness boot level
     uint32_t elapsed_ms  = 0;
 };
@@ -92,6 +91,14 @@ static bool applyKey(SimState& st, const char* key, const char* val) {
     else if (!strcmp(key, "boost"))           p.boost_pres = f;
     else if (!strcmp(key, "load"))            p.engine_load_pct = f;
     else if (!strcmp(key, "throttle"))        p.throttle_pct = f;
+    else if (!strcmp(key, "iat"))             p.intake_air_temp_c = f;
+    else if (!strcmp(key, "cat"))             p.catalyst_temp_c = f;
+    else if (!strcmp(key, "mil"))             p.mil_on = f != 0.0f;
+    else if (!strcmp(key, "dtc"))             p.dtc_count = (uint8_t)f;
+    else if (!strcmp(key, "body"))            p.body_flags = (uint8_t)f;
+    else if (!strcmp(key, "climate"))         p.climate_flags = (uint8_t)f;
+    else if (!strcmp(key, "fan"))             p.climate_fan = (uint8_t)f;
+    else if (!strcmp(key, "set_temp"))        p.climate_set_temp_c = (uint8_t)f;
     else if (!strcmp(key, "coolant"))         p.coolant_temp_c = f;
     else if (!strcmp(key, "voltage"))         p.module_voltage_v = f;
     else if (!strcmp(key, "gear"))            p.at_gear_pos = f;
@@ -103,7 +110,6 @@ static bool applyKey(SimState& st, const char* key, const char* val) {
     else if (!strcmp(key, "gy"))              p.imu_gyro_y_rads = f;
     else if (!strcmp(key, "gz"))              p.imu_gyro_z_rads = f;
     else if (!strcmp(key, "env_temp"))        st.env_temp_c = f;
-    else if (!strcmp(key, "humidity"))        st.humidity_pct = f;
     else if (!strcmp(key, "online"))          st.online = f != 0.0f;
     else if (!strcmp(key, "elapsed_ms"))      st.elapsed_ms = (uint32_t)f;
     else if (!strcmp(key, "brightness"))      st.brightness = (uint8_t)f;
@@ -144,17 +150,11 @@ static void applyState(const SimState& st) {
     app_ui::set_gps_datetime(st.gps_time);
     app_ui::set_gps_altitude(st.altitude);
     app_ui::set_gps_compass(st.course);
-    const Payload& p = st.payload;
-    app_ui::set_imu(p.imu_accel_x_ms2, p.imu_accel_y_ms2, p.imu_accel_z_ms2,
-                    p.imu_gyro_x_rads, p.imu_gyro_y_rads, p.imu_gyro_z_rads);
 
     char buf[12];
     if (isnan(st.env_temp_c)) snprintf(buf, sizeof buf, "--");
     else                      snprintf(buf, sizeof buf, "%.1f C", st.env_temp_c);
     app_ui::set_ambient_temperature(buf);
-    if (isnan(st.humidity_pct)) snprintf(buf, sizeof buf, "--");
-    else                        snprintf(buf, sizeof buf, "%.0f %%", st.humidity_pct);
-    app_ui::set_humidity(buf);
 }
 
 /** Writes the framebuffer as a binary PPM, expanding RGB565 to RGB888. */

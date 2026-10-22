@@ -53,5 +53,11 @@ font "$MD/Roboto-Bold.ttf"    60  projects/main_display/src/ui_font_roboto_bold_
 font "$MD/Roboto-Regular.ttf" 50  projects/main_display/src/ui_font_roboto_regular_50.c -r 0x20-0x7f --no-prefilter
 font "$MD/Roboto-Regular.ttf" 28  projects/main_display/src/ui_font_roboto_regular_28.c -r 0x20-0x7f --no-prefilter
 font "$MD/Roboto-Regular.ttf" 20  projects/main_display/src/ui_font_roboto_regular_20.c -r 0x20-0x7f --no-prefilter
+# Material Design Icons (Pictogrammers Free License): only the glyphs the dashboard draws.
+# 24 px: header pills and tile icons; 16 px: the vent-mode arrow.
+MDI_24=0xF050F,0xF0717,0xF0210,0xF0D61,0xF0482,0xF006A,0xF0731,0xF0734,0xF01FA,0xF0C4A,0xF0C4C
+MDI_24=$MDI_24,0xF0B6B,0xF029A,0xF07B1,0xF0298,0xF0462,0xF051B,0xF03C8,0xF0D43,0xF010C,0xF0238,0xF02F5
+font "$MD/MaterialDesignIcons.ttf" 24 projects/main_display/src/ui_font_mdi_24.c -r "$MDI_24"
+font "$MD/MaterialDesignIcons.ttf" 16 projects/main_display/src/ui_font_mdi_16.c -r 0xF0731
 image "$MD/background.png"       RGB565   projects/main_display/src/ui_img_background.c
 image "$MD/icon_temperature.png" RGB565A8 projects/main_display/src/ui_img_icon_temperature.c

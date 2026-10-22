@@ -123,9 +123,9 @@ spaces; render_html.sh URL-encodes them):
   screen; the sim renders ~330 ms past it, so 2800 lands mid-fade).
 - main_display: Payload fields (`speed`, `rpm`, `gear`, `target_gear`,
   `fuel_rate`, `consumption`, `avg_consumption`, `distance`, `trip_time_s`,
-  `boost`, `load`, `coolant`, `voltage`, `ax`/`ay`/`az`, …), client sensors
-  (`gps_time`, `altitude`, `course`, `env_temp`, `humidity`, `nan` = no
-  reading), `online`, `brightness` (steps the 10-level cycle; boot is 50%, which
+  `boost`, `load`, `throttle`, `coolant`, `iat`, `cat`, `voltage`, `mil`, `dtc`,
+  `body` / `climate` raw bitmasks, `fan`, `set_temp`, …), client sensors
+  (`gps_time`, `altitude`, `course`, `env_temp`, `nan` = no reading), `online`, `brightness` (steps the 10-level cycle; boot is 50%, which
   dims the whole frame) and `elapsed_ms` (runs LVGL timers — ≥3000 hides the
   backlight readout). Cover at least: normal driving, the
 widest text each label can show, and offline. Unknown keys print a warning.

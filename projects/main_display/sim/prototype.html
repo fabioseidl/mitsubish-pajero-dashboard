@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  main_display prototype v2 — panel-and-tile layout, not yet implemented in LVGL.
+  main_display prototype — the design reference src/dashboard_view.cpp is built from.
 
   Rules (see the lvgl-preview skill): fixed px canvas, LVGL-mappable CSS only,
   fonts limited to the lv_font_conv sizes already in flash. State comes from the
@@ -10,20 +10,19 @@
   pad 0 and border 1, so its children sit at (left, top) inside the border.
 
   Fonts in flash: Roboto Bold 120 / 60, Roboto Regular 50 / 28 / 20 (ASCII),
-  Montserrat Medium 16 (LVGL built-in, includes U+00B0 for the °C units). New for v2: Material Design Icons
+  Montserrat Medium 16 (LVGL built-in, includes U+00B0 for the °C units). Icons: Material Design Icons
   (Pictogrammers Free License) at 24 (-r 0xF050F,0xF0717,0xF0210,0xF0D61,0xF0482,0xF006A,
   0xF0731,0xF0734,0xF01FA,0xF0C4A,0xF0C4C,0xF0B6B,0xF029A,0xF07B1,0xF0298,0xF0462,
   0xF051B,0xF03C8,0xF0D43,0xF010C,0xF0238,0xF02F5)
-  and 16 (-r 0xF0731), not yet in ui/convert_assets.sh.
+  and 16 (-r 0xF0731), converted by ui/convert_assets.sh.
 
-  Keys not yet parsed by sim_main.cpp: iat, cat, mil, dtc, body, climate, fan,
-  set_temp (body / climate are the raw Payload bitmasks).
+  body / climate keys are the raw Payload bitmasks.
 -->
 <html>
 <head>
 <meta charset="utf-8">
 <meta name="lvgl-screen" content="1024x600">
-<title>main_display prototype v2</title>
+<title>main_display prototype</title>
 <style>
   @font-face { font-family: "Roboto LVGL"; src: url("../../../ui/main_display/assets/Roboto-Regular.ttf"); font-weight: 400; }
   @font-face { font-family: "Roboto LVGL"; src: url("../../../ui/main_display/assets/Roboto-Bold.ttf");    font-weight: 700; }
@@ -34,9 +33,7 @@
     --text: #fafafa;
     --muted: #8a9099;         /* titles and units */
     --dim: #3a3f47;           /* inactive chips and gear cells */
-    --panel: #0f1114;
-    --panel-top: #15181d;
-    --panel-bot: #0c0e11;
+    --panel: #101418;         /* exact in RGB565: a gradient here bands with colour casts on the panel */
     --line: #23272e;
     --track: #1d2026;         /* bar background */
     --redline: #4a1a1c;       /* RPM track past 4000 */
@@ -70,11 +67,11 @@
   .caption { font-family: "Montserrat LVGL"; font-size: 16px; line-height: 18px; --nudge: 0px; }
   .center  { left: 0; right: 0; text-align: center; }
 
-  /* Panels: vertical two-stop gradient (bg_grad_dir VER) for depth; --panel is its colour mid-height. */
+  /* Panels: solid fill, 1 px border, 8 px radius. */
   .panel {
     position: absolute;
     box-sizing: border-box;
-    background: linear-gradient(180deg, var(--panel-top), var(--panel-bot));
+    background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 8px;
   }
@@ -143,7 +140,7 @@
    * and upright labels; the disk, lubber mark and centre readout stay fixed.
    */
   #dial  { position: absolute; left: 31px; top: 58px; width: 236px; height: 236px; box-sizing: border-box;
-           border-radius: 50%; border: 1px solid var(--line); background: #0a0c0f; }
+           border-radius: 50%; border: 1px solid var(--line); background: #080c10; }
   #scale { position: absolute; left: 31px; top: 58px; width: 236px; height: 236px; }
   #scale-labels > .a { position: absolute; width: 0; height: 0; display: flex; align-items: center; justify-content: center; }
   #lubber { position: absolute; left: 147px; top: 50px; width: 4px; height: 18px; border-radius: 2px; background: var(--warn); }
@@ -204,7 +201,7 @@
   <div class="panel" style="left:16px;top:60px;width:300px;height:308px">
     <div class="t title" style="left:16px;top:14px"><span>RPM</span></div>
     <div class="t large" style="left:16px;top:34px"><span id="rpm">0</span></div>
-    <!-- Redline 4000-4500 tinted into the track: bg_grad HOR, main_stop = grad_stop = 227 (4000/4500 of 255) -->
+    <!-- Redline 4000-4500 tinted into the track: track and red end are rects under a transparent-track lv_bar -->
     <div class="bar" style="left:16px;top:106px;width:266px;height:18px;background:linear-gradient(90deg,var(--track) 88.9%,var(--redline) 88.9%)"><div class="ind" id="rpm-bar"></div></div>
 
     <div class="t title" style="left:16px;top:154px"><span>BOOST</span></div>
@@ -248,7 +245,7 @@
   <div id="dim"></div>
 </div>
 <script>
-  // Same keys and defaults as sim/sim_main.cpp's SimState, plus the v2 keys listed in the header.
+  // Same keys and defaults as sim/sim_main.cpp's SimState; formatting mirrors src/app_ui.cpp.
   const q = new URLSearchParams(location.search);
   const num = (k, d = 0) => (q.has(k) ? Number(q.get(k)) : d);
   const str = (k, d) => (q.has(k) ? q.get(k) : d);
@@ -325,7 +322,7 @@
 
   const c = num("coolant");
   set("coolant", c.toFixed(0));
-  $("coolant-strip").style.background = c < 70 ? "var(--cold)" : c > 100 ? "var(--offline)" : "var(--online)";
+  $("coolant-strip").style.background = c < 60 ? "var(--cold)" : c <= 100 ? "var(--online)" : c <= 105 ? "var(--warn)" : "var(--offline)";
   set("iat", num("iat").toFixed(0));
   const v = num("voltage");
   set("voltage", f1(v));
@@ -339,7 +336,7 @@
   const deg = parseFloat(str("course", "47"));
   const fix = !Number.isNaN(deg);
   const hdg = fix ? ((Math.round(deg) % 360) + 360) % 360 : 0;
-  const DIAL_R = 117, LABEL_R = 84, CX = 118, CY = 118;     // in #scale coordinates
+  const DIAL_R = 118, LABEL_R = 84, CX = 118, CY = 118;     // in #scale coordinates; lv_scale r = 116
   const polar = (bearing, r) => {
     const a = ((bearing - hdg) * Math.PI) / 180;            // heading-up: rotate the card by -hdg
     return [CX + r * Math.sin(a), CY - r * Math.cos(a)];
@@ -347,10 +344,10 @@
   let ticks = "", labels = "";
   for (let b = 0; b < 360; b += 5) {
     const card = b % 90 === 0, major = b % 30 === 0;
-    const len = card ? 12 : major ? 9 : 5;
+    const len = major ? 10 : 5;            // lv_scale has one major length; cardinals differ by width and colour
     const [x1, y1] = polar(b, DIAL_R - 2), [x2, y2] = polar(b, DIAL_R - 2 - len);
     const color = b === 0 ? "var(--offline)" : card ? "var(--text)" : major ? "var(--muted)" : "var(--dim)";
-    ticks += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${card ? 3 : major ? 2 : 1.5}" stroke-linecap="round"/>`;
+    ticks += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${card ? 3 : major ? 2 : 1}" stroke-linecap="round"/>`;
     if (!major) continue;
     const [lx, ly] = polar(b, LABEL_R);
     const text = card ? CARDINALS[b / 22.5] : String(b);

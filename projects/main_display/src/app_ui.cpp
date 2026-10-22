@@ -11,6 +11,7 @@
 #include "dashboard_view.h"
 
 #include "i_display.h"
+#include "pid_map.h"   // AUTOAC_TEMP_LO / _HI
 #include "step_brightness.h"
 
 namespace app_ui {
@@ -36,11 +37,11 @@ namespace {
 // is created *before* the dim overlay so the overlay covers it and it dims along
 // with everything else, rather than staying glaringly lit at night.
 
-// Readout geometry: 171x32, top-left, just under the header bar.
+// Readout geometry: 171x32, centred in the header over the status pill while shown.
 constexpr int16_t BL_BTN_W = 171;
 constexpr int16_t BL_BTN_H = 32;
-constexpr int16_t BL_BTN_X = 13;
-constexpr int16_t BL_BTN_Y = 52;
+constexpr int16_t BL_BTN_X = 426;
+constexpr int16_t BL_BTN_Y = 8;
 
 // The readout hides this long after the last press, leaving the dashboard clean.
 // Shown at boot so the current level can be seen without pressing anything.
@@ -158,23 +159,6 @@ static void set_if_changed(lv_obj_t* label, const char* fmt, ...) {
     }
 }
 
-// Decode a Mitsubishi AT gear code (CAN 0x218 D2 nibble):
-//   0 = N, 1..5 = forward gears, 11 = R, 13 = P, anything else = "-".
-static const char* gear_text(float raw, char* buf, size_t n) {
-    int g = (int)lroundf(raw);
-    switch (g) {
-        case 0:  return "N";
-        case 11: return "R";
-        case 13: return "P";
-        default:
-            if (g >= 1 && g <= 5) {
-                snprintf(buf, n, "%d", g);
-                return buf;
-            }
-            return "-";
-    }
-}
-
 void cycle_backlight() {
     s_brightness.next();
     refresh_backlight_label();
@@ -187,57 +171,99 @@ void create() {
     build_backlight_control();
 }
 
+// Set a bar's indicator colour, skipping no-op writes.
+static void set_indicator_color(lv_obj_t* bar, uint32_t hex) {
+    const lv_color_t c = lv_color_hex(hex);
+    if (!lv_color_eq(lv_obj_get_style_bg_color(bar, LV_PART_INDICATOR), c)) {
+        lv_obj_set_style_bg_color(bar, c, LV_PART_INDICATOR);
+    }
+}
+
+// Set a bar's value clamped to its range; lv_bar_set_value is itself a no-op when unchanged.
+static void set_bar(lv_obj_t* bar, float v) {
+    const int32_t max = lv_bar_get_max_value(bar);
+    int32_t i = (int32_t)lroundf(v);
+    lv_bar_set_value(bar, i < 0 ? 0 : i > max ? max : i, LV_ANIM_OFF);
+}
+
 void update(const Payload& p) {
+    using namespace dashboard_view;
     if (s_w.rpm == nullptr) return;                   // create() not called yet
     if (!(p.flags & PAYLOAD_FLAG_DATA_VALID)) return;
 
-    set_if_changed(s_w.speed,              "%u",   (unsigned)payload_speed_kmh_u8(&p));
-    set_if_changed(s_w.rpm,                "%u",   (unsigned)p.rpm);
-    set_if_changed(s_w.fuel_rate,          "%.1f", p.fuel_rate_l_per_h);
+    // ── Engine panel ──
+    set_if_changed(s_w.speed, "%u", (unsigned)payload_speed_kmh_u8(&p));
+    set_if_changed(s_w.rpm,   "%u", (unsigned)p.rpm);
+    set_bar(s_w.rpm_bar, p.rpm);
+    // Green to 3500, amber to the 4000 redline, red past it.
+    set_indicator_color(s_w.rpm_bar, p.rpm >= 4000 ? color::kOffline : p.rpm >= 3500 ? color::kWarn : color::kOnline);
+    // Boost is derived from MAP - ambient, both whole-kPa, so the data resolves to
+    // ~0.01 bar. Two decimals show that; one would hide all movement below 0.1 bar.
+    set_if_changed(s_w.boost, "%.2f bar", p.boost_pres);
+    set_bar(s_w.boost_bar, p.boost_pres * 100.0f);
+    set_if_changed(s_w.load, "%.0f %%", p.engine_load_pct);
+    set_bar(s_w.load_bar, p.engine_load_pct);
+    set_if_changed(s_w.throttle, "%.0f %%", p.throttle_pct);
+    set_bar(s_w.throttle_bar, p.throttle_pct);
+
+    setGear(s_w, (int)lroundf(p.at_gear_pos), (int)lroundf(p.at_target_gear));
+
+    // ── Tiles ──
     // Economy readout is capped at 99 km/l — anything higher shows "99+".
-    if (p.consumption_km_per_l > 99.0f)
-        set_if_changed(s_w.consumption, "99+");
-    else
-        set_if_changed(s_w.consumption, "%.1f", p.consumption_km_per_l);
-    set_if_changed(s_w.avg_consumption,  "%.1f", p.avg_consumption_km_per_l);
-    set_if_changed(s_w.distance,         "%.1f", p.distance_km);
+    if (p.consumption_km_per_l > 99.0f) set_if_changed(s_w.consumption.value, "99+");
+    else                                set_if_changed(s_w.consumption.value, "%.1f", p.consumption_km_per_l);
+    set_if_changed(s_w.avg_consumption.value, "%.1f", p.avg_consumption_km_per_l);
+    set_if_changed(s_w.fuel_rate.value,       "%.1f", p.fuel_rate_l_per_h);
+    // Whole km from 1000 up, so value and unit still fit the tile.
+    set_if_changed(s_w.distance.value, p.distance_km >= 1000.0f ? "%.0f" : "%.1f", p.distance_km);
     // Trip time is the server's engine-on counter (Payload.trip_time_s), not this
     // client's uptime: it survives the server's deep sleep and resets with the
     // rest of the trip totals, so it stays consistent with TRIP km.
-    set_if_changed(s_w.trip_time,           "%02u:%02u:%02u",
-                   (unsigned)(p.trip_time_s / 3600u),
-                   (unsigned)((p.trip_time_s % 3600u) / 60u),
-                   (unsigned)(p.trip_time_s % 60u));
-    // Boost is derived from MAP - ambient, both whole-kPa, so the data resolves to
-    // ~0.01 bar. Two decimals show that; "%.1f" quantised it to 0.1 bar steps and
-    // hid all movement below a tenth of a bar.
-    set_if_changed(s_w.boost,      "%.2f", p.boost_pres);
-    set_if_changed(s_w.engine_load,         "%.0f", p.engine_load_pct);
-    set_if_changed(s_w.coolant,        "%.0f", p.coolant_temp_c);
-    // Coolant status dot: blue < 70 °C (cold), green 70–90 °C (normal),
-    // red > 90 °C (hot). Only restyle on a bucket change to avoid needless
-    // redraws (flicker) on the single-framebuffer panel.
-    if (s_w.coolant_status != nullptr) {
-        int bucket = (p.coolant_temp_c < 70.0f) ? 0
-                   : (p.coolant_temp_c > 90.0f) ? 2
-                                                : 1;
-        static int last_bucket = -1;
-        if (bucket != last_bucket) {
-            last_bucket = bucket;
-            static const uint32_t kColors[3] = { 0x3B8EE0, 0x29CC5B, 0xE03B3B };
-            lv_obj_set_style_text_color(s_w.coolant_status, lv_color_hex(kColors[bucket]),
-                                        LV_PART_MAIN | LV_STATE_DEFAULT);
-        }
-    }
-    // The altitude label is GPS altitude (set_gps_altitude), not the OBD baro altitude.
-    set_if_changed(s_w.voltage,            "%.1f", p.module_voltage_v);
+    set_if_changed(s_w.trip_time.value, "%u:%02u",
+                   (unsigned)(p.trip_time_s / 3600u), (unsigned)((p.trip_time_s % 3600u) / 60u));
 
-    // Two gear readouts on the new screen: current AT gear and AT target gear.
-    // Both decode with the same gear table — swap the sources here if the labels
-    // should show different values.
-    char gbuf[8];
-    set_if_changed(s_w.gear, "%s", gear_text(p.at_gear_pos,    gbuf, sizeof(gbuf)));
-    set_if_changed(s_w.target_gear,   "%s", gear_text(p.at_target_gear, gbuf, sizeof(gbuf)));
+    // Coolant strip: blue < 60 °C (cold, go easy), green to 100 °C (thermostat open, ~85-95
+    // when warm), yellow to 105 °C (hard work: towing, climbs), red above (overheating).
+    set_if_changed(s_w.coolant.value, "%.0f", p.coolant_temp_c);
+    setBgColor(s_w.coolant.strip, p.coolant_temp_c < 60.0f   ? color::kCold
+                                : p.coolant_temp_c <= 100.0f ? color::kOnline
+                                : p.coolant_temp_c <= 105.0f ? color::kWarn : color::kOffline);
+    set_if_changed(s_w.iat.value, "%.0f", p.intake_air_temp_c);
+    // Battery strip: red outside 12.2..15.0 V, amber below 13.2 V (not charging), green otherwise.
+    set_if_changed(s_w.voltage.value, "%.1f", p.module_voltage_v);
+    setBgColor(s_w.voltage.strip, (p.module_voltage_v < 12.2f || p.module_voltage_v > 15.0f) ? color::kOffline
+                                : p.module_voltage_v < 13.2f ? color::kWarn : color::kOnline);
+    set_if_changed(s_w.catalyst.value, "%.0f", p.catalyst_temp_c);
+
+    // ── Status pill ──
+    // Engine fault: red with the MIL lit, amber when codes are stored but the lamp is off.
+    const uint32_t fault = p.mil_on ? color::kOffline : color::kWarn;
+    setLit(s_w.engine, p.mil_on || p.dtc_count > 0, fault);
+    set_if_changed(s_w.dtc, "%u", (unsigned)p.dtc_count);
+    setLit(s_w.dtc, true, fault);
+    setHidden(s_w.dtc, p.dtc_count == 0);
+    setLamps(s_w, p.body_flags & PAYLOAD_BODY_HEAD_LAMP_LO, p.body_flags & PAYLOAD_BODY_HEAD_LAMP_HI);
+    setLit(s_w.door, p.body_flags & (PAYLOAD_BODY_DRIVER_DOOR | PAYLOAD_BODY_OTHER_DOOR), color::kOffline);
+    setLit(s_w.turn_l, p.body_flags & PAYLOAD_BODY_LEFT_TURN, color::kOnline);
+    setLit(s_w.turn_r, p.body_flags & PAYLOAD_BODY_RIGHT_TURN, color::kOnline);
+
+    // ── Climate pill ──
+    // Fan step 0 = system off; the compressor (A/C bit) can be off while the fan runs.
+    const uint8_t fan     = p.climate_fan > 15 ? 15 : p.climate_fan;
+    const bool    running = fan > 0;
+    const uint8_t cf      = p.climate_flags;
+    setLit(s_w.ac, running && (cf & PAYLOAD_CLIMATE_AC_ON), color::kCold);
+    if      (p.climate_set_temp_c == AUTOAC_TEMP_LO) set_if_changed(s_w.set_temp, "LO");
+    else if (p.climate_set_temp_c == AUTOAC_TEMP_HI) set_if_changed(s_w.set_temp, "HI");
+    else                                             set_if_changed(s_w.set_temp, "%u C", (unsigned)p.climate_set_temp_c);
+    setLit(s_w.set_temp, running);
+    setLit(s_w.fan, running);
+    setFanBars(s_w, (fan + 2) / 3);   // 5 bars, 3 fan steps each
+    setLit(s_w.defrost, running && (cf & PAYLOAD_CLIMATE_VENT_WIND), color::kWarn);
+    setLit(s_w.seat, running && (cf & (PAYLOAD_CLIMATE_VENT_FACE | PAYLOAD_CLIMATE_VENT_FEET)));
+    setHidden(s_w.vent_face, !(running && (cf & PAYLOAD_CLIMATE_VENT_FACE)));
+    setHidden(s_w.vent_feet, !(running && (cf & PAYLOAD_CLIMATE_VENT_FEET)));
+    setLit(s_w.recirc, running && (cf & PAYLOAD_CLIMATE_RECIRC), color::kOnline);
 }
 
 // Set a label from a pre-formatted string, skipping no-op writes (every redraw
@@ -251,62 +277,54 @@ static void set_text(lv_obj_t* label, const char* text) {
 
 void set_gps_datetime(const char* text) {
     // GPS supplies "YYYY-MM-DD HH:MM:SS" (UTC-3); the label shows only "HH:MM".
-    char hhmm[6] = "--";
+    char hhmm[6] = "--:--";
     if (text != nullptr && strlen(text) >= 16) {
         memcpy(hhmm, text + 11, 5);   // chars 11..15 = "HH:MM"
         hhmm[5] = '\0';
     }
     set_text(s_w.datetime, hhmm);
 }
-void set_gps_altitude(const char* text) { set_text(s_w.altitude, text); }
-void set_gps_compass(const char* text) {
-    set_text(s_w.compass, text);
 
-    // Derive the 16-point cardinal from the course-over-ground value shown in
-    // s_w.compass ("--" when there is no fix). The arrow icon stays static.
+void set_gps_altitude(const char* text) { set_text(s_w.altitude.value, text); }
+
+void set_gps_compass(const char* text) {
+    if (s_w.heading == nullptr) return;   // create() not called yet
+
+    // Course over ground in degrees, or "--" without a fix.
     float deg = 0.0f;
     if (text == nullptr || sscanf(text, "%f", &deg) != 1) {
-        set_text(s_w.compass_cardinal, "--");
-        return;
+        set_text(s_w.heading, "--");
+        set_text(s_w.cardinal, "NO FIX");
+        deg = -1.0f;
+    } else {
+        deg = fmodf(deg, 360.0f);                   // normalise to [0, 360)
+        if (deg < 0.0f) deg += 360.0f;
+        const int whole = (int)lroundf(deg) % 360;
+        set_if_changed(s_w.heading, "%03d", whole);
+
+        // 16-point cardinal: each sector spans 22.5°, centred on its bearing.
+        static const char* const kCardinals[16] = {
+            "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+            "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW" };
+        set_text(s_w.cardinal, kCardinals[((int)lroundf(deg / 22.5f)) % 16]);
+        deg = (float)whole;
     }
-    deg = fmodf(deg, 360.0f);                   // normalise to [0, 360)
-    if (deg < 0.0f) deg += 360.0f;
 
-    // 16-point cardinal: each sector spans 22.5°, centred on its bearing.
-    static const char* const kCardinals[16] = {
-        "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
-        "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW" };
-    int idx = ((int)lroundf(deg / 22.5f)) % 16;
-    set_text(s_w.compass_cardinal, kCardinals[idx]);
+    // Rotating the card redraws the whole dial, so only on a whole-degree change.
+    static int last = -2;
+    const int now = (int)deg;
+    if (now != last) {
+        last = now;
+        dashboard_view::setHeading(s_w, now);
+    }
 }
+
 void set_ambient_temperature(const char* text) { set_text(s_w.cabin_temp, text); }
-void set_humidity(const char* text) { set_text(s_w.humidity, text); }
-
-/** Show v with one decimal, or "--" when it is NAN (sensor absent / link down). */
-static void set_axis(lv_obj_t* label, float v) {
-    if (isnan(v)) set_if_changed(label, "%s", "--");
-    else          set_if_changed(label, "%.1f", v);
-}
-
-void set_imu(float ax, float ay, float az, float gx, float gy, float gz) {
-    LV_UNUSED(gx); LV_UNUSED(gy); LV_UNUSED(gz);  // the layout has no gyro readout
-    if (s_w.axis_x == nullptr) return;   // create() not called yet
-    set_axis(s_w.axis_x,     ax);
-    set_axis(s_w.axis_y,     ay);
-    set_axis(s_w.axis_z,     az);
-    // Net linear acceleration magnitude (m/s^2). The server removes gravity from
-    // each axis, so this reads ~0 at rest and rises only under real motion.
-    set_axis(s_w.acceleration, sqrtf(ax * ax + ay * ay + az * az));
-}
 
 void set_server_status(bool online) {
-    if (s_w.server_status == nullptr) return;
-    // Only recolour the status indicator (its text is left as designed):
-    // green when ONLINE, red when OFFLINE.
-    lv_obj_set_style_text_color(
-        s_w.server_status,
-        online ? lv_color_hex(0x29CC5B) : lv_color_hex(0xE03B3B),
-        LV_PART_MAIN | LV_STATE_DEFAULT);
+    if (s_w.link_dot == nullptr) return;
+    dashboard_view::setBgColor(s_w.link_dot, online ? dashboard_view::color::kOnline
+                                                    : dashboard_view::color::kOffline);
 }
 
 }  // namespace app_ui

@@ -581,16 +581,7 @@ void loop() {
     app_ui::set_gps_compass(gps::compassText());
   }
 
-  // ── Server IMU → dashboard labels, ~2 Hz (10 Hz noise would redraw every frame) ──
-  static uint32_t last_imu_ms = 0;
-  if (t - last_imu_ms >= 500) {
-    last_imu_ms = t;
-    app_ui::set_imu(g_sensor_src.imu_accel_x_ms2, g_sensor_src.imu_accel_y_ms2,
-                    g_sensor_src.imu_accel_z_ms2, g_sensor_src.imu_gyro_x_rads,
-                    g_sensor_src.imu_gyro_y_rads, g_sensor_src.imu_gyro_z_rads);
-  }
-
-  // ── Server temp + humidity (AHT20) → dashboard labels, ~1 Hz ──
+  // ── Server cabin temperature (AHT20) → climate pill, ~1 Hz ──
   static uint32_t last_amb_ms = 0;
   if (t - last_amb_ms >= 1000) {
     last_amb_ms = t;
@@ -600,11 +591,6 @@ void loop() {
     else           snprintf(buf, sizeof(buf), "%.1f C", tc);  // "XX.X C" — ° glyph
                                                               // not in ui_font_robotoregular28
     app_ui::set_ambient_temperature(buf);
-
-    float rh = g_sensor_src.env_humidity_pct;
-    if (isnan(rh)) snprintf(buf, sizeof(buf), "--");
-    else           snprintf(buf, sizeof(buf), "%.0f %%", rh);  // "XX %"
-    app_ui::set_humidity(buf);
   }
 
   // ── Hold the backlight ON ──────────────────────────────────

@@ -8,5 +8,4 @@ gps_time=--
 altitude=--
 course=--
 env_temp=nan
-humidity=nan
 elapsed_ms=0
