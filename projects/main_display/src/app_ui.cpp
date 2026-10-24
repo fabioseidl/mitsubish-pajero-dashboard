@@ -165,6 +165,14 @@ void cycle_backlight() {
     show_backlight_btn();  // reveal the readout and restart the 3 s countdown
 }
 
+/** Steps the backlight one clamped level up or down and reveals the readout. */
+void step_backlight(bool up) {
+    if (up) s_brightness.increase();
+    else    s_brightness.decrease();
+    refresh_backlight_label();
+    show_backlight_btn();
+}
+
 void create() {
     // Must run after lv_init() and after the LVGL display is registered.
     s_w = dashboard_view::build(lv_screen_active());

@@ -97,54 +97,70 @@ static void pcf8574_set_bit(uint8_t mask, bool high) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Backlight button — GPIO 6 (the PH2.0 "ADC" sensor connector)
+//  Buttons A–D — GPIO 6 (PH2.0 "ADC" connector, ADC1_CH5)
 //
-//  GPIO 6 is one of the few pins the RGB bus leaves free, and it is broken out
-//  on a 3-pin PH2.0 header, so a sensor/button module plugs straight in.
+//  Four buttons on one analog pin via a resistor ladder:
+//  VCC─R1─R2─R3─R4─R5─GND (1K each), button N ties the node under R_N to the pin.
+//  R6 (pin pull-down) is 1K on this PCB, so it loads the ladder. Measured with
+//  esp32/buttons_board: A=1439 mV, B=876, C=575, D=348, released=0.
+//  Thresholds are the midpoints; every press logs its mV for re-tuning.
+//  A = backlight up, B = backlight down, C and D have no function yet.
 //
-//  This is NOT the BOOT button: BOOT is GPIO 0, which on this board is RGB
-//  Green 3 (see the LGFX config) and is driven by the LCD peripheral at pixel
-//  rate — unreadable while the panel runs, and shorted to GND if pressed.
-//
-//  Polarity is detected at boot rather than assumed: 3-pin modules differ in
-//  whether the switch pulls the signal to GND or to VCC, and some carry their
-//  own pull resistor. Whatever level the pin idles at is taken as "released".
-//  (So do not hold the button while booting.)
+//  Sampled every 10 ms by an esp_timer, not by loop(): a full-screen redraw
+//  (every brightness step) blocks loop() for 100+ ms and would swallow taps.
+//  Presses go through a queue; loop() applies them on the LVGL thread.
 // ─────────────────────────────────────────────────────────────
-#define BL_BTN_PIN            6
-static constexpr uint32_t BL_BTN_DEBOUNCE_MS = 30;
+#define BTN_PIN               6
+static constexpr uint32_t BTN_SAMPLE_US   = 10000;
+static constexpr uint8_t  BTN_STABLE_READS = 3;  // 30 ms debounce
+static constexpr uint32_t BTN_THRESH_MV[] = {1158, 726, 462, 174};  // above [i] → button i+1
 
-static int g_btn_pressed_level = LOW;
+enum class Button : uint8_t { None, A, B, C, D };
 
-static void backlight_button_init() {
-  pinMode(BL_BTN_PIN, INPUT_PULLUP);
-  delay(10);                                   // let the pull settle
-  const int idle = digitalRead(BL_BTN_PIN);
-  g_btn_pressed_level = (idle == HIGH) ? LOW : HIGH;
-  DBG("[button] GPIO%d idles %s → pressed = %s",
-      BL_BTN_PIN, idle == HIGH ? "HIGH" : "LOW",
-      g_btn_pressed_level == LOW ? "LOW" : "HIGH");
+static QueueHandle_t g_btn_queue = nullptr;
+
+/** Maps a ladder voltage to the button that produces it. */
+static Button buttons_decode(uint32_t mv) {
+  for (uint8_t i = 0; i < 4; i++)
+    if (mv > BTN_THRESH_MV[i]) return (Button)(i + 1);
+  return Button::None;
 }
 
-static void backlight_button_tick(uint32_t now) {
-  static bool     raw_prev    = false;
-  static bool     stable      = false;
-  static uint32_t last_edge   = 0;
+/** esp_timer callback: debounces the ladder and queues one event per press. */
+static void buttons_sample(void*) {
+  static Button  raw_prev = Button::None;
+  static Button  stable   = Button::None;
+  static uint8_t same     = 0;
 
-  const bool raw = (digitalRead(BL_BTN_PIN) == g_btn_pressed_level);
-
-  if (raw != raw_prev) {              // bouncing — restart the settle timer
-    raw_prev  = raw;
-    last_edge = now;
-    return;
-  }
-  if (raw == stable) return;                       // nothing new
-  if (now - last_edge < BL_BTN_DEBOUNCE_MS) return; // not settled yet
+  const Button raw = buttons_decode(analogReadMilliVolts(BTN_PIN));
+  if (raw != raw_prev) { raw_prev = raw; same = 0; return; }  // bouncing
+  if (raw == stable || ++same < BTN_STABLE_READS) return;     // nothing new / not settled
 
   stable = raw;
-  if (stable) {                        // act on press, ignore release
-    app_ui::cycle_backlight();
-    DBG("[button] press → backlight step");
+  if (stable != Button::None) xQueueSend(g_btn_queue, &stable, 0);  // full queue drops the press
+}
+
+/** Configures GPIO 6 as an analog input and starts the 10 ms sampler. */
+static void buttons_init() {
+  pinMode(BTN_PIN, INPUT);                     // no internal pull, the ladder has its own
+  analogSetPinAttenuation(BTN_PIN, ADC_11db);  // 0–3.1 V range
+  g_btn_queue = xQueueCreate(8, sizeof(Button));
+  const esp_timer_create_args_t args = { .callback = buttons_sample, .name = "buttons" };
+  esp_timer_handle_t timer;
+  esp_timer_create(&args, &timer);
+  esp_timer_start_periodic(timer, BTN_SAMPLE_US);
+}
+
+/** Applies queued presses; runs on the LVGL thread. */
+static void buttons_tick() {
+  Button b;
+  while (xQueueReceive(g_btn_queue, &b, 0) == pdTRUE) {
+    DBG("[button] %c", 'A' + (int)b - 1);
+    switch (b) {
+      case Button::A: app_ui::step_backlight(true);  break;
+      case Button::B: app_ui::step_backlight(false); break;
+      default: break;                            // C, D: unassigned
+    }
   }
 }
 
@@ -301,9 +317,10 @@ public:
       cfg.pin_hsync   = GPIO_NUM_46;  // HSYNC (strapping pin — fine after boot)
       cfg.pin_pclk    = GPIO_NUM_7;   // PCLK
 
-      cfg.freq_write = 12000000;  // 12 MHz — lower pclk = less PSRAM scan-out bandwidth
-                                  // demand, steadier image on the single framebuffer.
-                                  // (Was 16 MHz; raise again only if the image is rock-stable.)
+      // Refresh = pclk / (h_total * v_total) = pclk / (1200 * 631) = 15.8 Hz.
+      // Tried 16 MHz (21 Hz) on 2026-10-23: flickered MORE, so the residual flicker
+      // is PSRAM scan-out bandwidth, not the low refresh. Keep 12 MHz.
+      cfg.freq_write = 12000000;
 
       // Clock polarity:
       //   Bus_RGB default: pclk_active_neg=1 (latch on falling edge), pclk_idle_high=0 (idle LOW)
@@ -524,6 +541,13 @@ void setup() {
     while (true) { delay(100); }
   }
   // DBG("[LGFX] display size: %d x %d", lcd.width(), lcd.height());
+  {
+    auto b = lcd._bus_instance.config();
+    uint32_t ht = 1024 + b.hsync_front_porch + b.hsync_pulse_width + b.hsync_back_porch;
+    uint32_t vt = 600 + b.vsync_front_porch + b.vsync_pulse_width + b.vsync_back_porch;
+    DBG("[LGFX] pclk %lu Hz, %lux%lu total -> refresh %.1f Hz",
+        (unsigned long)b.freq_write, (unsigned long)ht, (unsigned long)vt, (double)b.freq_write / (ht * vt));
+  }
 
   // ── 4. LVGL dashboard + ESP-NOW link ──────────────────────
   app_init();
@@ -534,7 +558,7 @@ void setup() {
   // IMU and temperature/humidity come from the server Payload (sensors moved to its Qwiic port).
   clear_sensor_src();
 
-  backlight_button_init();
+  buttons_init();
 
   DBG("[setup] complete");
 }
@@ -566,9 +590,9 @@ void loop() {
   last_tick = t;
   lv_timer_handler();
 
-  // ── Physical backlight button (GPIO 6) ──
-  // Polled on the LVGL thread so cycle_backlight() touches widgets safely.
-  backlight_button_tick(t);
+  // ── Physical buttons A–D (GPIO 6) ──
+  // Drained on the LVGL thread so step_backlight() touches widgets safely.
+  buttons_tick();
 
   // ── Connection timeout → fires OFFLINE if packets stop arriving ──
   g_conn_monitor.tick(t);

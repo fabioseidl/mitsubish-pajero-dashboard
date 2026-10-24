@@ -20,10 +20,12 @@ void update(const Payload& p);
 void set_server_status(bool online);
 
 // Advance the backlight one step (10 → 20 → … → 100 → 10) and update the label.
-// Called by the on-screen button and by the physical button on GPIO 6 — the
-// latter is what actually works today, since this board's GT911 does not answer
-// on the I2C bus. Must be called from the LVGL thread.
+// Called by the on-screen button (inert: this board's GT911 does not answer).
 void cycle_backlight();
+
+// Step the backlight one level up or down, clamped at 10% / 100%, and show the
+// readout. Called by the physical UP/DOWN buttons on GPIO 6.
+void step_backlight(bool up);
 
 // GPS strings from gps.h.
 void set_gps_datetime(const char* text);   // "YYYY-MM-DD HH:MM:SS" (UTC-3), shown as HH:MM
