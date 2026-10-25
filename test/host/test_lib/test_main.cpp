@@ -8,6 +8,7 @@ void run_espnow_receiver_tests();
 void run_server_connection_monitor_tests();
 void run_step_brightness_tests();
 void run_dtc_tests();
+void run_log_row_tests();
 
 int main() {
     UNITY_BEGIN();
@@ -16,5 +17,6 @@ int main() {
     run_server_connection_monitor_tests();
     run_step_brightness_tests();
     run_dtc_tests();
+    run_log_row_tests();
     return UNITY_END();
 }

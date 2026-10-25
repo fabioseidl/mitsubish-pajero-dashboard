@@ -215,4 +215,32 @@ bool takeDirty() {
   return true;
 }
 
+Fix fix() {
+  constexpr uint32_t kMaxAgeMs = 2000;  // older than two NMEA cycles = UART stalled
+  Fix f = {};
+  f.alt_m = NAN;
+
+  f.loc_valid = parser.location.isValid() && parser.satellites.value() > 0 &&
+                parser.location.age() < kMaxAgeMs;
+  if (f.loc_valid) {
+    f.lat = parser.location.lat();
+    f.lon = parser.location.lng();
+    if (parser.altitude.isValid()) f.alt_m = static_cast<float>(parser.altitude.meters());
+  }
+
+  // Year guard: before time sync some receivers report an empty date that parses as 2000.
+  f.time_valid = parser.date.isValid() && parser.time.isValid() &&
+                 parser.time.age() < kMaxAgeMs && parser.date.year() >= 2024;
+  if (f.time_valid) {
+    CivilTime t = toLocalTime(parser.date, parser.time);
+    f.year = t.year;
+    f.mon  = t.month;
+    f.day  = t.day;
+    f.hh   = t.hour;
+    f.mm   = t.minute;
+    f.ss   = t.second;
+  }
+  return f;
+}
+
 }  // namespace gps

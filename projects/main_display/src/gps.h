@@ -67,4 +67,17 @@ const char* compassText();   // course over ground in degrees
 // push statusText() to the display.
 bool takeDirty();
 
+/** Snapshot of the current fix; date/time are local (GPS_UTC_OFFSET_HOURS). */
+struct Fix {
+  bool    loc_valid;    // lat/lon usable (fix with satellites, not stale)
+  bool    time_valid;   // date/time usable (not stale)
+  double  lat, lon;     // degrees
+  float   alt_m;        // metres MSL, NAN if unknown
+  int32_t year;
+  uint8_t mon, day, hh, mm, ss;
+};
+
+// Current fix from the parser. Loop task only — TinyGPSPlus is not thread-safe.
+Fix fix();
+
 }  // namespace gps

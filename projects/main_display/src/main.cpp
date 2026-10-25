@@ -30,6 +30,7 @@
 #include "app_ui.h"            // dashboard UI bridge (dashboard_view + data formatting)
 #include "gps.h"               // u-blox NEO-6M on UART2 (NMEA → serial console)
 #include "gt911.h"             // GT911 capacitive touch on the shared I2C bus
+#include "sd_logger.h"         // trip log CSV on the microSD card
 
 // ─────────────────────────────────────────────────────────────
 //  Debug macro — routes to UART0 (Serial on this build)
@@ -555,6 +556,9 @@ void setup() {
   // ── 5. GPS (u-blox NEO-6M on UART2) ───────────────────────
   gps::begin();
 
+  // ── 6. Trip log on the microSD card (off if no card) ──────
+  sd_logger::begin();
+
   // IMU and temperature/humidity come from the server Payload (sensors moved to its Qwiic port).
   clear_sensor_src();
 
@@ -603,6 +607,23 @@ void loop() {
     app_ui::set_gps_datetime(gps::dateTimeText());
     app_ui::set_gps_altitude(gps::altitudeText());
     app_ui::set_gps_compass(gps::compassText());
+  }
+
+  // ── Trip log: one row per GPS second (the GPS is the only clock) ──
+  static uint32_t last_log_poll = 0;
+  static uint8_t  last_log_ss   = 0xFF;
+  if (t - last_log_poll >= 200) {
+    last_log_poll = t;
+    const gps::Fix f = gps::fix();
+    if (f.time_valid && f.ss != last_log_ss) {
+      last_log_ss = f.ss;
+      LogSample s = {};
+      s.gps        = f;
+      s.link_valid = g_status_online && (g_sensor_src.flags & PAYLOAD_FLAG_DATA_VALID);
+      s.speed_kmh  = payload_speed_kmh(&g_sensor_src);
+      s.rpm        = g_sensor_src.rpm;
+      sd_logger::push(s);
+    }
   }
 
   // ── Server cabin temperature (AHT20) → climate pill, ~1 Hz ──
