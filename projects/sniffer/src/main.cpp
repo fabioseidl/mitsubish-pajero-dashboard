@@ -760,8 +760,9 @@ static void printBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc, uint64_t 
         Serial.printf("  steer=%ld (raw=%u)", (long)bcast_steer_angle(d), (d[0] << 8) | d[1]);
     } else if (id == CAN_BCAST_ETACS && dlc >= 3) {
         // Every bit printed here is confirmed on this vehicle.
-        Serial.printf("  lamps[%s%s%s] turn[%s%s] doors[%s%s]",
+        Serial.printf("  lamps[%s%s%s%s] turn[%s%s] doors[%s%s]",
                       (d[0] & ETACS_D0_POSITION_LAMP) ? "pos "  : "",
+                      (d[0] & ETACS_D0_FOG_LAMP)      ? "fog "  : "",
                       (d[1] & ETACS_D1_HEAD_LAMP_LO)  ? "lo "   : "",
                       (d[1] & ETACS_D1_HEAD_LAMP_HI)  ? "hi "   : "",
                       (d[1] & ETACS_D1_LEFT_TURN)     ? "L"     : "-",
@@ -944,10 +945,10 @@ static void printRdliHint(uint16_t req_id, uint8_t lid, const uint8_t* D, uint8_
                       "slip=%drpm gearbits=%02X (P/N=01 R=02 1st..5th=04..40)  (qhub, UNVERIFIED)\n",
                       ((D[1] << 8) | D[2]) / 2, ((D[3] << 8) | D[4]) / 2, (int)D[5] - 40,
                       D[6] * 33.15f / 255.0f, D[7] * 714 / 255, (int)D[8] - 51, D[9]);
-    } else if (req_id == UDS_REQ_TCM && lid == 0x04 && nD >= 2) {
-        // Own 4WD dial sweep: D0 0x08 high range, D1 0x20 centre diff lock in high.
-        Serial.printf("#   [hint 4WD] highrange=%s difflock=%s  (dial sweep, candidate)\n",
-                      (D[0] & 0x08) ? "on" : "off", (D[1] & 0x20) ? "on" : "off");
+    } else if (req_id == UDS_REQ_TCM && lid == KWP21_LID_TCM_STATUS && nD >= 2) {
+        Serial.printf("#   [hint TCM] brake=%s lowrange=%s selector=%02X (01 P, 02 R, 04 N, 08 D)  (candidate)\n",
+                      (D[0] & TCM_STATUS_D0_BRAKE) ? "on" : "off",
+                      (D[1] & TCM_STATUS_D1_LOW_RANGE) ? "on" : "off", nD >= 3 ? D[2] : 0);
     } else if (req_id == UDS_REQ_ENGINE && lid == 0x01 && nD >= 4) {
         // rpm scale disagrees with the TCM input shaft by 1.33x; check against 0x308.
         Serial.printf("#   [hint ENG] volt=%.2fV speed=%dkm/h rpm=%d  (qhub Triton set, UNVERIFIED)\n",

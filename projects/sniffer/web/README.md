@@ -45,10 +45,17 @@ note on how it was (or should be) confirmed.
   once. **poll Mode 01 PIDs** sends it; **repeat every 10 s** keeps polling.
   This transmits on the bus.
 - Mode 22 rows are rejected on this truck; **re-test Mode 22** sends `VERIFY M22`.
+- KWP `0x21` rows (`KWP 7E1 21 04`, ...) take their value from the firmware's
+  `[hint ...]` line after each `RDLI` reply. **poll KWP candidates** reads them
+  once; **repeat every 3 s** keeps polling. This transmits.
 - **find ECUs** sends `ECUS` (KWP `0x21` sweep of `0x600`–`0x7FF` with auto
-  reply id) and **watch 4WD mode** sends `KWATCH 786 21`; their output, plus
-  `IDENT` and session lines, lands in the log. Both transmit. `STOP` ends
-  `KWATCH`. Type `IDENT 6A0` or append `SESS` in the text box for the rest.
+  reply id); its output, plus `IDENT`, `KWATCH` and session lines, lands in the
+  log. Type `IDENT 7A0`, `KWATCH 7A0 09` or append `SESS` in the text box.
+- **Not on CAN** lists what was searched for on this truck and is not reachable
+  (2H/4H, odometer, handbrake, mirror fold) — `NOT_ON_CAN` in `bus_monitor.py`.
+
+The KWP list lives in `KWP_SIGNALS` in `bus_monitor.py`; keep it in step with
+the hints in `src/main.cpp` and `pid_map.h`.
 
 The Mode 01 and Mode 22 lists, names, units and `verified` flags are parsed from
 `lib/core/include/pid_map.h`. The broadcast list lives in `BROADCAST_SIGNALS`

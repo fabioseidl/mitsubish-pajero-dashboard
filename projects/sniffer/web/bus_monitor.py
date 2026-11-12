@@ -65,6 +65,8 @@ M01_POS_RE = re.compile(r"^POS PID=0x([0-9A-Fa-f]{2})\s.*?raw=((?:[0-9A-Fa-f]{2}
 M01_NA_RE = re.compile(r"^NA\s+PID=0x([0-9A-Fa-f]{2})\s")
 M22_RE = re.compile(r"^(POS|NEG|NA)\s+ECU=0x([0-9A-Fa-f]{3})\s+DID=0x([0-9A-Fa-f]{4})\s.*?(?:nrc=0x([0-9A-Fa-f]{2}))?\s*$")
 RDLI_RE = re.compile(r"^RDLI ECU=0x([0-9A-Fa-f]{3}) LID=0x([0-9A-Fa-f]{2})(?: RX=0x([0-9A-Fa-f]{3}))? (POS resp=(.*)|NEG nrc=0x([0-9A-Fa-f]{2})|no response)")
+# Firmware candidate decode printed right after an RDLI reply.
+HINT_RE = re.compile(r"^#\s+\[hint \w+\]\s+(.*)$")
 # KWP discovery output: ECUS responders, KWATCH changes, IDENT and session lines go to the log.
 KWP_LOG_PREFIXES = ("ECU req=", "KWATCH ", "IDENT ", "# session ")
 WATCH_KV_RE = re.compile(r"(\w+)=(\S+)")
@@ -130,7 +132,7 @@ BROADCAST_SIGNALS = [
      "D0 - 40. Matched the gauge and Mode 01 0x05; the server's coolant source."),
     (0x608, "Injected fuel quantity", "mg/s", "confirmed", _kv("fuel_raw"),
      "D5,D6. Reads 0 on overrun, ~310-340 at idle; drives the fuel-rate maths."),
-    (0x424, "Headlamps", "", "confirmed", _bracket("lamps", drop=("pos",)),
+    (0x424, "Headlamps", "", "confirmed", _bracket("lamps", drop=("pos", "fog")),
      "D1 0x20 low beam, 0x04 high beam. Lamp sweep on this vehicle."),
     (0x424, "Turn signals", "", "confirmed", _bracket("turn"),
      "D1 0x02 left, 0x01 right."),
@@ -150,6 +152,7 @@ BROADCAST_SIGNALS = [
     (0x308, "Engine rpm (broadcast)", "rpm", "confirmed", _kv("rpm"),
      "D1,D2 direct. Matched the tachometer."),
     (0x424, "Position lamps", "", "confirmed", _flag("pos", "lamps["), "D0 0x04."),
+    (0x424, "Fog lamps", "", "confirmed", _flag("fog", "lamps["), "D0 0x08. Toggled on and off."),
     (0x445, "Mirror heater", "", "confirmed", _flag("mirror-heat", "ac="), "D4 0x20."),
     (0x608, "Outside temperature", "C", "candidate", _kv("ambient"),
      "qhub.kz: D1 - 40. Read 00 (-40 C) throughout candump.log; compare with a thermometer."),
@@ -159,6 +162,48 @@ BROADCAST_SIGNALS = [
      "D2,D3. MPS2 says 25700 counts/km; drive a known distance to re-derive."),
     (0x236, "Steering angle", "", "candidate", _kv("steer"),
      "MPS2 map. Never seen on this bus — likely absent on this truck."),
+]
+
+# KWP 0x21 signals, read from the firmware's `[hint ...]` line after each RDLI
+# reply — never decoded here. Key = "ECU/LID" as the firmware prints it.
+KWP_SIGNALS = [
+    # (key, name, unit, status, extractor, description)
+    ("7E1/04", "Low range (TCM)", "", "confirmed", _kv("lowrange"),
+     "D1 0x20. Set entering 4LLc, cleared leaving it, with 0x218 D4."),
+    ("7E1/04", "Foot brake pedal", "", "candidate", _kv("brake"),
+     "D0 0x02. Set while the pedal was held, stationary; confirm on a drive."),
+    ("7E1/04", "Selector (TCM)", "", "candidate", _kv("selector"),
+     "D2: 01 P, 02 R, 04 N, 08 D (qhub). P and N seen."),
+    ("7E1/02", "ATF temperature", "C", "candidate", _kv("ATF"),
+     "D5 - 40 (qhub 5AT). Rises with warm-up; check against a hot-fluid reading."),
+    ("7E1/02", "Input shaft speed", "rpm", "candidate", _kv("input"),
+     "D1D2 / 2. ~idle in N; confirm while driving."),
+    ("7E1/02", "Output shaft speed", "rpm", "candidate", _kv("output"),
+     "D3D4 / 2. 0 stationary; should track road speed."),
+    ("7E1/02", "TCM supply voltage", "V", "candidate", _kv("volt"),
+     "D6 x 33.15 / 255. 13.5-14.0 V at idle."),
+    ("7E1/02", "Converter slip", "rpm", "candidate", _kv("slip"),
+     "D8 - 51. Near 0 when locked up."),
+    ("7E1/02", "Gear bits", "", "candidate", _kv("gearbits"),
+     "D9: 01 P/N, 02 R, 04..40 = 1st..5th. Confirm through the gears."),
+    ("7E0/01", "Battery voltage (ECU)", "V", "candidate", _kv("volt"),
+     "D0 x 18 / 255 (qhub Triton set)."),
+    ("7E0/01", "Engine rpm (KWP)", "rpm", "candidate", _kv("rpm"),
+     "D2D3 / 8 reads 1.33x the TCM input shaft; compare with 0x308."),
+    ("7E0/02", "Coolant (KWP)", "C", "candidate", _kv("coolant"),
+     "D1 - 40. Compare with 0x608 D0."),
+    ("7E0/02", "Manifold pressure", "kPa", "candidate", _kv("map"),
+     "D2 x 1.33. ~101 kPa (atmospheric) at idle; should rise with boost."),
+    ("7E0/04", "Accelerator pedal sensors", "V", "candidate", _kv("pedal"),
+     "D3, D4 x 5 / 255. Should rise together when the pedal is pressed."),
+]
+
+# Tested on this truck and not reachable on CAN — shown so nobody re-runs the search.
+NOT_ON_CAN = [
+    ("4WD 2H / 4H / 4HLc", "No broadcast byte or KWP LID on the 5 CAN ECUs moves; 0x786 never answers. Likely K-line."),
+    ("Odometer", "191911 km is in no LID; cluster (0x6A0 / 0x79E) does not answer on CAN."),
+    ("Handbrake", "Two release/apply cycles moved nothing. Switch likely feeds the cluster only."),
+    ("Mirror fold", "Fold and unfold moved nothing, not even transiently."),
 ]
 
 
@@ -302,6 +347,8 @@ class Bus:
         self.m01 = {}                              # pid -> dict(value, unit, raw, ok, ts)
         self.m22 = {}                              # (req, did) -> dict(result, nrc, ts)
         self.rdli = {}                             # "7E1/02" -> dict(result, data, ts)
+        self.rdli_hint = {}                        # "7E1/02" -> (firmware hint text, wall-clock)
+        self.last_rdli = None                      # key of the last RDLI reply, for its hint line
         self.dumping = False                       # candump lines seen; WATCH lines are then decode-only
         self.started = time.time()
         self.total = 0
@@ -355,10 +402,19 @@ class Bus:
         if m:
             result = "POS" if m.group(5) is not None else ("NEG" if m.group(6) else "NA")
             data = (m.group(5) or "").strip() if result == "POS" else (m.group(6) or "")
+            key = f"{m.group(1).upper()}/{m.group(2).upper()}"
             with self.lock:
-                self.rdli[f"{m.group(1).upper()}/{m.group(2).upper()}"] = dict(
+                self.rdli[key] = dict(
                     result=result, data=data, rx=(m.group(3) or "").upper(),
                     ts=round(now - self.started, 2))
+                self.last_rdli = key if result == "POS" else None
+            self.note("dev", line)
+            return
+
+        m = HINT_RE.match(line)
+        if m and self.last_rdli:
+            with self.lock:
+                self.rdli_hint[self.last_rdli] = (m.group(1), now)
             self.note("dev", line)
             return
 
@@ -408,6 +464,18 @@ class Bus:
             out.append(dict(status=status, source=f"CAN 0x{frame:03X}", name=name,
                             value=value, unit=unit, raw="",
                             age=round(now - ts, 1) if ts else None, note=desc))
+        for key, name, unit, status, get, desc in KWP_SIGNALS:
+            text, ts = self.rdli_hint.get(key, (None, None))
+            value = get(text) if text is not None else None
+            if value is not None and unit and value.endswith(unit):
+                value = value[: -len(unit)]
+            ecu, lid = key.split("/")
+            out.append(dict(status=status, source=f"KWP {ecu} 21 {lid}", name=name,
+                            value=value, unit=unit, raw=(self.rdli.get(key) or {}).get("data", ""),
+                            age=round(now - ts, 1) if value is not None else None, note=desc))
+        for name, desc in NOT_ON_CAN:
+            out.append(dict(status="absent", source="not on CAN", name=name,
+                            value=None, unit="", raw="", age=None, note=desc))
         for p in self.m01_cat:
             r = self.m01.get(p["pid"])
             if r is None:

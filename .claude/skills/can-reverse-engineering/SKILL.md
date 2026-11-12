@@ -34,7 +34,8 @@ Do not redo this work:
 - `CAN 0x424` — ETACS body control. Low beam (`D1 & 0x20`), high beam
   (`D1 & 0x04`), left and right turn signals (`D1 & 0x02`, `D1 & 0x01`) and the
   two door bits (`D2 & 0x02` driver, `D2 & 0x01` other) confirmed by a lamp,
-  indicator and door sweep, and the position-lamp bit (`D0 & 0x04`) since.
+  indicator and door sweep, and the position-lamp (`D0 & 0x04`) and fog-lamp
+  (`D0 & 0x08`) bits since.
 - `CAN 0x445` — auto A/C. Fan speed (`D5` high nibble), vent routing,
   recirculation and A/C-on track the panel. `D0` is the temperature set point,
   pinned by a dial sweep on this vehicle: `50` = LO, `64` = 20 °C then 2 counts
@@ -50,13 +51,14 @@ Do not redo this work:
 - `CAN 0x418` D6 — selector lever, `00` P, `08` R, `10` N, `20` D. Confirmed.
 - `CAN 0x445` D4 `0x20` — mirror heater. Confirmed.
 
-**The 4WD dial is only partly visible.** Broadcast frames carry low range only.
-The TCM answers KWP `0x21` LID `0x04` on `0x7E1` with D0 `0x08` = high range and
-D1 `0x20` = 4HLc (candidate, one stationary sweep). 2H vs 4H is in none of the
-99 KWP `0x21` LIDs on the engine ECU and TCM. An address sweep of `0x700`–`0x7F7`
-found no other responder, but it only listened on request + 8, so it could not
-hear the transfer-case ECU (`0x786` → `0x787`, below). See
-`references/bus-inventory.md`.
+**The 4WD dial only shows low range on CAN.** Broadcast `0x218` D4 bit 0, and
+TCM KWP `0x21` LID `0x04` D1 `0x20` (tracked 4LLc in and out). 2H, 4H and 4HLc
+are identical on every broadcast frame and in all 57 KWP `0x21` LIDs of the five
+ECUs that answer on CAN — engine `7E0`, TCM `7E1`, ABS `784`, ETACS `7A0`,
+unknown `7A2` (part 7820A270). `ECUS` over `0x600`–`0x7FF`, with and without a
+`10 92` session, found nothing at `0x786` (transfer case) or `0x6A0` (meter). The
+4WD controller is most likely on K-line (OBD pin 7), which this board cannot
+read. Don't re-run the CAN search; see `references/bus-inventory.md`.
 
 **Rejected — the ECUs do not implement UDS service `0x22`.** A DID sweep answered
 NRC `0x11` (serviceNotSupported) from the engine ECU and `0x80` from the TCM for
@@ -66,15 +68,11 @@ available on this truck via `0x22`**, even though the tables list them. The Mode
 polling path is gated off (`POLL_MODE22 = false`) and the ISO-TP reassembly code is
 kept dormant.
 
-**The older KWP service `0x21` is the path for manufacturer data.** The engine ECU
-and TCM answer it on the car (LID map in `references/bus-inventory.md`); the
-other headers below are untried. It reaches ATF temperature (TCM `7E1 21 02`), dash odometer (cluster
-`79E 21 AD`), litre fuel level, absolute load (`7E0 21 1A`) and the **traction
-mode** (`786 21 21`, byte D0 = 2H/4H/4HLc/4LLc from the transfer-case ECU) — the
-best remaining lead for 2H vs 4H. The sniffer's `RDLI` listens on request + 8
-(`0x78E` for `0x786`), so it must learn the + 1 response IDs before `RDLI 786 21`
-can work — it now does: `RDLI`, `LIDS` and `KWATCH` use `kwp21_resp_id()` in
-`pid_map.h`, and `ECUS` auto-detects any reply id. The header/LID map is in
+**The older KWP service `0x21` is the path for manufacturer data.** Five ECUs
+answer it on the car (LID map in `references/bus-inventory.md`). The research
+headers for the cluster (`79E`), transfer case (`786`, traction mode) and body
+block (`78C`) do not answer on this truck. `RDLI`, `LIDS` and `KWATCH` use
+`kwp21_resp_id()` in `pid_map.h`, and `ECUS` auto-detects any reply id. The header/LID map is in
 `MITSUBISHI_ADVANCED_PIDS.md §9` and the slot defines in `pid_map.h` under "Legacy
 KWP service 0x21". Each is a candidate: the block and signal are known, the byte
 offset is not, so `RDLI` must resolve the decode on the car.

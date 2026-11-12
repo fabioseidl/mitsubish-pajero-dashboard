@@ -88,9 +88,9 @@ recorder. Every dial position was visited in both directions
   entering it, unchanged at every other position. Confirmed.
 - **2H, 4H and 4HLc are identical on CAN.** No byte on any of the 14 IDs moved
   for those transitions, including the static `0x325`, `0x447`, `0x415`,
-  `0x101`. The research lists the transfer-case ECU on CAN at `0x786` →
-  `0x787` (KWP `0x21` LID `0x21`, D0 = traction mode), which this session
-  never reached — see the KWP section below. Untested, not ruled out.
+  `0x101`. The research's transfer-case ECU at `0x786` → `0x787` does not
+  answer on this truck, and no KWP LID on the five CAN ECUs moves either — see
+  the KWP section below.
 - **`0x418` D6 = selector lever**, one bit per position: `00` P, `08` R,
   `10` N, `20` D. Confirmed.
 - **`0x218` D4 bit 6 (`0x40`)** toggles while the selector moves through
@@ -103,65 +103,84 @@ recorder. Every dial position was visited in both directions
 - **`0x308` D1,D2 = engine rpm**, confirmed against the tachometer. (An early
   1179 vs 775 mismatch with Mode 01 `0x0C` came from comparing readings taken
   at different moments of a cold idle.)
+- **Fog lamps (`0x424` D0 `0x08`)** confirmed on and off with low beam on;
+  ETACS `7A0` LID `09` bit `0x08` and LID `20` D1 bit `0x10` follow it.
 - **Position lamps (`0x424` D0 `0x04`) and mirror heater (`0x445` D4 `0x20`)**
   confirmed by toggling them.
 - **None of the 11 unverified Mode 01 PIDs answer** (`VERIFY ALL` at idle).
 
 ## KWP 0x21 (ReadDataByLocalIdentifier) map
 
-An `RDLI <req> 01` sweep of `0x700`–`0x7F7` found two responders, engine
-`0x7E0` and TCM `0x7E1`. It only listened on request + 8, so ECUs that answer
-on request + 1 (transfer case `0x786` → `0x787`, cluster, ABS; see
-`pid_map.h` "Legacy KWP service 0x21") were not tested. Both responders
-implement KWP `0x21`; every other LID returns NRC `0x12`.
+`ECUS` over `0x600`–`0x7FF` (2026-11-12, auto reply id, with and without a
+`10 92` session) found five responders. Nothing answers at `0x786` (transfer
+case), `0x6A0` (meter), `0x79E` (cluster) or `0x78C` (body). Every unsupported
+LID returns NRC `0x12`. Part numbers from `IDENT` (`1A 87`):
 
-- **TCM `0x7E1`:** LIDs `01`–`04`, `E0`, `E1`, `E4`.
-- **Engine `0x7E0`:** 92 LIDs — `01`–`04`, `08`–`19`, `1E`, `21`–`29`, `40`–`5F`,
-  `73`–`79`, `A0`–`AC`, `B0`–`BF`, `E0`, `E1`, `E4`, `FA`.
+| Request → reply | Module | Part no. | LIDs that answer |
+|---|---|---|---|
+| `7E0` → `7E8` | Engine | 1860C804 | 92: `01`–`04`, `08`–`19`, `1E`, `21`–`29`, `40`–`5F`, `73`–`79`, `A0`–`AC`, `B0`–`BF`, `E0`, `E1`, `E4`, `FA` |
+| `7E1` → `7E9` | A/T (TCM) | 8631B279 | `01`–`04`, `E0`, `E1`, `E4` |
+| `784` → `785` | ABS | 4670A605 | `20`, `30`, `43`, `E0`, `E1` |
+| `7A0` → `7A1` | ETACS | 8637A721 | 42: `01`–`03`, `05`, `06`, `08`–`0A`, `0D`–`1D`, `20`–`22`, `24`, `25`, `30`, `32`, `41`, `44`, `4F`, `6C`, `6D`, `70`, `C0`, `E0`, `E1`, `E4` |
+| `7A2` → `7A3` | unknown | 7820A270 | `10`–`12`, `E0`, `E1` |
 
-**TCM LID `04` follows the 4WD dial** (candidate, one stationary sweep in N):
+ETACS `7A0` also returns the VIN on `1A 90`. ETACS LID `25` returns the same
+bytes as the `0x424` broadcast frame, so its other LIDs likely mirror body state.
 
-| Position | `61 04` D0 D1 D2 D3 |
+**4WD dial sweep over all 57 data LIDs (2026-11-12, selector in N).** 2H, 4H and
+4HLc read identically in every LID of all five ECUs; the only LIDs that moved
+were drifting values or leftovers from a short D/R roll (ETACS `14`, ABS `30`),
+which did not revert. Only low range shows:
+
+| Position | TCM `61 04` D0 D1 D2 D3 |
 |---|---|
-| 2H | `08 00 01 00` |
-| 4H | `08 00 01 00` |
-| 4HLc | `08 20 01 00` |
-| 4LLc | `00 00 01 00` |
+| 2H, 4H, 4HLc | `00 00 04 00` |
+| 4LLc | `00 20 04 00` |
 
-D0 `0x08` = high range, D1 `0x20` = centre diff locked in high range. 2H and 4H
-are identical here and in every other LID read in both positions.
+D0 `0x02` = foot brake pedal pressed (set while held, cleared on release).
+D1 `0x20` = low range, in and out of 4LLc with `0x218` D4 bit 0. D2 = selector
+(qhub: `01` P, `02` R, `04` N, `08` D; seen `01` in P, `04` in N). An earlier
+sweep that read `08 20 01 00` as 4HLc was taken in P with the dial and the
+snapshots one step apart; D0 `0x08` did not reproduce and its meaning is unknown.
+**2H vs 4H is not reachable on CAN**; the 4WD controller is likely K-line only.
 
-**Research candidates ruled out by this session's replies:** `7E0 21 1A`
-(absolute load) answers NRC `0x12`; `7E0 21 02` has 5 data bytes, so the raw
-gear code at D9 does not exist; `7E1 21 03` has 6 constant bytes
-(`FF 00 00 00 FF 00`), so neither the OBDScanner ATF (D9 − 55) nor the igkov
-odometer (D2..D4 = 0 km) applies. `7E1 21 02` D5 and D6 both climb slowly as the
-engine warms — the ATF candidates (igkov: D6 − 40). `7E0 21 15` holds a constant
-`00 1E 5B 40 28`, the "approx odometer" candidate.
+**Handbrake: not on CAN.** Two release/apply cycles (selector in P, no pedal)
+moved no broadcast byte and no LID on the five ECUs. The bits that moved in
+between (`7A2` LID `11` D0 `01`→`09`, ETACS LID `1D` D1 `E3`→`63`→`43`) did not
+follow the lever back. The switch likely feeds only the cluster, like the
+odometer.
+
+**Mirror fold: not on CAN.** Folding and unfolding moved no broadcast byte (not
+even transiently) and no LID; the fold switch likely drives the motors directly.
+
+**ETACS LID `1D` D1 moves with unrelated actions** (`E3` → `63` → `43` → `4B` →
+`2B` → `2F` across handbrake, fog and mirror tests) without following any one
+control. Probably a running or last-event value; don't use it as a switch state.
+
+**Research candidates ruled out:** `7E0 21 1A` (absolute load) answers NRC
+`0x12`; `7E0 21 02` has 5 data bytes, so the raw gear code at D9 does not exist;
+`7E1 21 03` has 6 constant bytes (`FF 00 00 00 FF 00`), so neither the
+OBDScanner ATF (D9 − 55) nor the igkov odometer applies. `7E0 21 15` holds a
+constant `00 1E 5B 40 28`, the "approx odometer" candidate. **The odometer is
+not in any CAN LID:** with the dash at 191911 km (2026-11-12), no 2–4 byte
+window in the 151 positive replies of the five ECUs decodes to it exactly
+(BE/LE, BCD, km or miles, /1–/100). `0x608` D1 (qhub:
+ambient − 40) reads `00` in `candump.log` and live, so this truck likely doesn't send it there.
 
 **qhub.kz cross-check (TCM `7E1 21 02`).** Its 5AT layout fits every snapshot
-above (stationary in N): D1D2 / 2 = input shaft rpm (630–882), D3D4 / 2 =
-output shaft rpm (0), D5 − 40 = ATF °C (36–38, rising), D6 × 33.15 / 255 = TCM
-volts (13.5–14.0), D7 × 2.8 = km/h (0), D8 − 51 = converter slip rpm (17–22), D9
-gear bits (`01` = P/N; `02` R, `04`–`40` 1st–5th). So D6 is voltage, not the ATF
-candidate igkov gave. Its `21 04` selector bits (D2 `01` = P) do not fit — we
-read `01` in N. Its engine `21 01` rpm (D2D3 / 8) reads 1.33× the TCM input
-shaft; check against `0x308`. `0x608` D1 (qhub: ambient − 40) is `00` throughout
-`candump.log`; `WATCH` now prints it as `ambient=` for a thermometer comparison.
+(stationary): D1D2 / 2 = input shaft rpm (630–882), D3D4 / 2 = output shaft rpm
+(0), D5 − 40 = ATF °C (rising with warm-up), D6 × 33.15 / 255 = TCM volts
+(13.5–14.0), D7 × 2.8 = km/h, D8 − 51 = converter slip rpm, D9 gear bits (`01`
+P/N, `02` R, `04`–`40` 1st–5th). So D6 is voltage, not the igkov ATF
+candidate. Its engine `21 01` rpm (D2D3 / 8) reads 1.33× the TCM input shaft.
 
-### Next session (sniffer firmware ready)
+### Still open
 
-1. `ECUS` — every ECU on `0x600`–`0x7FF` with its real reply id; then
-   `ECUS 01 600 7FF SESS` for modules that only answer inside a session.
-2. `RDLI 786 21`, then `KWATCH 786 21` through 2H → 4H → 4HLc → 4LLc. If D0
-   tracks the dial, 2H vs 4H is solved. Repeat with `SESS` if `786` is silent.
-3. `IDENT` and `LIDS` on each new responder (`IDENT 6A0`, `LIDS 786`, ...).
-4. Meter: `RDLI 6A0 A3` (fuel, D2 − 16 × 0.7 L) and `RDLI 6A0 AD` (odometer,
-   3 bytes little-endian) against the dash; `79E AD` if `6A0` is silent.
-5. `RDLI 7E1 02` while driving through the gears — confirms the D9 gear bits and
+1. `RDLI 7E1 02` while driving through the gears — confirms D9 gear bits and
    shaft speeds. `KWATCH 7E0 01` beside `WATCH 308` settles the rpm scale.
-6. `WATCH` with the A/C cycling — `0x16F` is in the default list. Note the
-   `0x608` `ambient=` value against a thermometer at different times of day.
+2. Identify `7A2` (7820A270): `KWATCH 7A2 11` while operating candidates.
+3. ETACS: `KWATCH 7A0 <lid>` while toggling lights, doors, wipers.
+4. `WATCH` with the A/C cycling for `0x16F`.
 
 ## Regenerating
 

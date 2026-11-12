@@ -90,6 +90,7 @@
   .sig-confirmed h2, h2.sig-confirmed { color: var(--confirmed); }
   h2.sig-candidate { color: var(--candidate); }
   h2.sig-rejected { color: var(--unknown); }
+  h2.sig-absent { color: var(--muted, #888); }
   .pollbar { display: flex; gap: 8px; align-items: center; margin-top: 4px; color: var(--dim); font-size: 12px; }
   .pollbar label { display: flex; gap: 4px; align-items: center; }
   .pollbar input[type=checkbox] { width: auto; }
@@ -119,8 +120,9 @@
   <button data-cmd="VERIFY ALL" title="Polls every Mode 01 PID once (transmits on the bus)">poll Mode 01 PIDs</button>
   <label><input type="checkbox" id="autopoll"> repeat every 10 s</label>
   <button data-cmd="VERIFY M22" title="Re-test the Mode 22 DIDs (transmits)">re-test Mode 22</button>
+  <button id="kwppoll" title="Reads the KWP 0x21 candidates once: 7E1 02/04, 7E0 01/02/04 (transmits)">poll KWP candidates</button>
+  <label><input type="checkbox" id="autokwp"> repeat every 3 s</label>
   <button data-cmd="ECUS" title="Find every ECU answering KWP 0x21 on 0x600-0x7FF, broadcast ids skipped (transmits, ~40 s)">find ECUs</button>
-  <button data-cmd="KWATCH 786 21" title="Poll the transfer-case traction mode at 5 Hz (transmits); STOP to end">watch 4WD mode</button>
   <span>Broadcast values come from WATCH (listen-only). Polling transmits on the bus.</span>
 </div>
 <div id="signals"></div>
@@ -177,6 +179,7 @@ const SIG_GROUPS = [
   ['candidate', 'To confirm'],
   ['confirmed', 'Confirmed on this vehicle'],
   ['rejected',  'Rejected'],
+  ['absent',    'Not on CAN (tested on this truck)'],
 ];
 // A value older than this is greyed out.
 const STALE_S = 30;
@@ -313,6 +316,26 @@ document.getElementById('autopoll').addEventListener('change', (e) => {
   if (e.target.checked) {
     send('VERIFY ALL');
     pollTimer = setInterval(() => send('VERIFY ALL'), 10000);
+  }
+});
+
+// KWP 0x21 candidates; values come from the firmware's hint line after each reply.
+const KWP_CMDS = ['RDLI 7E1 02', 'RDLI 7E1 04', 'RDLI 7E0 01', 'RDLI 7E0 02', 'RDLI 7E0 04'];
+/** Send every KWP candidate read once, spaced so the device handles them in order. */
+async function pollKwp() {
+  for (const c of KWP_CMDS) {
+    await send(c);
+    await new Promise(r => setTimeout(r, 120));
+  }
+}
+document.getElementById('kwppoll').addEventListener('click', pollKwp);
+let kwpTimer = null;
+document.getElementById('autokwp').addEventListener('change', (e) => {
+  clearInterval(kwpTimer);
+  kwpTimer = null;
+  if (e.target.checked) {
+    pollKwp();
+    kwpTimer = setInterval(pollKwp, 3000);
   }
 });
 </script>

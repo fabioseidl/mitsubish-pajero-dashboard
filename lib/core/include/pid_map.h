@@ -164,8 +164,8 @@ typedef struct {
 #define ETACS_D2_DRIVER_DOOR     0x02u   // confirmed
 #define ETACS_D2_OTHER_DOOR      0x01u   // confirmed
 #define ETACS_D0_POSITION_LAMP   0x04u   // confirmed
-// NB: MPS2 declares front/rear fog lamps but never assigns them — those bits are
-// unknown in that project too, so they are deliberately absent here.
+#define ETACS_D0_FOG_LAMP        0x08u   // confirmed: front fog lamps, on/off toggled with low beam on
+// ETACS KWP 0x21 (0x7A0) mirrors it: LID 09 bit 0x08, LID 20 D1 bit 0x10.
 
 // 0x445 auto A/C bit masks. All track the climate panel on this vehicle.
 #define AUTOAC_D3_RECIRCULATE    0x02u
@@ -251,11 +251,11 @@ typedef struct {
 // ---------- Unidentified signals found on this vehicle --------------------
 //   0x218 D4 bit 6 — moves with the selector through R/N/D; meaning unknown.
 //   0x424 D5       — steps +1 every 60 s; probably minutes since ignition on.
-// The 4WD dial is only partly on the broadcast frames: low range is 0x218 D4, but
-// 2H, 4H and 4HLc read the same. The TCM tells 4HLc apart on request (KWP 0x21
-// LID 0x04 on 0x7E1: D0 0x08 = high range, D1 0x20 = 4HLc), still a candidate.
-// 2H vs 4H is not on the broadcast frames or the engine/TCM KWP LIDs; the
-// transfer-case ECU (KWP21_REQ_4X4, response + 1) is still untested.
+// The 4WD dial only shows low range on CAN: 0x218 D4 bit 0, and on request TCM
+// KWP 0x21 LID 0x04 (0x7E1) D1 0x20, which tracked 4LLc both ways. D2 there is
+// the selector (01 P, 04 N). 2H, 4H and 4HLc are identical on every broadcast
+// frame and in all 57 KWP LIDs of the five CAN ECUs (7E0 7E1 784 7A0 7A2); no
+// ECU answers at 0x786 or 0x6A0. The 4WD controller is likely K-line only.
 
 // --- Shared decoders. Keep every magic number above in ONE place so the sniffer
 // and the server can never disagree about how a frame is read. Each takes the
@@ -471,7 +471,11 @@ static inline uint16_t kwp21_resp_id(uint16_t req) {
 #define KWP21_LID_METER_FUEL 0xA3u  // 6A0: fuel — D0,D1 sender ohm x0.1 (LE), D2 = gauge, (D2-16)*0.7 L (qhub)
 #define KWP21_LID_METER_ODO  0xADu  // 6A0: odometer, D0..D2 little-endian km (qhub)
 #define KWP21_LID_TCM_AT     0x02u  // 7E1: qhub 5AT layout fits this truck's replies: D1D2/2 input rpm, D3D4/2 output rpm, D5-40 ATF, D6 volts, D9 gear bits
-#define KWP21_LID_TCM_TRANS  0x03u  // 7E1: second ATF candidate — OBDScanner MMC_AT_TEMP = D9-55 (6B31 cross-model); also igkov odometer (D2..D4). See §9.7
+#define KWP21_LID_TCM_TRANS  0x03u  // 7E1: constant FF 00 00 00 FF 00 on this truck; the ATF/odometer candidates do not apply
+#define KWP21_LID_TCM_STATUS 0x04u  // 7E1: switch inputs, stationary tests on this truck (candidates)
+#define TCM_STATUS_D0_BRAKE     0x02u  // D0: foot brake pedal pressed
+#define TCM_STATUS_D1_LOW_RANGE 0x20u  // D1: transfer case in low range (4LLc), tracks 0x218 D4 bit 0
+// D2: selector, one bit per position (qhub): 0x01 P, 0x02 R, 0x04 N, 0x08 D; P and N seen
 #define KWP21_LID_ODOMETER   0xADu  // 79E: official dash odometer (preferred over engine 0x15)
 #define KWP21_LID_TRACTION   0x21u  // 786: 4WD traction mode in byte D0 (2H/4H/4HLc/4LLc)
 #define KWP21_LID_ABS_LOAD   0x1Au  // 7E0: absolute engine load (block 211A)
