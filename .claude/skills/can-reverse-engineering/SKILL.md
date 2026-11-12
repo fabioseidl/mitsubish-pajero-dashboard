@@ -52,9 +52,11 @@ Do not redo this work:
 
 **The 4WD dial is only partly visible.** Broadcast frames carry low range only.
 The TCM answers KWP `0x21` LID `0x04` on `0x7E1` with D0 `0x08` = high range and
-D1 `0x20` = 4HLc (candidate, one stationary sweep). 2H vs 4H was found nowhere:
-not in 99 KWP `0x21` LIDs on the engine ECU and TCM, and no other ECU answers
-on `0x700`–`0x7F7`. See `references/bus-inventory.md`.
+D1 `0x20` = 4HLc (candidate, one stationary sweep). 2H vs 4H is in none of the
+99 KWP `0x21` LIDs on the engine ECU and TCM. An address sweep of `0x700`–`0x7F7`
+found no other responder, but it only listened on request + 8, so it could not
+hear the transfer-case ECU (`0x786` → `0x787`, below). See
+`references/bus-inventory.md`.
 
 **Rejected — the ECUs do not implement UDS service `0x22`.** A DID sweep answered
 NRC `0x11` (serviceNotSupported) from the engine ECU and `0x80` from the TCM for
@@ -64,12 +66,14 @@ available on this truck via `0x22`**, even though the tables list them. The Mode
 polling path is gated off (`POLL_MODE22 = false`) and the ISO-TP reassembly code is
 kept dormant.
 
-**The older KWP service `0x21` is the path for manufacturer data — not yet tried
-on the car.** It reaches ATF temperature (TCM `7E1 21 02`), dash odometer (cluster
+**The older KWP service `0x21` is the path for manufacturer data.** The engine ECU
+and TCM answer it on the car (LID map in `references/bus-inventory.md`); the
+other headers below are untried. It reaches ATF temperature (TCM `7E1 21 02`), dash odometer (cluster
 `79E 21 AD`), litre fuel level, absolute load (`7E0 21 1A`) and the **traction
-mode** (`786 21 21`, byte D0 = 2H/4H/4HLc/4LLc from the transfer-case ECU). So
-before burning a drive on `ADIFF` for the 4WD dial, try `RDLI 786 21` — a poll may
-hand you the whole mode directly. The header/LID map is in
+mode** (`786 21 21`, byte D0 = 2H/4H/4HLc/4LLc from the transfer-case ECU) — the
+best remaining lead for 2H vs 4H. The sniffer's `RDLI` listens on request + 8
+(`0x78E` for `0x786`), so it must learn the + 1 response IDs before `RDLI 786 21`
+can work. The header/LID map is in
 `MITSUBISHI_ADVANCED_PIDS.md §9` and the slot defines in `pid_map.h` under "Legacy
 KWP service 0x21". Each is a candidate: the block and signal are known, the byte
 offset is not, so `RDLI` must resolve the decode on the car.

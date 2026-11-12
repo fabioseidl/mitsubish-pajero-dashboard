@@ -254,7 +254,8 @@ typedef struct {
 // The 4WD dial is only partly on the broadcast frames: low range is 0x218 D4, but
 // 2H, 4H and 4HLc read the same. The TCM tells 4HLc apart on request (KWP 0x21
 // LID 0x04 on 0x7E1: D0 0x08 = high range, D1 0x20 = 4HLc), still a candidate.
-// 2H vs 4H was not found on CAN at all.
+// 2H vs 4H is not on the broadcast frames or the engine/TCM KWP LIDs; the
+// transfer-case ECU (KWP21_REQ_4X4, response + 1) is still untested.
 
 // --- Shared decoders. Keep every magic number above in ONE place so the sniffer
 // and the server can never disagree about how a frame is read. Each takes the

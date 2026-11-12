@@ -109,8 +109,11 @@ recorder. Every dial position was visited in both directions
 
 ## KWP 0x21 (ReadDataByLocalIdentifier) map
 
-Only two ECUs answer diagnostic requests on `0x700`–`0x7F7`: engine `0x7E0`
-and TCM `0x7E1`. Both implement KWP `0x21`; every other LID returns NRC `0x12`.
+An `RDLI <req> 01` sweep of `0x700`–`0x7F7` found two responders, engine
+`0x7E0` and TCM `0x7E1`. It only listened on request + 8, so ECUs that answer
+on request + 1 (transfer case `0x786` → `0x787`, cluster, ABS; see
+`pid_map.h` "Legacy KWP service 0x21") were not tested. Both responders
+implement KWP `0x21`; every other LID returns NRC `0x12`.
 
 - **TCM `0x7E1`:** LIDs `01`–`04`, `E0`, `E1`, `E4`.
 - **Engine `0x7E0`:** 92 LIDs — `01`–`04`, `08`–`19`, `1E`, `21`–`29`, `40`–`5F`,
