@@ -35,8 +35,8 @@ SNIFFER = os.path.dirname(HERE)
 # CONFIRMED_IDS have been verified against the vehicle itself, so their decode is
 # trusted; CANDIDATE_IDS are still only the igkov/MPS2 decode. A DBC name is used
 # as the row label either way, but it does not downgrade a confirmed frame.
-CONFIRMED_IDS = {0x215, 0x218, 0x424, 0x445, 0x608}
-CANDIDATE_IDS = {0x236, 0x418}
+CONFIRMED_IDS = {0x215, 0x218, 0x308, 0x418, 0x424, 0x445, 0x608}
+CANDIDATE_IDS = {0x236}
 
 # Byte classification is cumulative, not windowed. A fixed learning window gets
 # this wrong whenever the window lands in a quiet stretch: on a stationary
@@ -64,6 +64,7 @@ DIFF_RE = re.compile(r"^(A?DIFF)\s+(\d+\.\d+)\s+([0-9A-Fa-f]+)\s+D(\d+):\s*([0-9
 M01_POS_RE = re.compile(r"^POS PID=0x([0-9A-Fa-f]{2})\s.*?raw=((?:[0-9A-Fa-f]{2}\s?){4})(?:\s*=\s*(\S+)\s*(\S*))?")
 M01_NA_RE = re.compile(r"^NA\s+PID=0x([0-9A-Fa-f]{2})\s")
 M22_RE = re.compile(r"^(POS|NEG|NA)\s+ECU=0x([0-9A-Fa-f]{3})\s+DID=0x([0-9A-Fa-f]{4})\s.*?(?:nrc=0x([0-9A-Fa-f]{2}))?\s*$")
+RDLI_RE = re.compile(r"^RDLI ECU=0x([0-9A-Fa-f]{3}) LID=0x([0-9A-Fa-f]{2}) (POS resp=(.*)|NEG nrc=0x([0-9A-Fa-f]{2})|no response)")
 WATCH_KV_RE = re.compile(r"(\w+)=(\S+)")
 WATCH_BRACKET_RE = re.compile(r"(\w+)\[([^\]]*)\]")
 
@@ -127,7 +128,7 @@ BROADCAST_SIGNALS = [
      "D0 - 40. Matched the gauge and Mode 01 0x05; the server's coolant source."),
     (0x608, "Injected fuel quantity", "mg/s", "confirmed", _kv("fuel_raw"),
      "D5,D6. Reads 0 on overrun, ~310-340 at idle; drives the fuel-rate maths."),
-    (0x424, "Headlamps", "", "confirmed", _bracket("lamps", drop=("pos?",)),
+    (0x424, "Headlamps", "", "confirmed", _bracket("lamps", drop=("pos",)),
      "D1 0x20 low beam, 0x04 high beam. Lamp sweep on this vehicle."),
     (0x424, "Turn signals", "", "confirmed", _bracket("turn"),
      "D1 0x02 left, 0x01 right."),
@@ -140,20 +141,18 @@ BROADCAST_SIGNALS = [
     (0x445, "Vent routing", "", "confirmed", _bracket("vent"),
      "D5 0x02 face, 0x04 feet, 0x08 windscreen."),
     (0x445, "Air intake", "", "confirmed", _recirc, "D3 0x02 recirculation."),
-    (0x218, "Low range (4LLc)", "", "candidate", _kv("lowrange"),
-     "D4 bit 0. Set in 4LLc only; 2H/4H/4HLc look identical. One stationary round trip so far."),
-    (0x418, "Selector lever", "", "candidate", _kv("lever"),
-     "D6 one bit per position: 00 P, 08 R, 10 N, 20 D. Seen on two sweeps."),
-    (0x308, "Engine rpm (broadcast)", "rpm", "candidate", _kv("rpm"),
-     "MPS2 map: D1,D2 direct. Read 1179 vs Mode 01 775 at idle — decode looks wrong."),
+    (0x218, "Low range (4LLc)", "", "confirmed", _kv("lowrange"),
+     "D4 bit 0. Set in 4LLc only; 2H, 4H and 4HLc all read off."),
+    (0x418, "Selector lever", "", "confirmed", _kv("lever"),
+     "D6 one bit per position: 00 P, 08 R, 10 N, 20 D."),
+    (0x308, "Engine rpm (broadcast)", "rpm", "confirmed", _kv("rpm"),
+     "D1,D2 direct. Matched the tachometer."),
+    (0x424, "Position lamps", "", "confirmed", _flag("pos", "lamps["), "D0 0x04."),
+    (0x445, "Mirror heater", "", "confirmed", _flag("mirror-heat", "ac="), "D4 0x20."),
     (0x312, "Engine torque", "Nm", "candidate", _kv("torque"),
      "MPS2 map: ((D0<<8|D1)/4) - 500. Should rise with throttle, go negative on overrun."),
     (0x215, "Distance counter", "counts", "candidate", _kv("trip_cnt"),
      "D2,D3. MPS2 says 25700 counts/km; drive a known distance to re-derive."),
-    (0x424, "Position lamps", "", "candidate", _flag("pos?", "lamps["),
-     "MPS2 map: D0 0x04. Switch the parking lamps on and off."),
-    (0x445, "Mirror heater", "", "candidate", _flag("mirror-heat", "ac="),
-     "MPS2 map: D4 0x20. Toggle the rear defrost / mirror heat."),
     (0x236, "Steering angle", "", "candidate", _kv("steer"),
      "MPS2 map. Never seen on this bus — likely absent on this truck."),
 ]
@@ -298,6 +297,7 @@ class Bus:
         self.m01_cat, self.m22_cat = load_pid_catalog()
         self.m01 = {}                              # pid -> dict(value, unit, raw, ok, ts)
         self.m22 = {}                              # (req, did) -> dict(result, nrc, ts)
+        self.rdli = {}                             # "7E1/02" -> dict(result, data, ts)
         self.dumping = False                       # candump lines seen; WATCH lines are then decode-only
         self.started = time.time()
         self.total = 0
@@ -345,6 +345,16 @@ class Bus:
         if m:
             with self.lock:
                 self.m01[int(m.group(1), 16)] = dict(ok=False, value=None, unit="", raw="", ts=now)
+            return
+
+        m = RDLI_RE.match(line)
+        if m:
+            result = "POS" if m.group(4) is not None else ("NEG" if m.group(5) else "NA")
+            data = (m.group(4) or "").strip() if result == "POS" else (m.group(5) or "")
+            with self.lock:
+                self.rdli[f"{m.group(1).upper()}/{m.group(2).upper()}"] = dict(
+                    result=result, data=data, ts=round(now - self.started, 2))
+            self.note("dev", line)
             return
 
         m = M22_RE.match(line)
@@ -424,11 +434,12 @@ class Bus:
             log = list(self.log)
             total, source = self.total, self.source
             signals = self.signals(now)
+            rdli = dict(self.rdli)
         order = {"confirmed": 0, "decoded": 1, "candidate": 2, "unknown": 3}
         rows.sort(key=lambda r: (order[r["status"]], -r["hz"]))
         return dict(
             rows=rows, watch={f"{k:03X}": v for k, v in watch.items()},
-            signals=signals,
+            signals=signals, rdli=rdli,
             log=log[-60:], total=total, source=source,
             uptime=round(now - self.started, 1),
             ids=len(rows), volatile_changes=VOLATILE_CHANGES,

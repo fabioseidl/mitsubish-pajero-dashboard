@@ -38,9 +38,8 @@
 //   DUMP                    toggle passive candump printing on/off (default off)
 //   WATCH [id ...]          decode broadcast frames (hex IDs); no args watches all
 //                           known frames: 608 218 215 424 445 (confirmed on this
-//                           vehicle), 308 312 236 (igkov map, unverified; 236
-//                           has never appeared on this bus at all) and 418 (lever,
-//                           found here, unverified)
+//                           vehicle, with 308 and 418) and 312 236 (igkov map,
+//                           unverified; 236 has never appeared on this bus)
 //   DIFF [id]               isolate a slow field in one frame; no arg = 218 (gear)
 //   ADIFF                   whole-bus DIFF: hold still to learn, then toggle an
 //                           input; the changed ID/byte is printed (unknown frames)
@@ -586,7 +585,8 @@ static void sigTick() {
 
 // ---------------------------------------------------------------------------
 // Broadcast frame decoding. 0x608, 0x218, 0x215, 0x424 and 0x445 are confirmed on
-// this vehicle and projects/server reads them; 0x308, 0x312 and 0x236 are still
+// this vehicle and projects/server reads them; 0x308 and 0x418 are confirmed here;
+// 0x312 and 0x236 are still
 // only the igkov bcomp11 map. Returns a headline integer used for
 // change-detection; prints the decoded interpretation.
 // ---------------------------------------------------------------------------
@@ -638,10 +638,10 @@ static void printBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc, uint64_t 
         uint8_t cur = d[2] & 0x0F, tgt = d[2] >> 4;
         Serial.printf("  gear=%s", gearName(cur));
         if (tgt != cur) Serial.printf(" (shifting->%s)", gearName(tgt));
-        // D4 bit 0 = low range (4LLc) — candidate, see pid_map.h.
+        // D4 bit 0 = low range (4LLc), confirmed.
         if (dlc >= 5) Serial.printf("  lowrange=%s", bcast_low_range(d) ? "on" : "off");
     } else if (id == CAN_BCAST_LEVER && dlc >= 7) {
-        // D6 = selector lever position — candidate, see pid_map.h.
+        // D6 = selector lever position, confirmed.
         Serial.printf("  lever=%c (raw %02X)", bcast_lever_pos(d), d[6]);
     } else if (id == CAN_BCAST_SPEED && dlc >= 4) {
         // Speed is confirmed against the speedo at 1/128 km/h and is what the
@@ -656,9 +656,9 @@ static void printBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc, uint64_t 
         // Sign/centre are calibration dependent: straight ahead should read ~0.
         Serial.printf("  steer=%ld (raw=%u)", (long)bcast_steer_angle(d), (d[0] << 8) | d[1]);
     } else if (id == CAN_BCAST_ETACS && dlc >= 3) {
-        // Everything here is confirmed except the position lamp (MPS2's guess).
+        // Every bit printed here is confirmed on this vehicle.
         Serial.printf("  lamps[%s%s%s] turn[%s%s] doors[%s%s]",
-                      (d[0] & ETACS_D0_POSITION_LAMP) ? "pos? " : "",
+                      (d[0] & ETACS_D0_POSITION_LAMP) ? "pos "  : "",
                       (d[1] & ETACS_D1_HEAD_LAMP_LO)  ? "lo "   : "",
                       (d[1] & ETACS_D1_HEAD_LAMP_HI)  ? "hi "   : "",
                       (d[1] & ETACS_D1_LEFT_TURN)     ? "L"     : "-",

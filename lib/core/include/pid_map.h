@@ -124,16 +124,20 @@ typedef struct {
 //               against the gauge and the Mode 01 0x05 reading.
 //   CAN 0x218 — gear in D2: low nibble = current gear, high nibble = target.
 //               Codes: 0x0=N, 0x1..0x5 = forward gears, 0xB=R, 0xD=P.
+//               D4 bit 0 = transfer case in low range (4LLc); 2H, 4H and 4HLc
+//               all read 0. Confirmed by dial sweeps on the live bus monitor.
 //   CAN 0x215 — vehicle speed in D0,D1 (1/128 km/h); D2,D3 = distance counter.
 //               Confirmed on this vehicle against the dash speedometer with the
 //               sniffer's live bus monitor (projects/sniffer/web).
 //   CAN 0x424 — ETACS body control. Low beam, high beam, both turn signals and
-//               the two door bits confirmed on this vehicle by a lamp/door sweep
-//               on the live bus monitor. Only the position-lamp bit in the same
-//               frame is still unconfirmed — see the mask list below.
+//               the two door bits and the position lamps confirmed on this
+//               vehicle by a lamp/door sweep on the live bus monitor.
 //   CAN 0x445 — auto A/C: fan speed, vent routing, recirculation, A/C on and the
-//               temperature set point in D0, all confirmed on this vehicle by a
-//               dial sweep watched on the live bus monitor.
+//               temperature set point in D0 and the mirror heater, all confirmed
+//               on this vehicle by a panel sweep watched on the live bus monitor.
+//   CAN 0x308 — engine rpm in D1,D2 (direct), confirmed against the tachometer.
+//   CAN 0x418 — selector lever in D6, one bit per position, confirmed by selector
+//               sweeps alongside the 0x218 gear byte.
 // The gear feeds the existing AT slots PID_M22_AT_GEAR_POS / _TARGET_GEAR; speed
 // feeds PID_SPEED (0x0D) and coolant temperature PID_COOLANT_TEMP (0x05)
 // directly, which is why neither needs a slot of its own; the fuel quantity gets
@@ -143,31 +147,30 @@ typedef struct {
 #define CAN_BCAST_SPEED  0x215u
 #define CAN_BCAST_ETACS  0x424u
 #define CAN_BCAST_AUTOAC 0x445u
+#define CAN_BCAST_RPM    0x308u
+#define CAN_BCAST_LEVER  0x418u
 #define PID_BCAST_CLIMATE_TEMP   0xABu  // CAN 0x445 D0 decoded, see bcast_ac_set_temp
 #define PID_BCAST_FUEL_RAW       0xBCu  // CAN 0x608 (D5<<8|D6), raw injected fuel
 #define PID_BCAST_BODY_FLAGS     0xBDu  // CAN 0x424, PAYLOAD_BODY_* bitfield
 #define PID_BCAST_CLIMATE_FLAGS  0xBEu  // CAN 0x445, PAYLOAD_CLIMATE_* bitfield
 #define PID_BCAST_CLIMATE_FAN    0xBFu  // CAN 0x445 D5 high nibble, fan step 0..15
 
-// 0x424 ETACS bit masks (byte index, then mask within that byte). The six marked
-// confirmed were toggled one at a time and watched on the live bus monitor; the
-// position lamp comes from the MPS2 map and has not been exercised here.
+// 0x424 ETACS bit masks (byte index, then mask within that byte). Each was toggled
+// one at a time and watched on the live bus monitor.
 #define ETACS_D1_HEAD_LAMP_LO    0x20u   // confirmed
 #define ETACS_D1_HEAD_LAMP_HI    0x04u   // confirmed
 #define ETACS_D1_LEFT_TURN       0x02u   // confirmed
 #define ETACS_D1_RIGHT_TURN      0x01u   // confirmed
 #define ETACS_D2_DRIVER_DOOR     0x02u   // confirmed
 #define ETACS_D2_OTHER_DOOR      0x01u   // confirmed
-#define ETACS_D0_POSITION_LAMP   0x04u   // unconfirmed (MPS2)
+#define ETACS_D0_POSITION_LAMP   0x04u   // confirmed
 // NB: MPS2 declares front/rear fog lamps but never assigns them — those bits are
 // unknown in that project too, so they are deliberately absent here.
 
-// 0x445 auto A/C bit masks. Fan speed, vent routing, recirculation and A/C-on
-// track the climate panel on this vehicle; the mirror-heat bit is MPS2's and has
-// not been exercised here.
+// 0x445 auto A/C bit masks. All track the climate panel on this vehicle.
 #define AUTOAC_D3_RECIRCULATE    0x02u
 #define AUTOAC_D3_AC_ON          0x08u
-#define AUTOAC_D4_MIRROR_HEAT    0x20u   // unconfirmed (MPS2)
+#define AUTOAC_D4_MIRROR_HEAT    0x20u   // confirmed
 #define AUTOAC_D5_VENT_UP        0x02u   // face vents
 #define AUTOAC_D5_VENT_DOWN      0x04u   // footwell
 #define AUTOAC_D5_VENT_WIND      0x08u   // windscreen / defrost
@@ -214,6 +217,13 @@ typedef struct {
 #define GEAR_CODE_REVERSE  0xBu
 #define GEAR_CODE_PARK     0xDu
 
+// 0x218 D4 low-range bit and 0x418 D6 selector lever codes, both confirmed.
+#define GEAR_D4_LOW_RANGE  0x01u   // 4LLc engaged
+#define LEVER_D6_P         0x00u
+#define LEVER_D6_R         0x08u
+#define LEVER_D6_N         0x10u
+#define LEVER_D6_D         0x20u
+
 // ---------- Candidate broadcast frames (igkov / MPS2, UNVERIFIED here) ------
 // The frames below are decoded by the "MPS2_Digital_Dash" Pajero Sport 2 dash
 // (src/can_handler.cpp + src/mps_params.h) — an independent reverse-engineering
@@ -221,42 +231,30 @@ typedef struct {
 // D5,D6) and 0x218 (gear nibbles in D2) exactly as our own road tests confirmed
 // them above, which is the reason to trust the rest of its map enough to test.
 //
-// STATUS: 0x215 (speed), 0x424 (lamps, doors) and 0x445 (climate) graduated to
-// the confirmed section above. None of the frames below are confirmed on the Pajero Sport II (KH8W / 4M41) yet, and
+// STATUS: 0x215 (speed), 0x308 (rpm), 0x424 (lamps, doors) and 0x445 (climate)
+// graduated to the confirmed section above. The frames below are not confirmed
+// on the Pajero Sport II (KH8W / 4M41) yet, and
 // nothing in projects/server reads them. They exist here so the sniffer's WATCH
 // mode can decode them on a drive; promote one to a real payload field only
 // after a capture on THIS vehicle agrees with the decode.
 //
 // Frame layouts (all big-endian, D0 = first data byte):
 //   0x236 D0,D1 = steering angle, raw; centre is a per-sensor calibration
-//   0x308 D1,D2 = engine rpm (direct, no scaling)
 //   0x312 D0,D1 = engine torque, ((D0<<8|D1)/4) - 500
 #define CAN_BCAST_STEER  0x236u
-#define CAN_BCAST_RPM    0x308u
 #define CAN_BCAST_TORQUE 0x312u
 
 // 0x236 steering: raw value at the straight-ahead position. MPS2's comment marks
 // this as sensor-calibration dependent, so expect to re-zero it on our vehicle.
 #define BCAST_STEER_CENTRE_RAW    0x1001
 
-// ---------- Candidate signals found on this vehicle (UNVERIFIED) -----------
-// Found by a stationary dial/selector sweep on the live bus monitor; each needs a
-// second session (ideally moving) before it is promoted.
-//   0x218 D4 bit 0 — transfer case in low range (4LLc). Set entering 4LLc, clear
-//                    leaving it; 2H, 4H and 4HLc are identical on CAN. Seen on one
-//                    full 4LLc→2H→4LLc round trip in N.
-//   0x418 D6       — selector lever position, one bit per position. Seen on two
-//                    P→R→N→D sweeps alongside the confirmed 0x218 gear byte.
+// ---------- Unidentified signals found on this vehicle --------------------
 //   0x218 D4 bit 6 — moves with the selector through R/N/D; meaning unknown.
 //   0x424 D5       — steps +1 every 60 s; probably minutes since ignition on.
-// The 4WD dial itself (2H / 4H / 4HLc) is not on this bus: the transfer-case ECU
-// is K-line only and drives the dash lamps directly.
-#define CAN_BCAST_LEVER          0x418u
-#define GEAR_D4_LOW_RANGE        0x01u   // candidate: 4LLc engaged
-#define LEVER_D6_P               0x00u   // candidate
-#define LEVER_D6_R               0x08u   // candidate
-#define LEVER_D6_N               0x10u   // candidate
-#define LEVER_D6_D               0x20u   // candidate
+// The 4WD dial is only partly on the broadcast frames: low range is 0x218 D4, but
+// 2H, 4H and 4HLc read the same. The TCM tells 4HLc apart on request (KWP 0x21
+// LID 0x04 on 0x7E1: D0 0x08 = high range, D1 0x20 = 4HLc), still a candidate.
+// 2H vs 4H was not found on CAN at all.
 
 // --- Shared decoders. Keep every magic number above in ONE place so the sniffer
 // and the server can never disagree about how a frame is read. Each takes the
@@ -276,10 +274,10 @@ static inline uint8_t bcast_ac_set_temp(const uint8_t* d) {
     return AUTOAC_TEMP_LO;
 }
 
-/** True when a CAN 0x218 frame reports low range (4LLc). Candidate; DLC >= 5. */
+/** True when a CAN 0x218 frame reports low range (4LLc). Caller must have DLC >= 5. */
 static inline bool bcast_low_range(const uint8_t* d) { return (d[4] & GEAR_D4_LOW_RANGE) != 0; }
 
-/** Selector lever letter from a CAN 0x418 frame, '?' if unknown. Candidate; DLC >= 7. */
+/** Selector lever letter from a CAN 0x418 frame, '?' if unknown. Caller must have DLC >= 7. */
 static inline char bcast_lever_pos(const uint8_t* d) {
     switch (d[6]) {
         case LEVER_D6_P: return 'P';

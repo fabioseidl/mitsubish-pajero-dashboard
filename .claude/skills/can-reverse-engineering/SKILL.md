@@ -34,7 +34,7 @@ Do not redo this work:
 - `CAN 0x424` — ETACS body control. Low beam (`D1 & 0x20`), high beam
   (`D1 & 0x04`), left and right turn signals (`D1 & 0x02`, `D1 & 0x01`) and the
   two door bits (`D2 & 0x02` driver, `D2 & 0x01` other) confirmed by a lamp,
-  indicator and door sweep. Only the position-lamp bit is still MPS2's guess.
+  indicator and door sweep, and the position-lamp bit (`D0 & 0x04`) since.
 - `CAN 0x445` — auto A/C. Fan speed (`D5` high nibble), vent routing,
   recirculation and A/C-on track the panel. `D0` is the temperature set point,
   pinned by a dial sweep on this vehicle: `50` = LO, `64` = 20 °C then 2 counts
@@ -44,11 +44,17 @@ Do not redo this work:
   `D0 - 63` offset was wrong for this truck.
 - The Mode 01 PIDs marked `verified` in `pid_map.h`.
 
-**Not on this bus — the 4WD dial.** A full stationary dial sweep showed 2H, 4H
-and 4HLc are identical on CAN; only low range is visible (`0x218` D4 bit 0, a
-candidate). See the 4WD section of `references/bus-inventory.md` for that and
-the other candidates it turned up (`0x418` D6 selector lever, `0x424` D5 minute
-counter).
+- `CAN 0x218` D4 bit 0 — transfer case in low range (4LLc). Confirmed by dial
+  sweeps; 2H, 4H and 4HLc all read 0.
+- `CAN 0x308` D1,D2 — engine rpm, direct. Confirmed against the tachometer.
+- `CAN 0x418` D6 — selector lever, `00` P, `08` R, `10` N, `20` D. Confirmed.
+- `CAN 0x445` D4 `0x20` — mirror heater. Confirmed.
+
+**The 4WD dial is only partly visible.** Broadcast frames carry low range only.
+The TCM answers KWP `0x21` LID `0x04` on `0x7E1` with D0 `0x08` = high range and
+D1 `0x20` = 4HLc (candidate, one stationary sweep). 2H vs 4H was found nowhere:
+not in 99 KWP `0x21` LIDs on the engine ECU and TCM, and no other ECU answers
+on `0x700`–`0x7F7`. See `references/bus-inventory.md`.
 
 **Rejected — the ECUs do not implement UDS service `0x22`.** A DID sweep answered
 NRC `0x11` (serviceNotSupported) from the engine ECU and `0x80` from the TCM for
@@ -69,8 +75,8 @@ KWP service 0x21". Each is a candidate: the block and signal are known, the byte
 offset is not, so `RDLI` must resolve the decode on the car.
 
 **Unverified candidates** — `pid_map.h` still carries a block of frames decoded by
-the independent igkov/MPS2 Pajero Sport 2 dash (0x236 steering angle, 0x308 rpm,
-0x312 torque). That project reads 0x608 and 0x218 exactly as our own road tests
+the independent igkov/MPS2 Pajero Sport 2 dash (0x236 steering angle, 0x312
+torque). That project reads 0x608 and 0x218 exactly as our own road tests
 confirmed, which is why the rest of its map was worth testing — and 0x215, 0x424
 and 0x445 have since been confirmed here. **Nothing in `projects/server` reads
 what is left.** They exist so the sniffer's `WATCH` mode can decode them on a
