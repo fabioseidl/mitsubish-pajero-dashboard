@@ -53,6 +53,7 @@ typedef struct {
 #define PID_TIME_CLEARED    0x4Eu
 
 // ---------- Mode 01 — Unverified PIDs ----------
+// None of these answered a sniffer VERIFY ALL poll at idle on this vehicle.
 #define PID_STFT            0x06u
 #define PID_LTFT            0x07u
 #define PID_FUEL_PRESSURE   0x0Au
@@ -238,6 +239,25 @@ typedef struct {
 // this as sensor-calibration dependent, so expect to re-zero it on our vehicle.
 #define BCAST_STEER_CENTRE_RAW    0x1001
 
+// ---------- Candidate signals found on this vehicle (UNVERIFIED) -----------
+// Found by a stationary dial/selector sweep on the live bus monitor; each needs a
+// second session (ideally moving) before it is promoted.
+//   0x218 D4 bit 0 — transfer case in low range (4LLc). Set entering 4LLc, clear
+//                    leaving it; 2H, 4H and 4HLc are identical on CAN. Seen on one
+//                    full 4LLc→2H→4LLc round trip in N.
+//   0x418 D6       — selector lever position, one bit per position. Seen on two
+//                    P→R→N→D sweeps alongside the confirmed 0x218 gear byte.
+//   0x218 D4 bit 6 — moves with the selector through R/N/D; meaning unknown.
+//   0x424 D5       — steps +1 every 60 s; probably minutes since ignition on.
+// The 4WD dial itself (2H / 4H / 4HLc) is not on this bus: the transfer-case ECU
+// is K-line only and drives the dash lamps directly.
+#define CAN_BCAST_LEVER          0x418u
+#define GEAR_D4_LOW_RANGE        0x01u   // candidate: 4LLc engaged
+#define LEVER_D6_P               0x00u   // candidate
+#define LEVER_D6_R               0x08u   // candidate
+#define LEVER_D6_N               0x10u   // candidate
+#define LEVER_D6_D               0x20u   // candidate
+
 // --- Shared decoders. Keep every magic number above in ONE place so the sniffer
 // and the server can never disagree about how a frame is read. Each takes the
 // 8-byte frame payload; callers must range-check the DLC first.
@@ -254,6 +274,20 @@ static inline uint8_t bcast_ac_set_temp(const uint8_t* d) {
     if (raw >  AUTOAC_D0_TEMP_29C_RAW)  return 30u;   // only 96 observed in this gap
     if (raw >= AUTOAC_D0_TEMP_20C_RAW)  return (uint8_t)(20 + (raw - AUTOAC_D0_TEMP_20C_RAW) / 2);
     return AUTOAC_TEMP_LO;
+}
+
+/** True when a CAN 0x218 frame reports low range (4LLc). Candidate; DLC >= 5. */
+static inline bool bcast_low_range(const uint8_t* d) { return (d[4] & GEAR_D4_LOW_RANGE) != 0; }
+
+/** Selector lever letter from a CAN 0x418 frame, '?' if unknown. Candidate; DLC >= 7. */
+static inline char bcast_lever_pos(const uint8_t* d) {
+    switch (d[6]) {
+        case LEVER_D6_P: return 'P';
+        case LEVER_D6_R: return 'R';
+        case LEVER_D6_N: return 'N';
+        case LEVER_D6_D: return 'D';
+        default:         return '?';
+    }
 }
 
 /** Coolant temperature in C from a CAN 0x608 frame. Caller must have DLC >= 1. */

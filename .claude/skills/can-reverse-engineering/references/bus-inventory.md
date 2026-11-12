@@ -10,15 +10,15 @@ rates are wrong.
 | ID | Hz | frames | DLC | bytes that move | status |
 |---|---|---|---|---|---|
 | `0x212` | 45.8 | 6808 | 8 | 5 | decoded — Engine_Data (DBC) |
-| `0x218` | 45.5 | 6155 | 8 | 6 | **confirmed** — gear, selector sweep |
+| `0x218` | 45.5 | 6155 | 8 | 6 | **confirmed** — gear, selector sweep; D4 bit 0 = low range (candidate) |
 | `0x308` | 45.5 | 5401 | 8 | 3 | decoded — Cooling_System (DBC) |
 | `0x312` | 45.5 | 5730 | 8 | 4 | decoded — Throttle_Status (DBC) |
 | `0x608` | 3.5 | 643 | 8 | 3 | **confirmed** — injected fuel qty (D5,D6), coolant temp (D0) |
 | `0x215` | 45.4 | 4787 | 8 | 6 | **confirmed** — speed D0,D1 (1/128 km/h) |
 | `0x445` | 22.8 | 2780 | 7 | 4 | **confirmed** — auto A/C incl. set point in D0 |
-| `0x424` | 13.0 | 1964 | 8 | 4 | **confirmed** — ETACS low/high beam, turn signals, doors |
+| `0x424` | 13.0 | 1964 | 8 | 4 | **confirmed** — ETACS low/high beam, turn signals, doors; D5 = minute counter (candidate) |
 | `0x325` | 45.6 | 5632 | 2 | 0 | **unknown** |
-| `0x418` | 45.3 | 4109 | 7 | 3 | **unknown** |
+| `0x418` | 45.3 | 4109 | 7 | 3 | **candidate** — D6 selector lever position |
 | `0x447` | 22.7 | 2588 | 3 | 0 | **unknown** |
 | `0x317` | 18.3 | 2611 | 8 | 3 | **unknown** |
 | `0x101` | 10.1 | 1126 | 1 | 0 | **unknown** |
@@ -77,6 +77,33 @@ speed-dependent would also look static here.
 
 **Coverage:** 8 of 14 IDs decoded or confirmed, 6 unknown. The unknowns are 43%
 of the bus by ID and include two continuous signals.
+
+## 4WD dial sweep (2026-11-12)
+
+Stationary, engine idling, live bus monitor plus a timestamped byte-change
+recorder. Every dial position was visited in both directions
+(4LLc → 4HLc → 4H → 2H → 4H → 4HLc → 4LLc, selector in N).
+
+- **`0x218` D4 bit 0 (`0x01`) = low range (4LLc).** Cleared leaving 4LLc, set
+  entering it, unchanged at every other position. Candidate: one clean round
+  trip, stationary only.
+- **2H, 4H and 4HLc are identical on CAN.** No byte on any of the 14 IDs moved
+  for those transitions, including the static `0x325`, `0x447`, `0x415`,
+  `0x101`. The transfer-case ECU is K-line only and drives the dash lamps
+  directly; reading those positions needs a lamp or dial-switch GPIO tap, or
+  K-line.
+- **`0x418` D6 = selector lever**, one bit per position: `00` P, `08` R,
+  `10` N, `20` D. Tracked the confirmed `0x218` gear byte on two sweeps.
+- **`0x218` D4 bit 6 (`0x40`)** toggles while the selector moves through
+  R/N/D. Meaning unknown.
+- **`0x424` D5 steps +1 exactly every 60 s** (`0x53` → `0x62` over ~15 min).
+  Probably minutes since ignition on. Not a temperature, though it looks like
+  one beside the warming coolant.
+- `0x218` D0, D1, D5 alternate every frame (`88`/`08`, `1A`/`23`, `80`/`00`) —
+  a frame toggle or check value, not state.
+- **`0x308` as rpm disagrees with Mode 01 `0x0C`** at idle (1179 vs 775), so
+  the MPS2 decode looks wrong for this truck.
+- **None of the 11 unverified Mode 01 PIDs answer** (`VERIFY ALL` at idle).
 
 ## Regenerating
 

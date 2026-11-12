@@ -33,6 +33,23 @@ The buttons send `DUMP`, `WATCH`, `ADIFF`, `DIFF`, `OBD`, `PASV` and `STOP` to
 the device, and the text box sends any other command (`SIG 7E0 20F2`). Commands
 are rejected in replay mode — there is nothing to send to.
 
+## Signals panel
+
+The top of the page lists every known signal in three groups — to confirm,
+confirmed on this vehicle, rejected — with its source, latest value, age and a
+note on how it was (or should be) confirmed.
+
+- Broadcast signals come from the firmware's `WATCH` decode, which the monitor
+  enables on connect alongside `DUMP` (listen-only).
+- Mode 01 PIDs come from `VERIFY ALL`, which polls every PID in `pid_map.h`
+  once. **poll Mode 01 PIDs** sends it; **repeat every 10 s** keeps polling.
+  This transmits on the bus.
+- Mode 22 rows are rejected on this truck; **re-test Mode 22** sends `VERIFY M22`.
+
+The Mode 01 and Mode 22 lists, names, units and `verified` flags are parsed from
+`lib/core/include/pid_map.h`. The broadcast list lives in `BROADCAST_SIGNALS`
+in `bus_monitor.py`; keep its status in step with `pid_map.h`.
+
 ## Reading the page
 
 Each byte cell shows its current value over the count of distinct values it has

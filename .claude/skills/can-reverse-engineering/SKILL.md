@@ -44,6 +44,12 @@ Do not redo this work:
   `D0 - 63` offset was wrong for this truck.
 - The Mode 01 PIDs marked `verified` in `pid_map.h`.
 
+**Not on this bus — the 4WD dial.** A full stationary dial sweep showed 2H, 4H
+and 4HLc are identical on CAN; only low range is visible (`0x218` D4 bit 0, a
+candidate). See the 4WD section of `references/bus-inventory.md` for that and
+the other candidates it turned up (`0x418` D6 selector lever, `0x424` D5 minute
+counter).
+
 **Rejected — the ECUs do not implement UDS service `0x22`.** A DID sweep answered
 NRC `0x11` (serviceNotSupported) from the engine ECU and `0x80` from the TCM for
 every DID. The documented Mitsubishi advanced PIDs for the 4M41 (fuel temp
@@ -101,10 +107,11 @@ ACK bus traffic.
 | Mode | Use it for |
 |---|---|
 | `PASSIVE` | Quiet by default; `DUMP` toggles candump-format logging of every frame |
-| `WATCH [id ...]` | Decode known free-running frames into engineering values, rate-limited. No args watches the candidate list (608 218 215 308 312 236 424 445) |
+| `WATCH [id ...]` | Decode known free-running frames into engineering values, rate-limited. No args watches the candidate list (608 218 215 308 312 236 424 445 418) |
 | `DIFF [id]` | One noisy frame: learn the bytes that churn while an input is held still, then print only when a previously-stable byte changes. Default 218 |
 | `ADIFF` | Whole-bus DIFF — finds an **unknown** discrete-state frame (4WD dial, diff lock) in one toggle sweep without knowing its ID |
 | `OBD` | List the standard Mode 01 PIDs the engine ECU supports |
+| `VERIFY [m01\|m22\|all]` | Poll the unverified Mode 01 / Mode 22 entries once; `ALL` reads every Mode 01 PID in `pid_map.h` (the bus monitor's signals panel uses this) |
 | `SCAN [eng\|tcm] [start end] [sess]` | Sweep UDS Mode 22 DIDs (default `2000 21FF`), log every `0x62`. `sess` opens an extended session (`10 03`) held with TesterPresent, for ECUs that gate Mode 22 |
 | `SIG <req> <did>` | Poll one DID at 10 Hz alongside rpm/accel/speed, CSV per cycle — correlate a candidate against throttle and overrun while driving |
 | `FUELLOG` | CSV of the passive 0x608 fuel and 0x218 gear against polled rpm/accel/speed — the drive test that confirmed 0x608 |

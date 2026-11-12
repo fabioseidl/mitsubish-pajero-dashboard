@@ -38,8 +38,9 @@
 //   DUMP                    toggle passive candump printing on/off (default off)
 //   WATCH [id ...]          decode broadcast frames (hex IDs); no args watches all
 //                           known frames: 608 218 215 424 445 (confirmed on this
-//                           vehicle) and 308 312 236 (igkov map, unverified; 236
-//                           has never appeared on this bus at all)
+//                           vehicle), 308 312 236 (igkov map, unverified; 236
+//                           has never appeared on this bus at all) and 418 (lever,
+//                           found here, unverified)
 //   DIFF [id]               isolate a slow field in one frame; no arg = 218 (gear)
 //   ADIFF                   whole-bus DIFF: hold still to learn, then toggle an
 //                           input; the changed ID/byte is printed (unknown frames)
@@ -54,6 +55,7 @@
 //                           LID) — tests igkov bcomp11's Pajero AT/odometer reads
 //                           (e.g. RDLI 7E1 02 = AT info/ATF; RDLI 7E1 03 = odometer
 //                           and/or ATF candidate — prints both decode hints)
+//   VERIFY [m01|m22|all]   poll unverified PIDs once; ALL reads every Mode 01 PID
 //   STOP / PASV             stop SIG/SCAN/WATCH/DIFF/FUELLOG; return to passive logging
 
 #include <Arduino.h>
@@ -125,8 +127,9 @@ static WatchId  g_watch[WATCH_MAX] = { { BCAST_FUEL,      0, INT32_MIN },
                                        { CAN_BCAST_TORQUE,0, INT32_MIN },
                                        { CAN_BCAST_STEER, 0, INT32_MIN },
                                        { CAN_BCAST_ETACS, 0, INT32_MIN },
-                                       { CAN_BCAST_AUTOAC,0, INT32_MIN } };
-static uint8_t  g_watch_n = 8;
+                                       { CAN_BCAST_AUTOAC,0, INT32_MIN },
+                                       { CAN_BCAST_LEVER, 0, INT32_MIN } };
+static uint8_t  g_watch_n = 9;
 static constexpr uint32_t WATCH_MIN_INTERVAL_MS = 250;   // per-id print throttle
 
 // Analog frames change on nearly every message (speed, rpm, torque, steering,
@@ -225,6 +228,15 @@ static void drainRx() {
 static uint64_t currentTimestampUs() {
     if (unix_base_us == 0) return micros();   // fallback: time since boot
     return unix_base_us + (micros() - micros_at_sync);
+}
+
+/** Print one frame in candump format: `(sec.usec) can0 ID#DATA`. */
+static void printCandump(const struct can_frame& rx) {
+    uint64_t ts = currentTimestampUs();
+    Serial.printf("(%lu.%06lu) can0 %X#", (uint32_t)(ts / 1000000ULL),
+                  (uint32_t)(ts % 1000000ULL), (unsigned)(rx.can_id & 0x1FFFFFFF));
+    for (uint8_t i = 0; i < rx.can_dlc; ++i) Serial.printf("%02X", rx.data[i]);
+    Serial.println();
 }
 
 // ---------------------------------------------------------------------------
@@ -416,12 +428,13 @@ static float decodeLinear(const PidDefinition& p, const uint8_t* d) {
 // Run engine-running. A PID that answers here is a candidate to flip to
 // `verified = true`; one that always returns NEG/NA on this vehicle stays false.
 // ---------------------------------------------------------------------------
-static void verifyMode01() {
-    Serial.println("# VERIFY Mode 01 (unverified PIDs in PID_MAP)");
+/** Poll Mode 01 PIDs from PID_MAP; include_verified also reads the confirmed ones. */
+static void verifyMode01(bool include_verified) {
+    Serial.printf("# VERIFY Mode 01 (%s PIDs in PID_MAP)\n", include_verified ? "all" : "unverified");
     uint16_t ok = 0, total = 0;
     for (size_t i = 0; i < PID_MAP_SIZE; ++i) {
         const PidDefinition& p = PID_MAP[i];
-        if (p.verified) continue;            // only the unconfirmed ones
+        if (p.verified && !include_verified) continue;
         if (p.pid > 0xFF) continue;          // Mode 22 slot IDs live in MODE22 table
         ++total;
         uint8_t d[4] = {0};
@@ -579,7 +592,9 @@ static void sigTick() {
 // ---------------------------------------------------------------------------
 static int32_t decodeBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc) {
     if (id == BCAST_FUEL      && dlc >= 7) return (d[5] << 8) | d[6];   // injected fuel raw
+    if (id == BCAST_GEAR      && dlc >= 5) return d[2] | (bcast_low_range(d) << 8);   // gear byte + low range
     if (id == BCAST_GEAR      && dlc >= 3) return d[2];                 // full gear byte (tgt<<4|cur)
+    if (id == CAN_BCAST_LEVER && dlc >= 7) return d[6];                 // lever position byte
     if (id == CAN_BCAST_SPEED && dlc >= 4) return (int32_t)bcast_speed_kmh(d);
     if (id == CAN_BCAST_RPM   && dlc >= 3) return bcast_rpm(d);
     if (id == CAN_BCAST_TORQUE&& dlc >= 2) return bcast_torque_nm(d);
@@ -623,6 +638,11 @@ static void printBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc, uint64_t 
         uint8_t cur = d[2] & 0x0F, tgt = d[2] >> 4;
         Serial.printf("  gear=%s", gearName(cur));
         if (tgt != cur) Serial.printf(" (shifting->%s)", gearName(tgt));
+        // D4 bit 0 = low range (4LLc) — candidate, see pid_map.h.
+        if (dlc >= 5) Serial.printf("  lowrange=%s", bcast_low_range(d) ? "on" : "off");
+    } else if (id == CAN_BCAST_LEVER && dlc >= 7) {
+        // D6 = selector lever position — candidate, see pid_map.h.
+        Serial.printf("  lever=%c (raw %02X)", bcast_lever_pos(d), d[6]);
     } else if (id == CAN_BCAST_SPEED && dlc >= 4) {
         // Speed is confirmed against the speedo at 1/128 km/h and is what the
         // server broadcasts. The D2,D3 counter is not: it should climb
@@ -673,6 +693,7 @@ static void watchTick() {
     struct can_frame m;
     if (mcp2515.readMessage(&m) != MCP2515::ERROR_OK) return;
     uint16_t id = m.can_id & 0x7FF;
+    if (g_dump) printCandump(m);   // keep the full stream for the bus monitor
     for (uint8_t i = 0; i < g_watch_n; ++i) {
         if (g_watch[i].id != id) continue;
         int32_t  v   = decodeBroadcast(id, m.data, m.can_dlc);
@@ -853,12 +874,7 @@ static void passiveTick() {
     struct can_frame rx;
     if (mcp2515.readMessage(&rx) != MCP2515::ERROR_OK) return;
     if (!g_dump) return;   // listen-only: drain RX but stay quiet until DUMP
-
-    uint64_t ts = currentTimestampUs();
-    Serial.printf("(%lu.%06lu) can0 %X#", (uint32_t)(ts / 1000000ULL),
-                  (uint32_t)(ts % 1000000ULL), (unsigned)(rx.can_id & 0x1FFFFFFF));
-    for (uint8_t i = 0; i < rx.can_dlc; ++i) Serial.printf("%02X", rx.data[i]);
-    Serial.println();
+    printCandump(rx);
 }
 
 // ---------------------------------------------------------------------------
@@ -900,12 +916,17 @@ static void handleSerial() {
     }
 
     if (cmd == "VERIFY" || cmd.startsWith("VERIFY ")) {
-        bool m01 = cmd.indexOf("M22") < 0 || cmd.indexOf("M01") >= 0;
-        bool m22 = cmd.indexOf("M01") < 0 || cmd.indexOf("M22") >= 0;
+        // VERIFY ALL reads every Mode 01 PID (confirmed ones too) and skips Mode 22.
+        bool all = cmd.indexOf("ALL") >= 0;
+        bool m01 = all || cmd.indexOf("M22") < 0 || cmd.indexOf("M01") >= 0;
+        bool m22 = !all && (cmd.indexOf("M01") < 0 || cmd.indexOf("M22") >= 0);
+        Mode prev = g_mode;
         enterActive();
-        if (m01) verifyMode01();
+        if (m01) verifyMode01(all);
         if (m22) verifyMode22();
-        enterPassive();
+        // Return to the listen-only mode that was running so WATCH survives a poll.
+        if (prev == Mode::WATCH) { mcp2515.setListenOnlyMode(); g_mode = Mode::WATCH; }
+        else                     enterPassive();
         return;
     }
 
@@ -1034,7 +1055,7 @@ void setup() {
     canReset();
     enterPassive();
     Serial.println("# sniffer ready (quiet) — commands: T<unix> | DUMP | WATCH [id..] | DIFF [id] | "
-                   "ADIFF | OBD | VERIFY [m01|m22] | SCAN [eng|tcm] [s e] [sess] | SIG <req> <did> | "
+                   "ADIFF | OBD | VERIFY [m01|m22|all] | SCAN [eng|tcm] [s e] [sess] | SIG <req> <did> | "
                    "FUELLOG | RDLI <req> <lid> | STOP");
 }
 

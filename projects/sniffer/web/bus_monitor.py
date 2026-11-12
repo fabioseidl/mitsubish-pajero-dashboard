@@ -36,7 +36,7 @@ SNIFFER = os.path.dirname(HERE)
 # trusted; CANDIDATE_IDS are still only the igkov/MPS2 decode. A DBC name is used
 # as the row label either way, but it does not downgrade a confirmed frame.
 CONFIRMED_IDS = {0x215, 0x218, 0x424, 0x445, 0x608}
-CANDIDATE_IDS = {0x236}
+CANDIDATE_IDS = {0x236, 0x418}
 
 # Byte classification is cumulative, not windowed. A fixed learning window gets
 # this wrong whenever the window lands in a quiet stretch: on a stationary
@@ -60,6 +60,124 @@ DISTINCT_CAP = 300
 FRAME_RE = re.compile(r"^\((\d+\.\d+)\)\s+\w+\s+([0-9A-Fa-f]+)#([0-9A-Fa-f]*)\s*$")
 WATCH_RE = re.compile(r"^WATCH\s+(\d+\.\d+)\s+([0-9A-Fa-f]+)#([0-9A-Fa-f]*)\s*(.*)$")
 DIFF_RE = re.compile(r"^(A?DIFF)\s+(\d+\.\d+)\s+([0-9A-Fa-f]+)\s+D(\d+):\s*([0-9A-Fa-f]{2})->([0-9A-Fa-f]{2})")
+# Firmware VERIFY output: the value after '=' is the firmware's own decode.
+M01_POS_RE = re.compile(r"^POS PID=0x([0-9A-Fa-f]{2})\s.*?raw=((?:[0-9A-Fa-f]{2}\s?){4})(?:\s*=\s*(\S+)\s*(\S*))?")
+M01_NA_RE = re.compile(r"^NA\s+PID=0x([0-9A-Fa-f]{2})\s")
+M22_RE = re.compile(r"^(POS|NEG|NA)\s+ECU=0x([0-9A-Fa-f]{3})\s+DID=0x([0-9A-Fa-f]{4})\s.*?(?:nrc=0x([0-9A-Fa-f]{2}))?\s*$")
+WATCH_KV_RE = re.compile(r"(\w+)=(\S+)")
+WATCH_BRACKET_RE = re.compile(r"(\w+)\[([^\]]*)\]")
+
+PID_MAP_H = os.path.join(SNIFFER, "..", "..", "lib", "core", "include", "pid_map.h")
+
+
+def _kv(key):
+    """Extractor for a `key=value` field in a WATCH line."""
+    def get(text):
+        """Return the value of key in text, or None."""
+        m = dict(WATCH_KV_RE.findall(text))
+        return m.get(key)
+    return get
+
+
+def _bracket(key, drop=()):
+    """Extractor for a `key[...]` field in a WATCH line, minus the drop tokens."""
+    def get(text):
+        """Return the bracket contents for key, or None when absent."""
+        m = dict(WATCH_BRACKET_RE.findall(text))
+        if key not in m:
+            return None
+        words = [w for w in m[key].split() if w not in drop]
+        return " ".join(words) or "off"
+    return get
+
+
+def _flag(word, frame_key):
+    """Extractor reporting on/off for a bare word in a WATCH line that has frame_key."""
+    def get(text):
+        """Return 'on'/'off', or None if this is not the expected frame text."""
+        if frame_key not in text:
+            return None
+        return "on" if re.search(rf"(^|[\s\[]){re.escape(word)}(\s|\]|$)", text) else "off"
+    return get
+
+
+def _set_temp(text):
+    """Return the 0x445 set point as the firmware printed it, e.g. '22C (raw 68)'."""
+    m = re.search(r"temp=(\S+?)\(raw (\d+)\)", text)
+    return f"{m.group(1)} (raw {m.group(2)})" if m else None
+
+
+def _recirc(text):
+    """Return 'recirc'/'fresh' from a 0x445 WATCH line, or None."""
+    if "ac=" not in text:
+        return None
+    return "recirc" if " recirc" in text else "fresh"
+
+
+# Broadcast signals, read from the firmware's WATCH text — never decoded here.
+# status: confirmed = verified on this vehicle; candidate = still to confirm.
+# Keep in step with pid_map.h and the can-reverse-engineering skill.
+BROADCAST_SIGNALS = [
+    # (frame, name, unit, status, extractor, description)
+    (0x215, "Vehicle speed", "km/h", "confirmed", _kv("speed"),
+     "D0,D1 / 128. Matched the dash speedometer; the server's speed source."),
+    (0x218, "Gear", "", "confirmed", _kv("gear"),
+     "D2 low nibble = current, high = target. 1 = D at rest / 1st, R, N, P."),
+    (0x608, "Coolant temperature", "C", "confirmed", _kv("coolant"),
+     "D0 - 40. Matched the gauge and Mode 01 0x05; the server's coolant source."),
+    (0x608, "Injected fuel quantity", "mg/s", "confirmed", _kv("fuel_raw"),
+     "D5,D6. Reads 0 on overrun, ~310-340 at idle; drives the fuel-rate maths."),
+    (0x424, "Headlamps", "", "confirmed", _bracket("lamps", drop=("pos?",)),
+     "D1 0x20 low beam, 0x04 high beam. Lamp sweep on this vehicle."),
+    (0x424, "Turn signals", "", "confirmed", _bracket("turn"),
+     "D1 0x02 left, 0x01 right."),
+    (0x424, "Doors", "", "confirmed", _bracket("doors"),
+     "D2 0x02 driver, 0x01 other doors."),
+    (0x445, "A/C", "", "confirmed", _kv("ac"), "D3 0x08 A/C on."),
+    (0x445, "Set temperature", "", "confirmed", _set_temp,
+     "D0: 50 = LO, 64 = 20 C then 2 counts/C to 82 = 29 C, 96 = 30 C, 98 = HI."),
+    (0x445, "Fan step", "", "confirmed", _kv("fan"), "D5 high nibble, 0..15."),
+    (0x445, "Vent routing", "", "confirmed", _bracket("vent"),
+     "D5 0x02 face, 0x04 feet, 0x08 windscreen."),
+    (0x445, "Air intake", "", "confirmed", _recirc, "D3 0x02 recirculation."),
+    (0x218, "Low range (4LLc)", "", "candidate", _kv("lowrange"),
+     "D4 bit 0. Set in 4LLc only; 2H/4H/4HLc look identical. One stationary round trip so far."),
+    (0x418, "Selector lever", "", "candidate", _kv("lever"),
+     "D6 one bit per position: 00 P, 08 R, 10 N, 20 D. Seen on two sweeps."),
+    (0x308, "Engine rpm (broadcast)", "rpm", "candidate", _kv("rpm"),
+     "MPS2 map: D1,D2 direct. Read 1179 vs Mode 01 775 at idle — decode looks wrong."),
+    (0x312, "Engine torque", "Nm", "candidate", _kv("torque"),
+     "MPS2 map: ((D0<<8|D1)/4) - 500. Should rise with throttle, go negative on overrun."),
+    (0x215, "Distance counter", "counts", "candidate", _kv("trip_cnt"),
+     "D2,D3. MPS2 says 25700 counts/km; drive a known distance to re-derive."),
+    (0x424, "Position lamps", "", "candidate", _flag("pos?", "lamps["),
+     "MPS2 map: D0 0x04. Switch the parking lamps on and off."),
+    (0x445, "Mirror heater", "", "candidate", _flag("mirror-heat", "ac="),
+     "MPS2 map: D4 0x20. Toggle the rear defrost / mirror heat."),
+    (0x236, "Steering angle", "", "candidate", _kv("steer"),
+     "MPS2 map. Never seen on this bus — likely absent on this truck."),
+]
+
+
+def load_pid_catalog():
+    """Return (mode01_rows, mode22_rows) parsed from lib/core/include/pid_map.h."""
+    try:
+        src = open(PID_MAP_H, encoding="utf-8").read()
+    except OSError:
+        return [], []
+    defines = {m.group(1): int(m.group(2), 16)
+               for m in re.finditer(r"#define\s+(PID_\w+)\s+0x([0-9A-Fa-f]+)u?", src)}
+    m01 = []
+    for m in re.finditer(r'\{\s*(PID_\w+),\s*"([^"]*)",\s*"([^"]*)",[^}]*?(true|false)\s*\}', src):
+        if m.group(1) in defines:
+            m01.append(dict(pid=defines[m.group(1)], name=m.group(2).strip(),
+                            unit=m.group(3), verified=m.group(4) == "true"))
+    m22 = []
+    for m in re.finditer(r'\{\s*(UDS_REQ_\w+),\s*0x([0-9A-Fa-f]+),[^}]*?"([^"]*)",\s*"([^"]*)",\s*(true|false)\s*\}', src):
+        req = 0x7E0 if m.group(1) == "UDS_REQ_ENGINE" else 0x7E1
+        m22.append(dict(req=req, did=int(m.group(2), 16), name=m.group(3), unit=m.group(4),
+                        verified=m.group(5) == "true"))
+    return m01, m22
 
 
 def load_dbc_names():
@@ -176,6 +294,11 @@ class Bus:
         self.names = load_dbc_names()
         self.log = collections.deque(maxlen=250)   # DIFF / WATCH / '#' lines
         self.watch = {}                            # id -> firmware's decoded text
+        self.watch_ts = {}                         # id -> wall-clock of that text
+        self.m01_cat, self.m22_cat = load_pid_catalog()
+        self.m01 = {}                              # pid -> dict(value, unit, raw, ok, ts)
+        self.m22 = {}                              # (req, did) -> dict(result, nrc, ts)
+        self.dumping = False                       # candump lines seen; WATCH lines are then decode-only
         self.started = time.time()
         self.total = 0
         self.source = "(not connected)"
@@ -190,6 +313,7 @@ class Bus:
 
         m = FRAME_RE.match(line)
         if m:
+            self.dumping = True
             self._frame(m, now)
             return
 
@@ -198,12 +322,37 @@ class Bus:
             cid = int(m.group(2), 16)
             with self.lock:
                 self.watch[cid] = m.group(4).strip()
-            self._frame(m, now)
+                self.watch_ts[cid] = now
+            # With DUMP on the same frame also arrives as a candump line.
+            if not self.dumping:
+                self._frame(m, now)
             return
 
         m = DIFF_RE.match(line)
         if m:
             self.note(m.group(1), f"{m.group(3)} D{m.group(4)}: {m.group(5)}->{m.group(6)}")
+            return
+
+        m = M01_POS_RE.match(line)
+        if m:
+            with self.lock:
+                self.m01[int(m.group(1), 16)] = dict(
+                    ok=True, value=m.group(3), unit=m.group(4) or "",
+                    raw=" ".join(m.group(2).split()), ts=now)
+            return
+
+        m = M01_NA_RE.match(line)
+        if m:
+            with self.lock:
+                self.m01[int(m.group(1), 16)] = dict(ok=False, value=None, unit="", raw="", ts=now)
+            return
+
+        m = M22_RE.match(line)
+        if m:
+            with self.lock:
+                self.m22[(int(m.group(2), 16), int(m.group(3), 16))] = dict(
+                    result=m.group(1), nrc=m.group(4), ts=now)
+            self.note("dev", line)
             return
 
         if line.startswith("#") or line.startswith(("POS", "NEG", "NA ", "SIG,", "PID ")):
@@ -228,6 +377,44 @@ class Bus:
         for idx, old, new in hits:
             self.note("CHANGE", f"{cid:03X} D{idx}: {old:02X}->{new:02X}  (byte had been settled)")
 
+    def signals(self, now):
+        """Every known signal with its status, description and latest firmware value."""
+        out = []
+        for frame, name, unit, status, get, desc in BROADCAST_SIGNALS:
+            text = self.watch.get(frame)
+            value = get(text) if text is not None else None
+            if value is not None and unit and value.endswith(unit):
+                value = value[: -len(unit)]
+            ts = self.watch_ts.get(frame) if value is not None else None
+            out.append(dict(status=status, source=f"CAN 0x{frame:03X}", name=name,
+                            value=value, unit=unit, raw="",
+                            age=round(now - ts, 1) if ts else None, note=desc))
+        for p in self.m01_cat:
+            r = self.m01.get(p["pid"])
+            if r is None:
+                value, raw, age = None, "", None
+            elif r["ok"]:
+                value, raw, age = r["value"] or r["raw"], r["raw"], round(now - r["ts"], 1)
+            else:
+                value, raw, age = "no answer", "", round(now - r["ts"], 1)
+            unit = p["unit"] if r and r["ok"] else ""
+            note = ("Confirmed on this vehicle." if p["verified"]
+                    else "Unverified. Confirm it answers and the value is physical.")
+            out.append(dict(status="confirmed" if p["verified"] else "candidate",
+                            source=f"Mode 01 0x{p['pid']:02X}", name=p["name"],
+                            value=value, unit=unit if r else p["unit"], raw=raw, age=age, note=note))
+        for p in self.m22_cat:
+            r = self.m22.get((p["req"], p["did"]))
+            value = None
+            if r:
+                value = "NRC 0x" + r["nrc"] if r["result"] == "NEG" and r["nrc"] else r["result"]
+            out.append(dict(status="confirmed" if p["verified"] else "rejected",
+                            source=f"Mode 22 {p['req']:03X}/{p['did']:04X}", name=p["name"],
+                            value=value, unit="", raw="",
+                            age=round(now - r["ts"], 1) if r else None,
+                            note="ECUs reject UDS 0x22 (engine NRC 0x11, TCM 0x80)."))
+        return out
+
     def snapshot(self):
         """Full serialisable state for one SSE push."""
         now = time.time()
@@ -236,10 +423,12 @@ class Bus:
             watch = dict(self.watch)
             log = list(self.log)
             total, source = self.total, self.source
+            signals = self.signals(now)
         order = {"confirmed": 0, "decoded": 1, "candidate": 2, "unknown": 3}
         rows.sort(key=lambda r: (order[r["status"]], -r["hz"]))
         return dict(
             rows=rows, watch={f"{k:03X}": v for k, v in watch.items()},
+            signals=signals,
             log=log[-60:], total=total, source=source,
             uptime=round(now - self.started, 1),
             ids=len(rows), volatile_changes=VOLATILE_CHANGES,
@@ -267,6 +456,7 @@ def reader_serial(port, baud):
     BUS.source = f"serial {port} @ {baud}"
     send(f"T{int(time.time())}")
     send("DUMP")        # the sniffer is quiet until this
+    send("WATCH")       # firmware decodes the broadcast signals; DUMP keeps flowing
 
     while True:
         try:
