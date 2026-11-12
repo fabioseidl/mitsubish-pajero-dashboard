@@ -44,12 +44,23 @@ Do not redo this work:
   `D0 - 63` offset was wrong for this truck.
 - The Mode 01 PIDs marked `verified` in `pid_map.h`.
 
-**Rejected — the ECUs do not implement UDS service 0x22.** A DID sweep answered
+**Rejected — the ECUs do not implement UDS service `0x22`.** A DID sweep answered
 NRC `0x11` (serviceNotSupported) from the engine ECU and `0x80` from the TCM for
 every DID. The documented Mitsubishi advanced PIDs for the 4M41 (fuel temp
 `0x20F2`, fan duty `0x2151`, transmission speeds `0x20AB`) are therefore **not
-available on this truck**, even though the tables list them. The polling path is
-gated off (`POLL_MODE22 = false`) and the ISO-TP reassembly code is kept dormant.
+available on this truck via `0x22`**, even though the tables list them. The Mode 22
+polling path is gated off (`POLL_MODE22 = false`) and the ISO-TP reassembly code is
+kept dormant.
+
+**The older KWP service `0x21` is the path for manufacturer data — not yet tried
+on the car.** It reaches ATF temperature (TCM `7E1 21 02`), dash odometer (cluster
+`79E 21 AD`), litre fuel level, absolute load (`7E0 21 1A`) and the **traction
+mode** (`786 21 21`, byte D0 = 2H/4H/4HLc/4LLc from the transfer-case ECU). So
+before burning a drive on `ADIFF` for the 4WD dial, try `RDLI 786 21` — a poll may
+hand you the whole mode directly. The header/LID map is in
+`MITSUBISHI_ADVANCED_PIDS.md §9` and the slot defines in `pid_map.h` under "Legacy
+KWP service 0x21". Each is a candidate: the block and signal are known, the byte
+offset is not, so `RDLI` must resolve the decode on the car.
 
 **Unverified candidates** — `pid_map.h` still carries a block of frames decoded by
 the independent igkov/MPS2 Pajero Sport 2 dash (0x236 steering angle, 0x308 rpm,
@@ -57,15 +68,18 @@ the independent igkov/MPS2 Pajero Sport 2 dash (0x236 steering angle, 0x308 rpm,
 confirmed, which is why the rest of its map was worth testing — and 0x215, 0x424
 and 0x445 have since been confirmed here. **Nothing in `projects/server` reads
 what is left.** They exist so the sniffer's `WATCH` mode can decode them on a
-drive. Note 0x236 has never appeared on this bus at all.
+drive. Note 0x236 has never appeared on this bus at all — nor has `0x16F`, the A/C
+compressor-clutch frame, which is absent from our passive capture.
 
 ## Reference material
 
 - `projects/sniffer/assets/MITSUBISHI_ADVANCED_PIDS.md` — the full
   reverse-engineering write-up: bus parameters, the UDS request/ISO-TP/response
   cycle step by step, per-engine DID tables for 12 Mitsubishi models (4M41 =
-  shared by Pajero IV and Pajero Sport II), a consolidated DID list, and the igkov broadcast/KWP
-  second source. Referenced by name from `pid_map.h` comments — keep it there.
+  shared by Pajero IV and Pajero Sport II), a consolidated DID list, the igkov
+  broadcast/KWP second source (§8), and the service `0x21` candidate map (§9) —
+  header/LID blocks for ATF temp, odometer, fuel level, traction mode and the
+  A/C compressor frame on CAN `0x16F`. Referenced by name from `pid_map.h` comments — keep it there.
 - `projects/sniffer/dumps/` — `candump.log` (passive capture) and `server_log.txt`.
 - `references/bus-inventory.md` — every ID on this bus from `candump.log`: 14
   total, 5 decoded, 3 candidates, 6 unknown, with rate and per-byte variety.

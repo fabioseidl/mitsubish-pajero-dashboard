@@ -380,3 +380,36 @@ static const Mode22AdvancedPid MODE22_ADVANCED_PIDS[] = {
 };
 
 #define MODE22_ADVANCED_PIDS_SIZE (sizeof(MODE22_ADVANCED_PIDS) / sizeof(MODE22_ADVANCED_PIDS[0]))
+
+// ---------- Legacy KWP service 0x21 — candidate manufacturer data ----------
+// UDS service 0x22 is rejected on this vehicle (NRC 0x11/0x80), so the Mode 22
+// table above is dormant. The manufacturer data is read with KWP2000 service 0x21
+// (ReadDataByLocalIdentifier) instead: request = `21 LID`, response = `61 LID D0 D1 ...`.
+//
+// These are CANDIDATES — the header/LID and the signal each block carries are
+// known, the byte offset and scale are not. RDLI must resolve the decode on the
+// car before any of these becomes a PID_MAP row or a Payload field (see the
+// can-reverse-engineering skill's promotion rule). Full list:
+// projects/sniffer/assets/MITSUBISHI_ADVANCED_PIDS.md §9.
+//
+// Response id is per-ECU, not a fixed offset: +8 only inside the 0x7Ex range,
+// otherwise +1. Confirm each one on the car.
+#define KWP21_REQ_ENGINE   0x7E0u   // resp 0x7E8: rpm/speed (01), coolant+IAT+gear (02), odometer approx (15), abs load (1A), rpm alt (44)
+#define KWP21_REQ_TCM      0x7E1u   // resp 0x7E9: ATF temp, pan temp, turbine/output rpm, selector, low range, lockup (LIDs 01/02/04)
+#define KWP21_REQ_4X4      0x786u   // resp 0x787: transfer case — traction mode (LID 0x21, byte D0)
+#define KWP21_REQ_CLUSTER  0x79Eu   // resp 0x7A1: odometer (LID 0xAD), fuel level in L, parking brake, ECU voltage
+#define KWP21_REQ_BODY     0x78Cu   // resp 0x78D: body block; LIDs 01 02 03 0D 14
+#define KWP21_REQ_AUX      0x7A0u   // resp 0x7A1: aux block; LIDs 01 02 25
+#define KWP21_REQ_ABS      0x790u   // resp 0x791: ABS/ASC (also 0x792->0x793, 0x794->0x795)
+#define KWP21_LID_TCM_AT     0x02u  // 7E1: AT-info block — ATF temp + shaft speeds (igkov: ATF = D6-40)
+#define KWP21_LID_TCM_TRANS  0x03u  // 7E1: second ATF candidate — OBDScanner MMC_AT_TEMP = D9-55 (6B31 cross-model); also igkov odometer (D2..D4). See §9.7
+#define KWP21_LID_ODOMETER   0xADu  // 79E: official dash odometer (preferred over engine 0x15)
+#define KWP21_LID_TRACTION   0x21u  // 786: 4WD traction mode in byte D0 (2H/4H/4HLc/4LLc)
+#define KWP21_LID_ABS_LOAD   0x1Au  // 7E0: absolute engine load (block 211A)
+// Block 2102 (7E0 LID 0x02) packs coolant temp, intake-air temp and the raw gear
+// code in byte J (D9); block 2101 (LID 0x01) packs engine rpm and vehicle speed.
+
+// A/C compressor-clutch broadcast frame on CAN 0x16F. Absent from the 14-ID
+// passive capture (references/bus-inventory.md) — confirm with a targeted WATCH
+// while the compressor cycles.
+#define CAN_BCAST_AC_COMPRESSOR  0x16Fu

@@ -52,7 +52,8 @@
 //   FUELLOG                 CSV: 0x608 fuel + 0x218 gear vs rpm/accel/speed
 //   RDLI <req> <lid>        KWP ReadDataByLocalIdentifier (service 0x21, 1-byte
 //                           LID) — tests igkov bcomp11's Pajero AT/odometer reads
-//                           (e.g. RDLI 7E1 02 = AT info, RDLI 7E1 03 = odometer)
+//                           (e.g. RDLI 7E1 02 = AT info/ATF; RDLI 7E1 03 = odometer
+//                           and/or ATF candidate — prints both decode hints)
 //   STOP / PASV             stop SIG/SCAN/WATCH/DIFF/FUELLOG; return to passive logging
 
 #include <Arduino.h>
@@ -833,9 +834,15 @@ static void rdliRead(uint16_t req_id, uint8_t lid) {
         int   atf    = D[6] - 40;
         Serial.printf("#   [hint AT] input=%drpm output=%drpm ATF=%dC  (igkov, UNVERIFIED)\n",
                       input, output, atf);
-    } else if (lid == 0x03 && nD >= 5) { // bcomp11 PAJERO_ODO_INFO candidate decode
-        uint32_t odo = ((uint32_t)D[2] * 256 + D[3]) * 256 + D[4];
-        Serial.printf("#   [hint ODO] odometer=%lu km  (igkov, UNVERIFIED)\n", (unsigned long)odo);
+    } else if (lid == 0x03) {            // 7E1 LID 03 — two candidate meanings, print both
+        if (nD >= 5) {                   // bcomp11 PAJERO_ODO_INFO candidate decode
+            uint32_t odo = ((uint32_t)D[2] * 256 + D[3]) * 256 + D[4];
+            Serial.printf("#   [hint ODO] odometer=%lu km  (igkov, UNVERIFIED)\n", (unsigned long)odo);
+        }
+        if (nD >= 10) {                  // OBDScanner MMC_AT_TEMP: ATF = byte9 - 55 (6B31 cross-model)
+            Serial.printf("#   [hint ATF] D9-55=%dC  (OBDScanner, 6B31 cross-model, UNVERIFIED)\n",
+                          (int)D[9] - 55);
+        }
     }
 }
 

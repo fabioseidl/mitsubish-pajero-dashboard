@@ -363,3 +363,111 @@ Implemented in `projects/sniffer/src/main.cpp`:
 | `FUELLOG` | active | CSV row/cycle: `0x608` fuel + `0x218` gear vs polled rpm / accel / speed. Look for `accel≈0 & rpm>1100 & speed>0` → fuel should collapse to ~0 (the overrun test). |
 | `RDLI <req> <lid>` | active | KWP `0x21` read (§9.2), e.g. `RDLI 7E1 02` (AT) / `RDLI 7E1 03` (odometer). Prints raw bytes + bcomp11's candidate decode. |
 | `VERIFY [m01\|m22]` | active | Polls **every `verified=false` PID** in `pid_map.h` (Mode 01 and the Mode 22 advanced table) and reports which ones this vehicle actually answers — the shortlist for flipping `verified` to `true`. |
+
+## 9. KWP service `0x21` candidate parameters (4M41)
+
+UDS service `0x22` is rejected on this vehicle (NRC `0x11`/`0x80`, §8 note). The
+manufacturer data is reachable instead over the older KWP2000 service `0x21`
+ReadDataByLocalIdentifier: request = `21 LID`, positive response = `61 LID D0 D1 …`.
+
+These are **candidates, not yet confirmed on the car.** The header/LID and the
+decoded meaning are known; the byte offset and scale for each are not. Resolve the
+exact decode with `RDLI`, then promote per the rule in §7.
+
+### 9.1 Addressing
+
+- 11-bit ISO-TP, protocol `6` (ELM `ATSP6`, ISO 15765-4 CAN 11-bit/500k).
+- Response id is per-ECU, **not** a fixed offset. `+8` holds only inside the
+  `0x7Ex` range (`7E0→7E8`, `7E1→7E9`); the other ECUs pair at `+1` (`786→787`,
+  `79E→7A1`, `78C→78D`, `790→791`). Read each response id off the car to be sure.
+- `21AD` is service `0x21`, LID `0xAD` (two bytes sent after `ATSH<header>`).
+- Vehicle: 70 L tank, turbo diesel, INVECS-II 4AT gearbox.
+- One body ECU is **K-line** (address `0x98`, KWP init `81 98 F1`), not on CAN.
+
+### 9.2 Blocks and LIDs
+
+| Header → resp | ECU | LIDs (`0x21 XX`) |
+|-----|-----|-----|
+| `7E0` → `7E8` | Engine (4M41) | `01` (rpm+speed), `02` (coolant, intake-air, gear byte), `15` (odometer, approx), `1A` (absolute load), `44` (rpm alt) |
+| `7E1` → `7E9` | TCM (INVECS-II 4AT) | `01`, `02` (ATF + shaft speeds, §8.2), `03` (trans block, §9.7), `04` |
+| `786` → `787` | Super Select 4x4 | `21` (traction mode 2H/4H/4HLc/4LLc, byte D0) |
+| `79E` → `7A1` | Cluster | `02`, `A2`, `A3`, `A5`, `A6`, `A8`, `AA`, `AB`, `AD` (odometer) |
+| `78C` → `78D` | body | `01`, `02`, `03`, `0D`, `14` |
+| `7A0` → `7A1` | aux | `01`, `02`, `25` |
+| `790`/`792`/`794` → `+1` | ABS / ASC | to sweep |
+| `741` → `74C`, `784` → `785` | unidentified | to sweep |
+
+### 9.3 Known decode locations
+
+Byte letter = response data index, `A` = D0 (first byte after the `61 LID` echo):
+
+| Target | Request | Byte | Notes |
+|-----|-----|-----|-----|
+| 4WD traction mode | `786 21 21` | A (D0) | 2H / 4H / 4HLc / 4LLc |
+| Absolute engine load | `7E0 21 1A` | — | block 211A |
+| Raw gear code | `7E0 21 02` | J (D9) | block 2102 |
+| Coolant + intake-air temp | `7E0 21 02` | — | block 2102 |
+| Engine rpm + speed | `7E0 21 01` | — | block 2101 |
+| Engine rpm (alt) | `7E0 21 44` | — | block 2144 |
+
+### 9.4 Signals carried by these blocks
+
+- **TCM (`7E1`)** — ATF temperature (torque-converter and pan oil, °C), turbine
+  (input) rpm, output-shaft rpm, engine rpm, converter slip / lock-up, selector
+  position, manual mode, low range. ATF temperature has no broadcast-bus source.
+- **Cluster (`79E`)** — odometer (LID `AD`, official dash km), fuel level in
+  litres, parking brake, ECU voltage.
+- **4x4 (`786`)** — traction mode and off-road / reduced-range flags.
+- **Engine (`7E0`)** — coolant, intake-air temp, absolute load, alternate rpm,
+  and a diesel thermal set to probe: EGT 1/2/3, DPF temperature, radiator-fan
+  relay, injector opening time, fuel trims.
+
+### 9.5 A/C compressor broadcast frame: CAN `0x16F`
+
+The A/C compressor-clutch state is a free-running frame on CAN `0x16F`. It is not
+in the 14-ID passive capture (`references/bus-inventory.md`); `WATCH 16F` with the
+compressor cycling will confirm whether the OBD port exposes it.
+
+### 9.6 Confirming on the car
+
+1. `RDLI 7E1 02` → expect `61 02 …` on `7E9`: ATF temp + shaft speeds.
+2. `RDLI 786 21` → expect `61 21 …` on `787`: byte D0 = 4WD mode.
+3. `RDLI 79E AD` → dash odometer; `RDLI 79E A8`/`A2` + `RDLI 7A0 25` → fuel level + aux.
+4. `RDLI 7E1 03` → second ATF candidate (§9.7). If it answers, log byte 9 warm.
+5. Correlate each with `SIG` while driving before trusting a byte offset, then promote.
+
+## 9.7 Second ATF-temp candidate — service `0x21` LID `03` (cross-model lead)
+
+Independent of the §8.2 decode (`7E1 21 02`, ATF = `D6 − 40`). The OBDScanner project
+(parhipov/OBDScanner, `core/data/cars/mitsubishi.json`) decodes Mitsubishi transmission
+data over a **different LID** on the same TCM:
+
+| Target | Request | Byte | Formula | Source confidence |
+|-----|-----|-----|-----|-----|
+| ATF temperature | `7E1 21 03` | D9 (`resp[11]`) | `D9 − 55` °C | tagged 6B31-only, `verified=false` |
+
+> This formula was captured on the Outlander 3.0 **6B31** 6-speed auto, not the 4M41 /
+> INVECS-II 4AT — treat the `−55` offset and the byte index as unconfirmed for this truck.
+> LID `03` itself is a TCM block we have **not** swept; the value may sit at a different
+> offset here. Two independent LIDs now point at ATF (`02` D6−40 and `03` D9−55) — probe
+> both with `RDLI`, take whichever answers and tracks a warming gearbox, then promote.
+
+> OBDScanner also confirms the protocol direction: every Mitsubishi car it supports uses
+> service `0x21` with 1-byte LIDs (`01` / `03` / `06` / `10`) on 11-bit CAN, never UDS
+> `0x22` — matching the §8 rejection of `0x22` on this vehicle.
+
+## 9.8 Authoritative source — MUT-III SE CommonDB
+
+The definitive per-VIN PID/DID map for the 4M41 lives inside Mitsubishi's own **MUT-III SE**
+diagnostic software, in its `CommonDB` XML (`Vehicle_DB.xml`, `VIN_Selection.xml`, etc.),
+which carry the real `CANBUS_ID` and data-identifier definitions per `VHCL_ID` / `ENGINE_ID`
+/ `TRANSMISSION_ID`. The DB files ship as encrypted `.exdf`; the cipher is trivial
+(mohammad-aliB/MUT-III-SE-Reverse-Engineering, `decrypt_exdf.py`):
+
+```
+for each byte: reverse its bit order (bit0<->bit7, ...), then XOR with 0xAA
+```
+
+If a MUT-III SE install (or just its data directory) can be obtained, decrypting
+`CommonDB/*.exdf` yields Mitsubishi's own byte offsets and formulas for this exact
+vehicle — replacing every `verified=false` guess in this document with ground truth.

@@ -53,6 +53,11 @@ the low half of a 16-bit one. A byte with 1 never moved in this capture.
 Either it needs an ECU this truck lacks, or igkov's dash reads a different
 platform. Drop it from the candidate list or mark it absent.
 
+**`0x16F` is a frame to go looking for.** It carries the A/C compressor-clutch
+state but is not among the 14 IDs captured here — the capture was mostly stationary
+with A/C likely off. `WATCH 16F` with the compressor cycling will say whether the
+OBD port exposes it. See `projects/sniffer/assets/MITSUBISHI_ADVANCED_PIDS.md §9.5`.
+
 **Two unknown frames carry a full-range continuous signal** — the highest-value
 targets left:
 - `0x418` byte 5, 256 distinct at 45 Hz, with bytes 4 and 6 also moving (4 states
