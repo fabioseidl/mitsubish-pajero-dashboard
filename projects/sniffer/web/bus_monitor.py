@@ -64,7 +64,9 @@ DIFF_RE = re.compile(r"^(A?DIFF)\s+(\d+\.\d+)\s+([0-9A-Fa-f]+)\s+D(\d+):\s*([0-9
 M01_POS_RE = re.compile(r"^POS PID=0x([0-9A-Fa-f]{2})\s.*?raw=((?:[0-9A-Fa-f]{2}\s?){4})(?:\s*=\s*(\S+)\s*(\S*))?")
 M01_NA_RE = re.compile(r"^NA\s+PID=0x([0-9A-Fa-f]{2})\s")
 M22_RE = re.compile(r"^(POS|NEG|NA)\s+ECU=0x([0-9A-Fa-f]{3})\s+DID=0x([0-9A-Fa-f]{4})\s.*?(?:nrc=0x([0-9A-Fa-f]{2}))?\s*$")
-RDLI_RE = re.compile(r"^RDLI ECU=0x([0-9A-Fa-f]{3}) LID=0x([0-9A-Fa-f]{2}) (POS resp=(.*)|NEG nrc=0x([0-9A-Fa-f]{2})|no response)")
+RDLI_RE = re.compile(r"^RDLI ECU=0x([0-9A-Fa-f]{3}) LID=0x([0-9A-Fa-f]{2})(?: RX=0x([0-9A-Fa-f]{3}))? (POS resp=(.*)|NEG nrc=0x([0-9A-Fa-f]{2})|no response)")
+# KWP discovery output: ECUS responders, KWATCH changes, IDENT and session lines go to the log.
+KWP_LOG_PREFIXES = ("ECU req=", "KWATCH ", "IDENT ", "# session ")
 WATCH_KV_RE = re.compile(r"(\w+)=(\S+)")
 WATCH_BRACKET_RE = re.compile(r"(\w+)\[([^\]]*)\]")
 
@@ -149,6 +151,8 @@ BROADCAST_SIGNALS = [
      "D1,D2 direct. Matched the tachometer."),
     (0x424, "Position lamps", "", "confirmed", _flag("pos", "lamps["), "D0 0x04."),
     (0x445, "Mirror heater", "", "confirmed", _flag("mirror-heat", "ac="), "D4 0x20."),
+    (0x608, "Outside temperature", "C", "candidate", _kv("ambient"),
+     "qhub.kz: D1 - 40. Read 00 (-40 C) throughout candump.log; compare with a thermometer."),
     (0x312, "Engine torque", "Nm", "candidate", _kv("torque"),
      "MPS2 map: ((D0<<8|D1)/4) - 500. Should rise with throttle, go negative on overrun."),
     (0x215, "Distance counter", "counts", "candidate", _kv("trip_cnt"),
@@ -349,11 +353,12 @@ class Bus:
 
         m = RDLI_RE.match(line)
         if m:
-            result = "POS" if m.group(4) is not None else ("NEG" if m.group(5) else "NA")
-            data = (m.group(4) or "").strip() if result == "POS" else (m.group(5) or "")
+            result = "POS" if m.group(5) is not None else ("NEG" if m.group(6) else "NA")
+            data = (m.group(5) or "").strip() if result == "POS" else (m.group(6) or "")
             with self.lock:
                 self.rdli[f"{m.group(1).upper()}/{m.group(2).upper()}"] = dict(
-                    result=result, data=data, ts=round(now - self.started, 2))
+                    result=result, data=data, rx=(m.group(3) or "").upper(),
+                    ts=round(now - self.started, 2))
             self.note("dev", line)
             return
 
@@ -363,6 +368,10 @@ class Bus:
                 self.m22[(int(m.group(2), 16), int(m.group(3), 16))] = dict(
                     result=m.group(1), nrc=m.group(4), ts=now)
             self.note("dev", line)
+            return
+
+        if line.startswith(KWP_LOG_PREFIXES):
+            self.note("KWP", line)
             return
 
         if line.startswith("#") or line.startswith(("POS", "NEG", "NA ", "SIG,", "PID ")):

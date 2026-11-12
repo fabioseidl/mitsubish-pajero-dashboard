@@ -73,6 +73,7 @@
   .k-CHANGE { color: var(--hot); }
   .k-DIFF, .k-ADIFF { color: var(--candidate); }
   .k-sent { color: #7fa7d4; }
+  .k-KWP { color: var(--confirmed); }
   .k-dev, .k-error { color: var(--dim); }
   h2 {
     font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
@@ -118,6 +119,8 @@
   <button data-cmd="VERIFY ALL" title="Polls every Mode 01 PID once (transmits on the bus)">poll Mode 01 PIDs</button>
   <label><input type="checkbox" id="autopoll"> repeat every 10 s</label>
   <button data-cmd="VERIFY M22" title="Re-test the Mode 22 DIDs (transmits)">re-test Mode 22</button>
+  <button data-cmd="ECUS" title="Find every ECU answering KWP 0x21 on 0x600-0x7FF, broadcast ids skipped (transmits, ~40 s)">find ECUs</button>
+  <button data-cmd="KWATCH 786 21" title="Poll the transfer-case traction mode at 5 Hz (transmits); STOP to end">watch 4WD mode</button>
   <span>Broadcast values come from WATCH (listen-only). Polling transmits on the bus.</span>
 </div>
 <div id="signals"></div>

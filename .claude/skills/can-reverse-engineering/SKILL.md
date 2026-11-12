@@ -73,10 +73,18 @@ other headers below are untried. It reaches ATF temperature (TCM `7E1 21 02`), d
 mode** (`786 21 21`, byte D0 = 2H/4H/4HLc/4LLc from the transfer-case ECU) — the
 best remaining lead for 2H vs 4H. The sniffer's `RDLI` listens on request + 8
 (`0x78E` for `0x786`), so it must learn the + 1 response IDs before `RDLI 786 21`
-can work. The header/LID map is in
+can work — it now does: `RDLI`, `LIDS` and `KWATCH` use `kwp21_resp_id()` in
+`pid_map.h`, and `ECUS` auto-detects any reply id. The header/LID map is in
 `MITSUBISHI_ADVANCED_PIDS.md §9` and the slot defines in `pid_map.h` under "Legacy
 KWP service 0x21". Each is a candidate: the block and signal are known, the byte
 offset is not, so `RDLI` must resolve the decode on the car.
+
+A second source, qhub.kz (`sirsharky81/qhub.kz`, `src/lib/obd/`, a MUT-III based
+ELM327 app for newer Mitsubishi bodies), adds module pairs with replies below
+`0x700` — meter `6A0`→`514`, ETACS `620`→`504`, steering sensor `622`→`484` —
+and a TCM `21 02` layout that matches this truck's replies byte for byte (see
+`references/bus-inventory.md`). Its `21 04` selector bits and broadcast frames
+do not fit this truck.
 
 **Unverified candidates** — `pid_map.h` still carries a block of frames decoded by
 the independent igkov/MPS2 Pajero Sport 2 dash (0x236 steering angle, 0x312
@@ -103,9 +111,11 @@ compressor-clutch frame, which is absent from our passive capture.
   appeared on this bus.
 - `projects/sniffer/pajero_dakar.dbc`, `mitsubishi_advanced.dbc` — DBC definitions.
 - `references/mut3-database.md` — what the MUT-III SE service software yields.
-  Short version: no scaling and no broadcast frames, only ECU addressing. On
-  this vehicle every ECU but the engine is K-line, so `0x7E8` really is the only
-  CAN diagnostic responder. Lists other-platform addresses as candidates only.
+  Short version: no scaling and no broadcast frames, only ECU addressing. Its
+  conclusion that only the engine answers over CAN is wrong: the TCM `0x7E1`
+  answers KWP `0x21` on the car, and the research lists more CAN ECUs at
+  request + 1 (transfer case `0x786`). Lists other-platform addresses as
+  candidates only.
 
 ## Sniffer modes
 
@@ -117,7 +127,7 @@ ACK bus traffic.
 | Mode | Use it for |
 |---|---|
 | `PASSIVE` | Quiet by default; `DUMP` toggles candump-format logging of every frame |
-| `WATCH [id ...]` | Decode known free-running frames into engineering values, rate-limited. No args watches the candidate list (608 218 215 308 312 236 424 445 418) |
+| `WATCH [id ...]` | Decode known free-running frames into engineering values, rate-limited. No args watches the candidate list (608 218 215 308 312 236 424 445 418 16F) |
 | `DIFF [id]` | One noisy frame: learn the bytes that churn while an input is held still, then print only when a previously-stable byte changes. Default 218 |
 | `ADIFF` | Whole-bus DIFF — finds an **unknown** discrete-state frame (4WD dial, diff lock) in one toggle sweep without knowing its ID |
 | `OBD` | List the standard Mode 01 PIDs the engine ECU supports |
@@ -125,7 +135,12 @@ ACK bus traffic.
 | `SCAN [eng\|tcm] [start end] [sess]` | Sweep UDS Mode 22 DIDs (default `2000 21FF`), log every `0x62`. `sess` opens an extended session (`10 03`) held with TesterPresent, for ECUs that gate Mode 22 |
 | `SIG <req> <did>` | Poll one DID at 10 Hz alongside rpm/accel/speed, CSV per cycle — correlate a candidate against throttle and overrun while driving |
 | `FUELLOG` | CSV of the passive 0x608 fuel and 0x218 gear against polled rpm/accel/speed — the drive test that confirmed 0x608 |
-| `RDLI <req> <lid>` | Legacy KWP ReadDataByLocalIdentifier (service 0x21), e.g. `RDLI 7E1 02` = AT info, `RDLI 7E1 03` = odometer |
+| `ECUS [lid [s e]]` | Find every ECU answering KWP `0x21` on `0x600`–`0x7FF`, auto-detecting each reply id (+8, +1, or below `0x700` like `0x6A0`→`0x514`). The 16 bus broadcast IDs are skipped — the sniffer never transmits on them |
+| `LIDS <req> [s e] [resp]` | Sweep KWP `0x21` LIDs on one ECU; positive replies print in `RDLI` format, NRCs as a histogram |
+| `KWATCH <req> <lid> [resp]` | Poll one KWP `0x21` LID at ~5 Hz and print whenever the reply changes — e.g. `KWATCH 786 21` while turning the 4WD dial |
+| `RDLI <req> <lid> [resp]` | Legacy KWP ReadDataByLocalIdentifier (service 0x21), e.g. `RDLI 7E1 02` = AT info; prints a candidate decode for known ECU/LID pairs |
+| `IDENT <req> [resp]` | KWP `1A 87` / `1A 9C` / `1A 90`: hardware and software part numbers and VIN of one ECU |
+| `... SESS` | Suffix on `RDLI`, `LIDS`, `KWATCH`, `IDENT`, `ECUS`: open a Mitsubishi KWP session (`10 92`, fallback `10 89`) first and close it with `10 81`. `ECUS ... SESS` probes with `10 92` instead of `21 lid` |
 | `T<unix>` | Set the wall-clock base for timestamps |
 | `STOP` / `PASV` | Return to passive logging |
 

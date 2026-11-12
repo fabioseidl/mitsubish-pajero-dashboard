@@ -39,7 +39,8 @@
 //   WATCH [id ...]          decode broadcast frames (hex IDs); no args watches all
 //                           known frames: 608 218 215 424 445 (confirmed on this
 //                           vehicle, with 308 and 418) and 312 236 (igkov map,
-//                           unverified; 236 has never appeared on this bus)
+//                           unverified; 236 has never appeared on this bus) and
+//                           16F (A/C compressor, research candidate, raw bytes only)
 //   DIFF [id]               isolate a slow field in one frame; no arg = 218 (gear)
 //   ADIFF                   whole-bus DIFF: hold still to learn, then toggle an
 //                           input; the changed ID/byte is printed (unknown frames)
@@ -50,12 +51,22 @@
 //                                TesterPresent — for ECUs that gate Mode 22.
 //   SIG <req> <did>         signature-log one DID, e.g. `SIG 7E0 2100`
 //   FUELLOG                 CSV: 0x608 fuel + 0x218 gear vs rpm/accel/speed
-//   RDLI <req> <lid>        KWP ReadDataByLocalIdentifier (service 0x21, 1-byte
+//   RDLI <req> <lid> [resp] KWP ReadDataByLocalIdentifier (service 0x21, 1-byte
 //                           LID) — tests igkov bcomp11's Pajero AT/odometer reads
 //                           (e.g. RDLI 7E1 02 = AT info/ATF; RDLI 7E1 03 = odometer
 //                           and/or ATF candidate — prints both decode hints)
 //   VERIFY [m01|m22|all]   poll unverified PIDs once; ALL reads every Mode 01 PID
-//   STOP / PASV             stop SIG/SCAN/WATCH/DIFF/FUELLOG; return to passive logging
+//   ECUS [lid [s e]]        find every ECU answering KWP 0x21 on 0x600..0x7FF (or
+//                           s..e), auto-detecting the reply id (+8, +1, 0x6A0->0x514
+//                           ...); bus broadcast ids are skipped, never transmitted on
+//   LIDS <req> [s e] [resp] sweep KWP 0x21 LIDs s..e on one ECU (default 00..FF)
+//   KWATCH <req> <lid> [resp]  poll one KWP 0x21 LID at ~5 Hz, print on change —
+//                           e.g. KWATCH 786 21 while turning the 4WD dial
+//   IDENT <req> [resp]      KWP 1A 87/9C/90: part numbers and VIN of one ECU
+//   RDLI, LIDS, KWATCH and IDENT use the known reply id for each ECU (kwp21_resp_id
+//   in pid_map.h); pass resp explicitly, or 0 to auto-detect. A trailing SESS on
+//   any of them (and ECUS) opens a KWP session 10 92 first and closes it with 10 81.
+//   STOP / PASV             stop SIG/SCAN/WATCH/DIFF/FUELLOG/KWATCH; return to passive logging
 
 #include <Arduino.h>
 #include <SPI.h>
@@ -80,7 +91,7 @@ static MCP2515 mcp2515(PIN_MCP2515_CS, 10000000, &SPI);
 static uint64_t unix_base_us   = 0;   // Unix time in microseconds at sync point
 static uint64_t micros_at_sync = 0;   // micros() value when sync was received
 
-enum class Mode { PASSIVE, WATCH, DIFF, ADIFF, SIG, FUELLOG };
+enum class Mode { PASSIVE, WATCH, DIFF, ADIFF, SIG, FUELLOG, KWATCH };
 static Mode     g_mode = Mode::PASSIVE;
 static uint16_t g_sig_req = UDS_REQ_ENGINE;
 static uint16_t g_sig_did = 0x0000;
@@ -127,8 +138,9 @@ static WatchId  g_watch[WATCH_MAX] = { { BCAST_FUEL,      0, INT32_MIN },
                                        { CAN_BCAST_STEER, 0, INT32_MIN },
                                        { CAN_BCAST_ETACS, 0, INT32_MIN },
                                        { CAN_BCAST_AUTOAC,0, INT32_MIN },
-                                       { CAN_BCAST_LEVER, 0, INT32_MIN } };
-static uint8_t  g_watch_n = 9;
+                                       { CAN_BCAST_LEVER, 0, INT32_MIN },
+                                       { CAN_BCAST_AC_COMPRESSOR, 0, INT32_MIN } };
+static uint8_t  g_watch_n = 10;
 static constexpr uint32_t WATCH_MIN_INTERVAL_MS = 250;   // per-id print throttle
 
 // Analog frames change on nearly every message (speed, rpm, torque, steering,
@@ -216,6 +228,12 @@ static void enterActive() {
     mcp2515.setNormalMode();       // real node: can transmit and ACKs the bus
 }
 
+/** After a one-shot request, return to WATCH if it was running, else to PASSIVE. */
+static void resumeListen(Mode prev) {
+    if (prev == Mode::WATCH) { mcp2515.setListenOnlyMode(); g_mode = Mode::WATCH; }
+    else                     enterPassive();
+}
+
 static void drainRx() {
     struct can_frame m;
     while (mcp2515.readMessage(&m) == MCP2515::ERROR_OK) { /* discard */ }
@@ -240,7 +258,11 @@ static void printCandump(const struct can_frame& rx) {
 
 // ---------------------------------------------------------------------------
 // Generic ISO-TP request/response (single + multi frame). Sends `payload` as a
-// single-frame request and reassembles the reply from (req_id + 8).
+// single-frame request and reassembles the reply from resp_id. resp_id ==
+// KWP21_RESP_AUTO locks onto the first diagnostic-looking reply from any id that
+// is not req_id or a bus broadcast id (replies can sit below 0x700, e.g.
+// 0x6A0 -> 0x514); *rx_id (if given) reports the id that answered.
+// Refuses (-1) to transmit on a bus broadcast id.
 //   payload[0] is the service byte (0x22 ReadDataByIdentifier, 0x21 KWP
 //   ReadDataByLocalIdentifier, ...); the rest is the DID/LID.
 // Returns  1 = positive response (out[] = reassembled response starting at SID),
@@ -249,9 +271,31 @@ static void printCandump(const struct can_frame& rx) {
 // NRC 0x78 (responsePending) is handled internally: the timeout is restarted and
 // we keep waiting for the real answer instead of reporting it as negative.
 // ---------------------------------------------------------------------------
+/** True when a frame looks like a diagnostic reply (positive or negative) to `service`. */
+static bool isDiagReply(const struct can_frame& m, uint8_t service) {
+    uint8_t pci = m.data[0] & 0xF0;
+    uint8_t sid = (pci == 0x00) ? m.data[1] : (pci == 0x10) ? m.data[2] : 0x00;
+    return (pci == 0x00 || pci == 0x10) && (sid == (uint8_t)(service + 0x40) || sid == 0x7F);
+}
+
+// Free-running ids seen on this bus (bus-inventory.md) plus watched candidates.
+static const uint16_t BUS_BROADCAST_IDS[] = {
+    0x101, 0x16F, 0x212, 0x215, 0x218, 0x236, 0x308, 0x312,
+    0x317, 0x325, 0x415, 0x418, 0x424, 0x445, 0x447, 0x608,
+};
+
+/** True when `id` belongs to a broadcast frame: never transmit on it, never take it as a reply. */
+static bool isBusBroadcastId(uint16_t id) {
+    for (uint16_t b : BUS_BROADCAST_IDS) if (b == id) return true;
+    return false;
+}
+
 static int isotpTransceive(uint16_t req_id, const uint8_t* payload, uint8_t plen,
-                           uint8_t* out, uint8_t& out_len, uint32_t timeout_ms) {
-    const uint16_t resp_id = req_id + UDS_RESP_OFFSET;
+                           uint8_t* out, uint8_t& out_len, uint32_t timeout_ms,
+                           uint16_t resp_id = KWP21_RESP_AUTO, uint16_t* rx_id = nullptr) {
+    if (isBusBroadcastId(req_id)) return -1;       // would spoof a live ECU frame
+    if (resp_id == KWP21_RESP_AUTO && req_id >= 0x7E0 && req_id <= 0x7E7)
+        resp_id = req_id + UDS_RESP_OFFSET;         // fixed pairing inside 0x7Ex
     const uint8_t  service = plen > 0 ? payload[0] : 0x00;
     drainRx();
 
@@ -270,7 +314,13 @@ static int isotpTransceive(uint16_t req_id, const uint8_t* payload, uint8_t plen
     while (millis() - start < timeout_ms) {
         struct can_frame m;
         if (mcp2515.readMessage(&m) != MCP2515::ERROR_OK) { delayMicroseconds(200); continue; }
-        if ((m.can_id & 0x7FF) != resp_id) continue;
+        uint16_t id = m.can_id & 0x7FF;
+        if (resp_id == KWP21_RESP_AUTO) {           // lock onto the first plausible responder
+            if (id == req_id || id == 0x7DF || isBusBroadcastId(id) || !isDiagReply(m, service)) continue;
+            resp_id = id;
+        }
+        if (id != resp_id) continue;
+        if (rx_id) *rx_id = resp_id;
 
         uint8_t pci = m.data[0] & 0xF0;
         if (pci == 0x00) {                          // single frame
@@ -313,16 +363,64 @@ static int isotpTransceive(uint16_t req_id, const uint8_t* payload, uint8_t plen
 static int udsRead(uint16_t req_id, uint16_t did,
                    uint8_t* out, uint8_t& out_len, uint32_t timeout_ms = 150) {
     const uint8_t payload[3] = { 0x22, (uint8_t)(did >> 8), (uint8_t)(did & 0xFF) };
-    return isotpTransceive(req_id, payload, 3, out, out_len, timeout_ms);
+    return isotpTransceive(req_id, payload, 3, out, out_len, timeout_ms, req_id + UDS_RESP_OFFSET);
 }
 
-// KWP Service 0x21 (ReadDataByLocalIdentifier), 1-byte LID. This is the legacy
-// read bcomp11 uses for the Pajero TCM (request "02 21 LID"). Positive out[] =
-// 61 LID D0 D1 ... — note only ONE echo byte, so D0 = out[2] (not out[3]).
-static int kwpRead21(uint16_t req_id, uint8_t lid,
-                     uint8_t* out, uint8_t& out_len, uint32_t timeout_ms = 200) {
+// KWP Service 0x21 (ReadDataByLocalIdentifier), 1-byte LID (request "02 21 LID").
+// Positive out[] = 61 LID D0 D1 ... — only ONE echo byte, so D0 = out[2].
+// resp_id defaults to the known pairing (kwp21_resp_id), else auto-detect.
+static int kwpRead21(uint16_t req_id, uint8_t lid, uint8_t* out, uint8_t& out_len,
+                     uint16_t resp_id, uint16_t* rx_id = nullptr, uint32_t timeout_ms = 200) {
     const uint8_t payload[2] = { 0x21, lid };
-    return isotpTransceive(req_id, payload, 2, out, out_len, timeout_ms);
+    return isotpTransceive(req_id, payload, 2, out, out_len, timeout_ms, resp_id, rx_id);
+}
+
+// MUT-III opens a Mitsubishi KWP session (10 92, fallback 10 89) before 0x21
+// reads and closes it with 10 81 (qhub.kz). Some modules refuse 0x21 without it.
+/** Open a KWP session on one ECU; prints the outcome. Learns the reply id into resp_id when auto. */
+static bool kwpOpenSession(uint16_t req_id, uint16_t& resp_id) {
+    static const uint8_t kTypes[2] = { 0x92, 0x89 };
+    for (uint8_t t : kTypes) {
+        const uint8_t p[2] = { 0x10, t };
+        uint8_t buf[64]; uint8_t len = 0; uint16_t rx = 0;
+        int r = isotpTransceive(req_id, p, 2, buf, len, 300, resp_id, &rx);
+        if (r == 1) {
+            if (resp_id == KWP21_RESP_AUTO) resp_id = rx;
+            Serial.printf("# session 10 %02X on 0x%03X -> OK (rx 0x%03X)\n", t, req_id, rx);
+            return true;
+        }
+        if (r == 0) Serial.printf("# session 10 %02X on 0x%03X -> NEG nrc=0x%02X\n", t, req_id, buf[2]);
+        else        Serial.printf("# session 10 %02X on 0x%03X -> no response\n", t, req_id);
+    }
+    return false;
+}
+
+/** Return the ECU to its default session (10 81); the reply is ignored. */
+static void kwpCloseSession(uint16_t req_id, uint16_t resp_id) {
+    const uint8_t p[2] = { 0x10, 0x81 };
+    uint8_t buf[64]; uint8_t len = 0;
+    isotpTransceive(req_id, p, 2, buf, len, 200, resp_id);
+}
+
+// IDENT — KWP ReadEcuIdentification (0x1A): 87 = hardware part number and diag
+// version, 9C = software part number, 90 = VIN (MutComm.dll layout, via qhub.kz).
+/** Read the three identification records of one ECU and print hex plus ASCII. */
+static void identRead(uint16_t req_id, uint16_t resp_id) {
+    static const uint8_t kIds[3] = { 0x87, 0x9C, 0x90 };
+    for (uint8_t id : kIds) {
+        const uint8_t p[2] = { 0x1A, id };
+        uint8_t buf[64]; uint8_t len = 0; uint16_t rx = 0;
+        int r = isotpTransceive(req_id, p, 2, buf, len, 400, resp_id, &rx);
+        if (r == 1 && resp_id == KWP21_RESP_AUTO) resp_id = rx;
+        Serial.printf("IDENT ECU=0x%03X ID=%02X ", req_id, id);
+        if (r < 0)  { Serial.println("no response"); continue; }
+        if (r == 0) { Serial.printf("RX=0x%03X NEG nrc=0x%02X\n", rx, buf[2]); continue; }
+        Serial.printf("RX=0x%03X POS resp=", rx);
+        for (uint8_t i = 0; i < len; ++i) Serial.printf("%02X ", buf[i]);
+        Serial.print("ascii=\"");
+        for (uint8_t i = 2; i < len; ++i) Serial.print((buf[i] >= 0x20 && buf[i] <= 0x7E) ? (char)buf[i] : '.');
+        Serial.println("\"");
+    }
 }
 
 // Read a standard Mode 01 PID from the engine ECU; returns the first two data
@@ -603,7 +701,10 @@ static int32_t decodeBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc) {
     // state, so ANY switch/lamp/door change registers as a change.
     if (id == CAN_BCAST_ETACS && dlc >= 3) return (d[0] << 16) | (d[1] << 8) | d[2];
     if (id == CAN_BCAST_AUTOAC&& dlc >= 6) return (d[0] << 24) | (d[3] << 16) | (d[4] << 8) | d[5];
-    return 0;
+    // Unknown frames (e.g. 0x16F): fold every byte in, so any change prints at once.
+    int32_t h = dlc;
+    for (uint8_t i = 0; i < dlc && i < 8; ++i) h = (h * 31) ^ d[i];
+    return h;
 }
 
 // 0x218 gear code (one nibble of D2). Confirmed on the Pajero Sport 4M41 by sweeping
@@ -634,6 +735,8 @@ static void printBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc, uint64_t 
         // The server reads it from here instead of polling Mode 01 0x05.
         Serial.printf("  fuel_raw=%d (D5D6)  coolant=%.0f C",
                       (d[5] << 8) | d[6], bcast_coolant_temp_c(d));
+        // D1 = outside temperature candidate (qhub.kz: D1 - 40 degC); raw shown to compare.
+        Serial.printf("  ambient=%d C (raw %02X)", (int16_t)d[1] - 40, d[1]);
     } else if (id == BCAST_GEAR && dlc >= 3) {
         uint8_t cur = d[2] & 0x0F, tgt = d[2] >> 4;
         Serial.printf("  gear=%s", gearName(cur));
@@ -831,15 +934,52 @@ static void fuelLogTick() {
 // exact byte offsets are unverified on this vehicle, so the raw dump is the
 // source of truth. Response layout: 61 LID D0 D1 ... (D0 = out[2]).
 // ---------------------------------------------------------------------------
-static void rdliRead(uint16_t req_id, uint8_t lid) {
-    uint8_t buf[64]; uint8_t len = 0;
-    int r = kwpRead21(req_id, lid, buf, len);
-    if (r != 1) {
-        if (r == 0) Serial.printf("RDLI ECU=0x%03X LID=0x%02X NEG nrc=0x%02X\n", req_id, lid, buf[2]);
-        else        Serial.printf("RDLI ECU=0x%03X LID=0x%02X no response\n", req_id, lid);
-        return;
+/** Print the candidate decode for a known ECU/LID reply (D = bytes after `61 LID`). */
+static void printRdliHint(uint16_t req_id, uint8_t lid, const uint8_t* D, uint8_t nD) {
+    if (req_id == KWP21_REQ_4X4 && lid == KWP21_LID_TRACTION && nD >= 1) {
+        Serial.printf("#   [hint 4WD] traction D0=0x%02X  (research, UNVERIFIED)\n", D[0]);
+    } else if (req_id == UDS_REQ_TCM && lid == KWP21_LID_TCM_AT && nD >= 10) {
+        // qhub.kz 5AT layout; matched this truck stationary in N (input ~880, P/N bit set).
+        Serial.printf("#   [hint AT] input=%drpm output=%drpm ATF=%dC volt=%.2fV speed=%dkm/h "
+                      "slip=%drpm gearbits=%02X (P/N=01 R=02 1st..5th=04..40)  (qhub, UNVERIFIED)\n",
+                      ((D[1] << 8) | D[2]) / 2, ((D[3] << 8) | D[4]) / 2, (int)D[5] - 40,
+                      D[6] * 33.15f / 255.0f, D[7] * 714 / 255, (int)D[8] - 51, D[9]);
+    } else if (req_id == UDS_REQ_TCM && lid == 0x04 && nD >= 2) {
+        // Own 4WD dial sweep: D0 0x08 high range, D1 0x20 centre diff lock in high.
+        Serial.printf("#   [hint 4WD] highrange=%s difflock=%s  (dial sweep, candidate)\n",
+                      (D[0] & 0x08) ? "on" : "off", (D[1] & 0x20) ? "on" : "off");
+    } else if (req_id == UDS_REQ_ENGINE && lid == 0x01 && nD >= 4) {
+        // rpm scale disagrees with the TCM input shaft by 1.33x; check against 0x308.
+        Serial.printf("#   [hint ENG] volt=%.2fV speed=%dkm/h rpm=%d  (qhub Triton set, UNVERIFIED)\n",
+                      D[0] * 18.0f / 255.0f, D[1] * 2, ((D[2] << 8) | D[3]) / 8);
+    } else if (req_id == UDS_REQ_ENGINE && lid == 0x02 && nD >= 3) {
+        Serial.printf("#   [hint ENG] D0-40=%dC coolant=%dC map=%.0fkPa  (qhub Triton set, UNVERIFIED)\n",
+                      (int)D[0] - 40, (int)D[1] - 40, D[2] * 1.3297f);
+    } else if (req_id == UDS_REQ_ENGINE && lid == 0x04 && nD >= 5) {
+        Serial.printf("#   [hint ENG] throttle=%.2f/%.2fV target=%.2fV pedal=%.2f/%.2fV  (qhub, UNVERIFIED)\n",
+                      D[0] * 5.0f / 255, D[1] * 5.0f / 255, D[2] * 5.0f / 255,
+                      D[3] * 5.0f / 255, D[4] * 5.0f / 255);
+    } else if (req_id == KWP21_REQ_METER && (lid == KWP21_LID_METER_FUEL || lid == 0xC3) && nD >= 3) {
+        Serial.printf("#   [hint METER] fuel=%.1fL gauge=%d%% sender=%.1fohm  (qhub, UNVERIFIED)\n",
+                      (D[2] - 16) * 0.7f, D[2] - 16, (D[0] | (D[1] << 8)) * 0.1f);
+    } else if (req_id == KWP21_REQ_METER && (lid == KWP21_LID_METER_ODO || lid == 0xCD) && nD >= 3) {
+        Serial.printf("#   [hint METER] odometer LE=%lu km BE=%lu km  (qhub, UNVERIFIED)\n",
+                      (unsigned long)(D[0] | (D[1] << 8) | ((uint32_t)D[2] << 16)),
+                      (unsigned long)(((uint32_t)D[0] << 16) | (D[1] << 8) | D[2]));
     }
-    Serial.printf("RDLI ECU=0x%03X LID=0x%02X POS resp=", req_id, lid);
+}
+
+/** Read one KWP 0x21 LID and print the reply; returns the kwpRead21 result. */
+static int rdliRead(uint16_t req_id, uint8_t lid, uint16_t resp_id) {
+    uint8_t buf[64]; uint8_t len = 0;
+    uint16_t rx = 0;
+    int r = kwpRead21(req_id, lid, buf, len, resp_id, &rx);
+    if (r != 1) {
+        if (r == 0) Serial.printf("RDLI ECU=0x%03X LID=0x%02X RX=0x%03X NEG nrc=0x%02X\n", req_id, lid, rx, buf[2]);
+        else        Serial.printf("RDLI ECU=0x%03X LID=0x%02X no response\n", req_id, lid);
+        return r;
+    }
+    Serial.printf("RDLI ECU=0x%03X LID=0x%02X RX=0x%03X POS resp=", req_id, lid, rx);
     for (uint8_t i = 0; i < len; ++i) Serial.printf("%02X ", buf[i]);
     Serial.println();
     // Data payload starts after "61 LID": D0 = buf[2].
@@ -849,22 +989,103 @@ static void rdliRead(uint16_t req_id, uint8_t lid) {
     for (uint8_t i = 0; i < nD; ++i) Serial.printf(" D%u=%02X", i, D[i]);
     Serial.println();
 
-    if (lid == 0x02 && nD >= 7) {        // bcomp11 PAJERO_AT_INFO candidate decode
-        int   input  = D[2] * 128 + D[3] / 2;
-        int   output = D[4] * 128 + D[5] / 2;
-        int   atf    = D[6] - 40;
-        Serial.printf("#   [hint AT] input=%drpm output=%drpm ATF=%dC  (igkov, UNVERIFIED)\n",
-                      input, output, atf);
-    } else if (lid == 0x03) {            // 7E1 LID 03 — two candidate meanings, print both
-        if (nD >= 5) {                   // bcomp11 PAJERO_ODO_INFO candidate decode
-            uint32_t odo = ((uint32_t)D[2] * 256 + D[3]) * 256 + D[4];
-            Serial.printf("#   [hint ODO] odometer=%lu km  (igkov, UNVERIFIED)\n", (unsigned long)odo);
-        }
-        if (nD >= 10) {                  // OBDScanner MMC_AT_TEMP: ATF = byte9 - 55 (6B31 cross-model)
-            Serial.printf("#   [hint ATF] D9-55=%dC  (OBDScanner, 6B31 cross-model, UNVERIFIED)\n",
-                          (int)D[9] - 55);
-        }
+    printRdliHint(req_id, lid, D, nD);
+    return r;
+}
+
+// ---------------------------------------------------------------------------
+// ECUS — find every ECU that answers KWP 0x21 on 11-bit CAN. Sends `21 lid` to
+// each request id in [start, end] and auto-detects the reply id, so ECUs that
+// pair at +1 (0x786 -> 0x787) or anything else are found, not only +8. Any reply,
+// positive or negative, proves an ECU sits at that address.
+// ---------------------------------------------------------------------------
+// sess = probe with session request 10 92 instead of 21 lid, for modules that
+// stay silent outside a session; a positive probe is closed again with 10 81.
+// Bus broadcast ids are skipped so no live ECU frame is ever spoofed.
+static void ecuSweep(uint16_t start, uint16_t end, uint8_t lid, bool sess) {
+    const uint8_t probe[2] = { (uint8_t)(sess ? 0x10 : 0x21), (uint8_t)(sess ? 0x92 : lid) };
+    Serial.printf("# ECUS req=0x%03X..0x%03X probe=%02X %02X (auto reply id)\n",
+                  start, end, probe[0], probe[1]);
+    uint16_t found = 0;
+    for (uint32_t req = start; req <= end; ++req) {
+        if (Serial.available()) { Serial.println("# ECUS aborted by serial"); break; }
+        if (req == 0x7DF || isBusBroadcastId((uint16_t)req)) continue;   // functional / live frame
+        uint8_t buf[64]; uint8_t len = 0; uint16_t rx = 0;
+        int r = isotpTransceive((uint16_t)req, probe, 2, buf, len, 80, KWP21_RESP_AUTO, &rx);
+        if (r < 0) continue;
+        ++found;
+        Serial.printf("ECU req=0x%03X rx=0x%03X %s", (unsigned)req, rx, r == 1 ? "POS" : "NEG");
+        if (r == 1) { Serial.print(" resp="); for (uint8_t i = 0; i < len; ++i) Serial.printf("%02X ", buf[i]); }
+        else        Serial.printf(" nrc=0x%02X", buf[2]);
+        Serial.println();
+        if (sess && r == 1) kwpCloseSession((uint16_t)req, rx);
+        delay(10);
     }
+    Serial.printf("# ECUS done: %u responders\n", found);
+}
+
+// ---------------------------------------------------------------------------
+// LIDS — sweep KWP 0x21 LIDs [start, end] on one ECU. Prints each positive reply
+// in RDLI format (the bus monitor records them) and a histogram of the NRCs.
+// ---------------------------------------------------------------------------
+static void lidSweep(uint16_t req_id, uint16_t resp_id, uint8_t start, uint8_t end) {
+    Serial.printf("# LIDS ECU=0x%03X LID=0x%02X..0x%02X\n", req_id, start, end);
+    uint16_t nrc_count[256] = {0};
+    uint16_t hits = 0, silent = 0;
+    for (uint16_t lid = start; lid <= end; ++lid) {
+        if (Serial.available()) { Serial.println("# LIDS aborted by serial"); break; }
+        uint8_t buf[64]; uint8_t len = 0; uint16_t rx = 0;
+        int r = kwpRead21(req_id, (uint8_t)lid, buf, len, resp_id, &rx, 120);
+        if (r == 1) {
+            ++hits;
+            Serial.printf("RDLI ECU=0x%03X LID=0x%02X RX=0x%03X POS resp=", req_id, (unsigned)lid, rx);
+            for (uint8_t i = 0; i < len; ++i) Serial.printf("%02X ", buf[i]);
+            Serial.println();
+        } else if (r == 0) {
+            ++nrc_count[buf[2]];
+        } else {
+            ++silent;
+        }
+        delay(10);
+    }
+    Serial.printf("# LIDS done ECU=0x%03X hits=%u silent=%u  NRC histogram:", req_id, hits, silent);
+    for (int i = 0; i < 256; ++i) if (nrc_count[i]) Serial.printf(" %02X=%u", i, nrc_count[i]);
+    Serial.println();
+}
+
+// ---------------------------------------------------------------------------
+// KWATCH — poll one KWP 0x21 LID at ~5 Hz and print a line whenever the reply
+// changes (plus a heartbeat every 5 s). Turn a dial or flip a switch and watch
+// which bytes move. Transmits, like SIG.
+// ---------------------------------------------------------------------------
+static uint16_t g_kw_req = KWP21_REQ_4X4;
+static uint16_t g_kw_resp = KWP21_RESP_AUTO;
+static uint8_t  g_kw_lid = KWP21_LID_TRACTION;
+static uint8_t  g_kw_last[64];
+static uint8_t  g_kw_last_len = 0xFF;            // 0xFF = nothing printed yet
+static uint32_t g_kw_last_print = 0;
+static bool     g_kw_sess = false;               // KWP session opened by KWATCH ... SESS
+static constexpr uint32_t KWATCH_PERIOD_MS    = 200;
+static constexpr uint32_t KWATCH_HEARTBEAT_MS = 5000;
+
+static void kwatchTick() {
+    uint8_t buf[64]; uint8_t len = 0; uint16_t rx = 0;
+    int r = kwpRead21(g_kw_req, g_kw_lid, buf, len, g_kw_resp, &rx);
+    if (r != 1) len = 0;                         // treat NEG / silence as an empty reply
+    bool changed = (len != g_kw_last_len) || memcmp(buf, g_kw_last, len) != 0;
+    uint32_t now = millis();
+    if (changed || now - g_kw_last_print >= KWATCH_HEARTBEAT_MS) {
+        uint64_t ts = currentTimestampUs();
+        Serial.printf("KWATCH %lu.%06lu ECU=0x%03X LID=0x%02X RX=0x%03X %s ",
+                      (uint32_t)(ts / 1000000ULL), (uint32_t)(ts % 1000000ULL),
+                      g_kw_req, g_kw_lid, rx, changed ? "CHANGE" : "same");
+        if (r == 1)      for (uint8_t i = 0; i < len; ++i) Serial.printf("%02X ", buf[i]);
+        else if (r == 0) Serial.printf("NEG nrc=0x%02X", buf[2]);
+        else             Serial.print("no response");
+        Serial.println();
+        memcpy(g_kw_last, buf, len); g_kw_last_len = len; g_kw_last_print = now;
+    }
+    delay(KWATCH_PERIOD_MS);
 }
 
 // ---------------------------------------------------------------------------
@@ -898,6 +1119,7 @@ static void handleSerial() {
     cmd.toUpperCase();
 
     if (cmd == "STOP" || cmd == "PASV") {
+        if (g_mode == Mode::KWATCH && g_kw_sess) { kwpCloseSession(g_kw_req, g_kw_resp); g_kw_sess = false; }
         enterPassive();
         return;
     }
@@ -924,9 +1146,7 @@ static void handleSerial() {
         enterActive();
         if (m01) verifyMode01(all);
         if (m22) verifyMode22();
-        // Return to the listen-only mode that was running so WATCH survives a poll.
-        if (prev == Mode::WATCH) { mcp2515.setListenOnlyMode(); g_mode = Mode::WATCH; }
-        else                     enterPassive();
+        resumeListen(prev);
         return;
     }
 
@@ -987,15 +1207,92 @@ static void handleSerial() {
         return;
     }
 
+    // Trailing SESS on RDLI/LIDS/KWATCH/IDENT/ECUS: open a KWP session (10 92) first.
+    // It is not hex, so sscanf stops before it.
+    const bool kwp_sess = cmd.endsWith(" SESS");
+
     if (cmd.startsWith("RDLI")) {
-        // RDLI <reqHex> <lidHex>
-        long req = 0, lid = 0;
-        if (sscanf(line.c_str() + 4, " %lx %lx", &req, &lid) == 2) {
+        // RDLI <reqHex> <lidHex> [respHex] [SESS] — resp 0 forces auto-detect.
+        long req = 0, lid = 0, resp = -1;
+        int n = sscanf(line.c_str() + 4, " %lx %lx %lx", &req, &lid, &resp);
+        if (n >= 2) {
+            uint16_t rid = (n == 3) ? (uint16_t)resp : kwp21_resp_id((uint16_t)req);
+            Mode prev = g_mode;
             enterActive();
-            rdliRead((uint16_t)req, (uint8_t)lid);
-            enterPassive();
+            bool open = kwp_sess && kwpOpenSession((uint16_t)req, rid);
+            rdliRead((uint16_t)req, (uint8_t)lid, rid);
+            if (open) kwpCloseSession((uint16_t)req, rid);
+            resumeListen(prev);
         } else {
-            Serial.println("# usage: RDLI <reqHex> <lidHex>   e.g. RDLI 7E1 02");
+            Serial.println("# usage: RDLI <reqHex> <lidHex> [respHex|0=auto] [SESS]   e.g. RDLI 786 21");
+        }
+        return;
+    }
+
+    if (cmd.startsWith("ECUS")) {
+        // ECUS [lidHex [startHex endHex]] [SESS] — defaults: LID 01, 600..7FF.
+        long lid = 0x01, s0 = 0x600, e0 = 0x7FF;
+        int n = sscanf(line.c_str() + 4, " %lx %lx %lx", &lid, &s0, &e0);
+        if (n == 2) e0 = s0;                        // a single address
+        Mode prev = g_mode;
+        enterActive();
+        ecuSweep((uint16_t)s0, (uint16_t)e0, (uint8_t)lid, kwp_sess);
+        resumeListen(prev);
+        return;
+    }
+
+    if (cmd.startsWith("LIDS")) {
+        // LIDS <reqHex> [startHex endHex] [respHex] [SESS] — defaults: 00..FF, known pairing.
+        long req = 0, s0 = 0x00, e0 = 0xFF, resp = -1;
+        int n = sscanf(line.c_str() + 4, " %lx %lx %lx %lx", &req, &s0, &e0, &resp);
+        if (n >= 1) {
+            uint16_t rid = (n == 4) ? (uint16_t)resp : kwp21_resp_id((uint16_t)req);
+            Mode prev = g_mode;
+            enterActive();
+            bool open = kwp_sess && kwpOpenSession((uint16_t)req, rid);
+            lidSweep((uint16_t)req, rid, (uint8_t)s0, (uint8_t)e0);   // reads every ~130 ms keep it open
+            if (open) kwpCloseSession((uint16_t)req, rid);
+            resumeListen(prev);
+        } else {
+            Serial.println("# usage: LIDS <reqHex> [startHex endHex] [respHex] [SESS]   e.g. LIDS 786");
+        }
+        return;
+    }
+
+    if (cmd.startsWith("KWATCH")) {
+        // KWATCH <reqHex> <lidHex> [respHex] [SESS] — poll one LID, print on change.
+        long req = 0, lid = 0, resp = -1;
+        int n = sscanf(line.c_str() + 6, " %lx %lx %lx", &req, &lid, &resp);
+        if (n >= 2) {
+            g_kw_req  = (uint16_t)req;
+            g_kw_lid  = (uint8_t)lid;
+            g_kw_resp = (n == 3) ? (uint16_t)resp : kwp21_resp_id(g_kw_req);
+            g_kw_last_len = 0xFF;
+            enterActive();
+            g_kw_sess = kwp_sess && kwpOpenSession(g_kw_req, g_kw_resp);   // 5 Hz polling keeps it open
+            g_mode = Mode::KWATCH;
+            Serial.printf("# mode=KWATCH ECU=0x%03X LID=0x%02X%s (send STOP to end)\n",
+                          g_kw_req, g_kw_lid, g_kw_sess ? " session 10 92" : "");
+        } else {
+            Serial.println("# usage: KWATCH <reqHex> <lidHex> [respHex] [SESS]   e.g. KWATCH 786 21");
+        }
+        return;
+    }
+
+    if (cmd.startsWith("IDENT")) {
+        // IDENT <reqHex> [respHex] [SESS] — part numbers and VIN (KWP 1A 87/9C/90).
+        long req = 0, resp = -1;
+        int n = sscanf(line.c_str() + 5, " %lx %lx", &req, &resp);
+        if (n >= 1) {
+            uint16_t rid = (n == 2) ? (uint16_t)resp : kwp21_resp_id((uint16_t)req);
+            Mode prev = g_mode;
+            enterActive();
+            bool open = kwp_sess && kwpOpenSession((uint16_t)req, rid);
+            identRead((uint16_t)req, rid);
+            if (open) kwpCloseSession((uint16_t)req, rid);
+            resumeListen(prev);
+        } else {
+            Serial.println("# usage: IDENT <reqHex> [respHex] [SESS]   e.g. IDENT 6A0");
         }
         return;
     }
@@ -1056,7 +1353,8 @@ void setup() {
     enterPassive();
     Serial.println("# sniffer ready (quiet) — commands: T<unix> | DUMP | WATCH [id..] | DIFF [id] | "
                    "ADIFF | OBD | VERIFY [m01|m22|all] | SCAN [eng|tcm] [s e] [sess] | SIG <req> <did> | "
-                   "FUELLOG | RDLI <req> <lid> | STOP");
+                   "FUELLOG | RDLI <req> <lid> [resp] | ECUS [lid [s e]] | LIDS <req> [s e] [resp] | "
+                   "KWATCH <req> <lid> [resp] | IDENT <req> [resp] | STOP  (SESS suffix = KWP session 10 92)");
 }
 
 void loop() {
@@ -1067,6 +1365,7 @@ void loop() {
         case Mode::WATCH:   watchTick();   break;
         case Mode::DIFF:    diffTick();    break;
         case Mode::ADIFF:   adiffTick();   break;
+        case Mode::KWATCH:  kwatchTick();  break;
         default:            passiveTick(); break;
     }
 }

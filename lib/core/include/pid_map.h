@@ -434,7 +434,43 @@ static const Mode22AdvancedPid MODE22_ADVANCED_PIDS[] = {
 #define KWP21_REQ_BODY     0x78Cu   // resp 0x78D: body block; LIDs 01 02 03 0D 14
 #define KWP21_REQ_AUX      0x7A0u   // resp 0x7A1: aux block; LIDs 01 02 25
 #define KWP21_REQ_ABS      0x790u   // resp 0x791: ABS/ASC (also 0x792->0x793, 0x794->0x795)
-#define KWP21_LID_TCM_AT     0x02u  // 7E1: AT-info block — ATF temp + shaft speeds (igkov: ATF = D6-40)
+// Pairs from qhub.kz (sirsharky81, MUT-III based ELM327 app; newer Mitsubishi
+// bodies). Replies sit below 0x700, outside the 0x7xx range. Candidates on this truck.
+#define KWP21_REQ_METER    0x6A0u   // resp 0x514: combination meter — fuel (LID A3/C3), odometer (AD/CD)
+#define KWP21_REQ_ETACS    0x620u   // resp 0x504: ETACS body control (alt 0x7A1->0x7A0, 0x710->0x718)
+#define KWP21_REQ_SAS      0x622u   // resp 0x484: steering-angle sensor
+#define KWP21_REQ_TPMS     0x600u   // resp 0x500: TPMS (KOS); Pajero Sport III uses 0x773->0x774
+#define KWP21_REQ_EPB      0x610u   // resp 0x611: electric parking brake
+#define KWP21_REQ_AWC      0x7B6u   // resp 0x7B7: S-AWC 4WD controller (newer bodies)
+#define KWP21_RESP_AUTO    0x000u   // response id unknown: accept the first diagnostic reply
+/** Expected response id for a KWP 0x21 request id, or KWP21_RESP_AUTO when unknown. */
+static inline uint16_t kwp21_resp_id(uint16_t req) {
+    if (req >= 0x7E0u && req <= 0x7E7u) return (uint16_t)(req + 8u);
+    switch (req) {
+        case KWP21_REQ_4X4:     return 0x787u;
+        case KWP21_REQ_CLUSTER: return 0x7A1u;
+        case KWP21_REQ_BODY:    return 0x78Du;
+        case KWP21_REQ_AUX:     return 0x7A1u;   // same as the cluster per the research; unconfirmed
+        case KWP21_REQ_ABS:     return 0x791u;
+        case 0x792u:            return 0x793u;
+        case 0x794u:            return 0x795u;
+        case 0x741u:            return 0x74Cu;
+        case 0x784u:            return 0x785u;
+        case KWP21_REQ_METER:   return 0x514u;
+        case KWP21_REQ_ETACS:   return 0x504u;
+        case KWP21_REQ_SAS:     return 0x484u;
+        case KWP21_REQ_TPMS:    return 0x500u;
+        case KWP21_REQ_EPB:     return 0x611u;
+        case KWP21_REQ_AWC:     return 0x7B7u;
+        case 0x773u:            return 0x774u;
+        case 0x7A1u:            return 0x7A0u;   // ETACS alt (qhub); 0x7A0 is also listed as a request id
+        case 0x710u:            return 0x718u;
+        default:                return KWP21_RESP_AUTO;
+    }
+}
+#define KWP21_LID_METER_FUEL 0xA3u  // 6A0: fuel — D0,D1 sender ohm x0.1 (LE), D2 = gauge, (D2-16)*0.7 L (qhub)
+#define KWP21_LID_METER_ODO  0xADu  // 6A0: odometer, D0..D2 little-endian km (qhub)
+#define KWP21_LID_TCM_AT     0x02u  // 7E1: qhub 5AT layout fits this truck's replies: D1D2/2 input rpm, D3D4/2 output rpm, D5-40 ATF, D6 volts, D9 gear bits
 #define KWP21_LID_TCM_TRANS  0x03u  // 7E1: second ATF candidate — OBDScanner MMC_AT_TEMP = D9-55 (6B31 cross-model); also igkov odometer (D2..D4). See §9.7
 #define KWP21_LID_ODOMETER   0xADu  // 79E: official dash odometer (preferred over engine 0x15)
 #define KWP21_LID_TRACTION   0x21u  // 786: 4WD traction mode in byte D0 (2H/4H/4HLc/4LLc)

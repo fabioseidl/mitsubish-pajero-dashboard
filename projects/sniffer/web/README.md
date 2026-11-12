@@ -45,6 +45,10 @@ note on how it was (or should be) confirmed.
   once. **poll Mode 01 PIDs** sends it; **repeat every 10 s** keeps polling.
   This transmits on the bus.
 - Mode 22 rows are rejected on this truck; **re-test Mode 22** sends `VERIFY M22`.
+- **find ECUs** sends `ECUS` (KWP `0x21` sweep of `0x600`–`0x7FF` with auto
+  reply id) and **watch 4WD mode** sends `KWATCH 786 21`; their output, plus
+  `IDENT` and session lines, lands in the log. Both transmit. `STOP` ends
+  `KWATCH`. Type `IDENT 6A0` or append `SESS` in the text box for the rest.
 
 The Mode 01 and Mode 22 lists, names, units and `verified` flags are parsed from
 `lib/core/include/pid_map.h`. The broadcast list lives in `BROADCAST_SIGNALS`

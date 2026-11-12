@@ -15,8 +15,7 @@ service 0x22. This vehicle's ECUs answer NRC 0x11 (serviceNotSupported) to Mode
 22 for every DID — see "Rejected" in SKILL.md. Scaling for a service the car
 refuses is worth nothing. A complete MUT-III install would not change that.
 
-MUT-III reaches this car over K-line with the MUT-II protocol and KWP service
-**0x21** (ReadDataByLocalIdentifier), not 0x22. If any service software is ever
+MUT-III reaches this car with KWP service **0x21** (ReadDataByLocalIdentifier), not 0x22. If any service software is ever
 worth mining for this truck, the target is its **LID tables for service 0x21** on
 the 4M41 — the sniffer's `RDLI` mode speaks exactly that. Mode 22 DID tables are
 a dead end here regardless of which disc they come from.
@@ -105,11 +104,12 @@ not a separate diagnostic node on this platform.
 Every `PS41` ECU category has `KWPComFlg = 0` and **no `KWPCANID` row**. Same
 conclusion as for `BK`, reached on the right family this time:
 
-Only the engine ECU answers diagnostics over CAN, at the standard OBD-II
-`0x7E0`/`0x7E8` the server already uses. ETACS, METER, SRS, SAS and the rest are
-K-line (MUT-II protocol) through the VCI, not reachable over CAN. This explains
-why bus scans find no diagnostic responder beyond `0x7E8` — it is the vehicle,
-not a sniffer limitation. No point spending more `SCAN` time on other addresses.
+This database reading concluded that only the engine ECU answers over CAN.
+**The car disagrees:** the TCM at `0x7E1` → `0x7E9` answers KWP `0x21` (seven
+LIDs), and earlier bus scans only listened on request + 8, so ECUs that reply
+on request + 1 (the research's transfer case `0x786` → `0x787`, cluster, ABS)
+were never tested. Treat this section as unreliable until `ECUS` has swept the
+bus with auto reply-id detection.
 
 ### Coverage limit
 

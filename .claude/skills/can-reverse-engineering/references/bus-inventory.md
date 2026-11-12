@@ -88,9 +88,9 @@ recorder. Every dial position was visited in both directions
   entering it, unchanged at every other position. Confirmed.
 - **2H, 4H and 4HLc are identical on CAN.** No byte on any of the 14 IDs moved
   for those transitions, including the static `0x325`, `0x447`, `0x415`,
-  `0x101`. The transfer-case ECU is K-line only and drives the dash lamps
-  directly; reading those positions needs a lamp or dial-switch GPIO tap, or
-  K-line.
+  `0x101`. The research lists the transfer-case ECU on CAN at `0x786` →
+  `0x787` (KWP `0x21` LID `0x21`, D0 = traction mode), which this session
+  never reached — see the KWP section below. Untested, not ruled out.
 - **`0x418` D6 = selector lever**, one bit per position: `00` P, `08` R,
   `10` N, `20` D. Confirmed.
 - **`0x218` D4 bit 6 (`0x40`)** toggles while the selector moves through
@@ -130,6 +130,38 @@ implement KWP `0x21`; every other LID returns NRC `0x12`.
 
 D0 `0x08` = high range, D1 `0x20` = centre diff locked in high range. 2H and 4H
 are identical here and in every other LID read in both positions.
+
+**Research candidates ruled out by this session's replies:** `7E0 21 1A`
+(absolute load) answers NRC `0x12`; `7E0 21 02` has 5 data bytes, so the raw
+gear code at D9 does not exist; `7E1 21 03` has 6 constant bytes
+(`FF 00 00 00 FF 00`), so neither the OBDScanner ATF (D9 − 55) nor the igkov
+odometer (D2..D4 = 0 km) applies. `7E1 21 02` D5 and D6 both climb slowly as the
+engine warms — the ATF candidates (igkov: D6 − 40). `7E0 21 15` holds a constant
+`00 1E 5B 40 28`, the "approx odometer" candidate.
+
+**qhub.kz cross-check (TCM `7E1 21 02`).** Its 5AT layout fits every snapshot
+above (stationary in N): D1D2 / 2 = input shaft rpm (630–882), D3D4 / 2 =
+output shaft rpm (0), D5 − 40 = ATF °C (36–38, rising), D6 × 33.15 / 255 = TCM
+volts (13.5–14.0), D7 × 2.8 = km/h (0), D8 − 51 = converter slip rpm (17–22), D9
+gear bits (`01` = P/N; `02` R, `04`–`40` 1st–5th). So D6 is voltage, not the ATF
+candidate igkov gave. Its `21 04` selector bits (D2 `01` = P) do not fit — we
+read `01` in N. Its engine `21 01` rpm (D2D3 / 8) reads 1.33× the TCM input
+shaft; check against `0x308`. `0x608` D1 (qhub: ambient − 40) is `00` throughout
+`candump.log`; `WATCH` now prints it as `ambient=` for a thermometer comparison.
+
+### Next session (sniffer firmware ready)
+
+1. `ECUS` — every ECU on `0x600`–`0x7FF` with its real reply id; then
+   `ECUS 01 600 7FF SESS` for modules that only answer inside a session.
+2. `RDLI 786 21`, then `KWATCH 786 21` through 2H → 4H → 4HLc → 4LLc. If D0
+   tracks the dial, 2H vs 4H is solved. Repeat with `SESS` if `786` is silent.
+3. `IDENT` and `LIDS` on each new responder (`IDENT 6A0`, `LIDS 786`, ...).
+4. Meter: `RDLI 6A0 A3` (fuel, D2 − 16 × 0.7 L) and `RDLI 6A0 AD` (odometer,
+   3 bytes little-endian) against the dash; `79E AD` if `6A0` is silent.
+5. `RDLI 7E1 02` while driving through the gears — confirms the D9 gear bits and
+   shaft speeds. `KWATCH 7E0 01` beside `WATCH 308` settles the rpm scale.
+6. `WATCH` with the A/C cycling — `0x16F` is in the default list. Note the
+   `0x608` `ambient=` value against a thermometer at different times of day.
 
 ## Regenerating
 
