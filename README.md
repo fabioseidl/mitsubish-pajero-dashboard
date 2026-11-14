@@ -4,7 +4,14 @@ Distributed car dashboard built on ESP32. A server node reads vehicle data from
 the OBD-II port via CAN bus and broadcasts it wirelessly over ESP-NOW. Client
 nodes receive the data and render it on displays using LVGL.
 
-Target vehicle: **Mitsubishi Pajero Dakar 3.2 Diesel** (Pajero Sport II, KH8W, 4M41).
+Target vehicle: **Mitsubishi Pajero Dakar 3.2 DI-D** (Pajero Sport II, KH8W,
+4M41 diesel) — Brazilian market, 2016/2017. This is the Triton-based
+body-on-frame Pajero.
+
+![Main display — 7" dashboard](docs/images/main_display.png)
+
+
+<p align="center"><sub>Main HUD (3.5")</sub></p>
 
 ---
 
@@ -17,6 +24,7 @@ Target vehicle: **Mitsubishi Pajero Dakar 3.2 Diesel** (Pajero Sport II, KH8W, 4
 | Main HUD | Guition JC3248W535 (ESP32-S3) — 3.5" 320×480 QSPI, windshield-reflected |
 | Glass display | Waveshare ESP32-C6-LCD-1.47 — 1.47" 172×320 SPI |
 | Simple HUD | CYD (ESP32) — 2.4" 320×240 SPI, LDR auto-brightness |
+| Sniffer / Diagnostic | ESP32-S3 + MCP2515 — same board as the server |
 
 ---
 
@@ -24,22 +32,32 @@ Target vehicle: **Mitsubishi Pajero Dakar 3.2 Diesel** (Pajero Sport II, KH8W, 4
 
 Each sub-project under `projects/` is a standalone PlatformIO environment.
 
-```
-projects/server/            Reads CAN bus, broadcasts Payload via ESP-NOW (production server)
-projects/server_emulator/   Generates synthetic driving data — client dev without the car
-projects/main_display/      7" LVGL dashboard + GPS/IMU/environment sensors
-projects/main_hud/          3.5" QSPI speed-only portrait display
-projects/glass_display/     1.47" ESP32-C6 speed-only client
-projects/client_simple_hud/ 2.4" CYD HUD (LDR auto-brightness)
-projects/sniffer/           CAN sniffer + DBC files + monitor.py for PID reverse engineering
-```
+| Project | Role |
+|---|---|
+| [`server/`](projects/server) | Reads the CAN bus, derives consumption/boost/altitude, broadcasts the `Payload` over ESP-NOW |
+| [`server_emulator/`](projects/server_emulator) | Same broadcast from synthetic driving data — client development without the car |
+| [`main_display/`](projects/main_display) | 7" LVGL dashboard + GPS/IMU/environment sensors |
+| [`main_hud/`](projects/main_hud) | 3.5" QSPI speed display, reflected on the windshield |
+| [`glass_display/`](projects/glass_display) | 1.47" ESP32-C6 speed-only client |
+| [`client_simple_hud/`](projects/client_simple_hud) | 2.4" CYD HUD with LDR auto-brightness |
+| [`sniffer/`](projects/sniffer) | CAN sniffer, DBC files, `monitor.py` and a [live web bus monitor](projects/sniffer/web/README.md) for reverse engineering |
+| [`diagnostic/`](projects/diagnostic) | Standalone OBD-II fault scanner — Wi-Fi AP + phone web page ([README](projects/diagnostic/README.md)) |
 
-Shared code lives in `lib/core/` — the `Payload` struct, the PID map, the ESP-NOW
-broadcaster/receiver, and the display/brightness/connection helpers.
+Shared code lives in `lib/core/` — the `Payload` struct, the PID map, DTC
+decoding, the ESP-NOW broadcaster/receiver, and the display/brightness/connection
+helpers. Source fonts and images live in `ui/`; `ui/convert_assets.sh` turns them
+into the `ui_font_*.c` / `ui_img_*.c` files each client compiles.
 
 ---
 
 ## Architecture
+
+```
+                         ┌──────────── ESP-NOW broadcast, 10 Hz ────────────┐
+ OBD-II ── CAN ── Server ┤                                                  │
+                         ├──► Main display (7")   ├──► Main HUD (3.5")      │
+                         └──► Glass display (1.47") └─► Simple HUD (2.4")   ┘
+```
 
 One ESP32 reads OBD-II data over the CAN bus and broadcasts a packed `Payload`
 struct at 10 Hz to the ESP-NOW broadcast address. Multiple clients receive and
@@ -64,9 +82,11 @@ This vehicle answers neither the fuel-rate PID (0x5E) nor any boost PID, so the
 server derives fuel rate from the free-running `CAN 0x608` injected-fuel broadcast
 (with a MAF-based fallback) and boost from manifold minus barometric pressure.
 
-The `Payload` struct is fixed-size and packed; a `static_assert` in
-`lib/core/include/payload.h` enforces its exact byte size at compile time. Use
-fixed-width integer types only in its fields — host arm64 and ESP32 sizes differ.
+The `Payload` struct is fixed-size and packed (currently 194 bytes, under
+ESP-NOW's 250-byte ceiling); a `static_assert` in `lib/core/include/payload.h`
+enforces its exact size at compile time. Use fixed-width integer types only in
+its fields — host arm64 and ESP32 sizes differ. Any change to it means bumping
+`PAYLOAD_VERSION` and reflashing every node.
 
 ---
 
@@ -111,6 +131,34 @@ cd projects/main_display  && pio run --target upload
 
 Use `server_emulator` instead of `server` when developing without the vehicle.
 
+On Windows PowerShell, skip the `cd` with `pio run -d projects/<name>`. If `pio`
+is not on `PATH`, it is at `~/.platformio/penv/bin/pio`.
+
+---
+
+## UI development without hardware
+
+Client screens are designed as an HTML prototype (`sim/prototype.html`), written
+by hand in LVGL, and checked against the prototype in a native simulator —
+no flashing needed to see a layout change. `main_display`, `main_hud` and
+`client_simple_hud` have it.
+
+```bash
+# Render every fixture as HTML and LVGL, then diff them pixel by pixel
+.claude/skills/lvgl-preview/scripts/preview.sh main_display
+
+# Interactive SDL window (needs `brew install sdl2`)
+pio run -d projects/main_display -e sim_sdl
+projects/main_display/.pio/build/sim_sdl/program \
+  --fixture projects/main_display/sim/fixtures/cruise.txt --window
+```
+
+Fixtures under `sim/fixtures/` set the displayed state (`speed`, `rpm`,
+`online`, …). The comparison image shows the HTML render, the LVGL render and
+their difference:
+
+![HTML prototype vs. LVGL render vs. diff](docs/images/preview_compare.png)
+
 ---
 
 ## Development
@@ -130,6 +178,23 @@ Code session, and is equally readable on its own:
 - `.claude/skills/host-tests/` — test layout and conventions
 - `.claude/skills/can-reverse-engineering/` — the sniffer and what is confirmed,
   rejected or still unverified on this vehicle
+- `.claude/skills/lvgl-preview/` — HTML prototype → LVGL → simulator workflow
 
 Raw reverse-engineering research stays with the tool that produced it, in
 `projects/sniffer/assets/MITSUBISHI_ADVANCED_PIDS.md`.
+
+---
+
+## Limits of this vehicle
+
+- Only the engine ECU answers standard OBD-II diagnostics (Modes 01–0A) over
+  CAN. Fault codes from ABS, SRS and ETACS are on the K-line (MUT-II) and cannot
+  be read from the OBD-II CAN pins.
+- Every ECU rejects Mode 22 (UDS ReadDataByIdentifier). Manufacturer data comes
+  from free-running CAN broadcasts and from the older KWP2000 service `0x21`
+  (ReadDataByLocalIdentifier), which several ECUs, including the transmission and
+  transfer case, answer.
+
+Every signal is confirmed with the sniffer before it goes into `pid_map.h`; the
+`can-reverse-engineering` skill tracks what is confirmed, what is still a
+candidate and what was rejected.
