@@ -134,6 +134,7 @@ ACK bus traffic.
 | `SIG <req> <did>` | Poll one DID at 10 Hz alongside rpm/accel/speed, CSV per cycle — correlate a candidate against throttle and overrun while driving |
 | `FUELLOG` | CSV of the passive 0x608 fuel and 0x218 gear against polled rpm/accel/speed — the drive test that confirmed 0x608 |
 | `ECUS [lid [s e]]` | Find every ECU answering KWP `0x21` on `0x600`–`0x7FF`, auto-detecting each reply id (+8, +1, or below `0x700` like `0x6A0`→`0x514`). The 16 bus broadcast IDs are skipped — the sniffer never transmits on them |
+| `ECUS29 [lid [s e]]` | The same hunt on 29-bit ISO 15765-4 ids: one functional `18DB33F1` probe, then physical `18DA<TA>F1` for TA `s`–`e` (default `00`–`FF`). `ECUS` covers 11-bit ids only, so an ECU reachable only on 29-bit headers is invisible to it |
 | `LIDS <req> [s e] [resp]` | Sweep KWP `0x21` LIDs on one ECU; positive replies print in `RDLI` format, NRCs as a histogram |
 | `KWATCH <req> <lid> [resp]` | Poll one KWP `0x21` LID at ~5 Hz and print whenever the reply changes — e.g. `KWATCH 786 21` while turning the 4WD dial |
 | `RDLI <req> <lid> [resp]` | Legacy KWP ReadDataByLocalIdentifier (service 0x21), e.g. `RDLI 7E1 02` = AT info; prints a candidate decode for known ECU/LID pairs |

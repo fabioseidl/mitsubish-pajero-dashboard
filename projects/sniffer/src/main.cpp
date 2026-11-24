@@ -30,7 +30,8 @@
 //                     real injected fuel (drops to ~0 on overrun) so it can
 //                     replace the MAF-based estimate in derived_calculator.cpp.
 //
-// SCAN, SIG, FUELLOG and RDLI transmit, so they put the MCP2515 into NORMAL mode
+// SCAN, SIG, FUELLOG, RDLI and the ECUS/ECUS29 sweeps transmit, so they put the
+// MCP2515 into NORMAL mode
 // (the node then ACKs bus traffic); PASSIVE and WATCH stay listen-only.
 //
 // Serial commands (one per line):
@@ -56,6 +57,10 @@
 //                           (e.g. RDLI 7E1 02 = AT info/ATF; RDLI 7E1 03 = odometer
 //                           and/or ATF candidate — prints both decode hints)
 //   VERIFY [m01|m22|all]   poll unverified PIDs once; ALL reads every Mode 01 PID
+//   ECUS29 [lid [s e]]      the same hunt on 29-bit ISO 15765-4 ids: one functional
+//                           18DB33F1 probe, then physical 18DA<TA>F1 for TA s..e
+//                           (default 00..FF). ECUS covers 11-bit ids only, so an
+//                           ECU reachable only on 29-bit headers is invisible to it
 //   ECUS [lid [s e]]        find every ECU answering KWP 0x21 on 0x600..0x7FF (or
 //                           s..e), auto-detecting the reply id (+8, +1, 0x6A0->0x514
 //                           ...); bus broadcast ids are skipped, never transmitted on
@@ -73,6 +78,21 @@
 #include <mcp2515.h>
 #include "pid_map.h"   // shared PID_MAP / MODE22_ADVANCED_PIDS (lib/core/include)
 
+// SocketCAN-style flags from the MCP2515 library's can.h; guarded so a pinned
+// version that omits one still builds.
+#ifndef CAN_EFF_FLAG
+#define CAN_EFF_FLAG 0x80000000UL
+#endif
+#ifndef CAN_RTR_FLAG
+#define CAN_RTR_FLAG 0x40000000UL
+#endif
+#ifndef CAN_SFF_MASK
+#define CAN_SFF_MASK 0x000007FFUL
+#endif
+#ifndef CAN_EFF_MASK
+#define CAN_EFF_MASK 0x1FFFFFFFUL
+#endif
+
 // --- CAN hardware: identical wiring to projects/server (include/pin_config.h) ---
 static constexpr int PIN_SPI_SCK  = 12;
 static constexpr int PIN_SPI_MISO = 13;
@@ -87,6 +107,13 @@ static const uint32_t USB_BAUD = 115200;
 //   UDS_REQ_ENGINE (0x7E0), UDS_REQ_TCM (0x7E1), UDS_RESP_OFFSET (0x008).
 
 static MCP2515 mcp2515(PIN_MCP2515_CS, 10000000, &SPI);
+
+// ISO 15765-4 29-bit normal fixed addressing. 0xF1 is the external test
+// equipment (tester) source address, so no id built here can collide with a
+// live broadcast frame.
+static constexpr uint32_t ISOTP29_REQ_BASE  = 0x18DA00F1UL;   // | (TA << 8)
+static constexpr uint32_t ISOTP29_RESP_BASE = 0x18DAF100UL;   // | TA
+static constexpr uint32_t ISOTP29_FUNC_REQ  = 0x18DB33F1UL;   // functional request
 
 static uint64_t unix_base_us   = 0;   // Unix time in microseconds at sync point
 static uint64_t micros_at_sync = 0;   // micros() value when sync was received
@@ -250,8 +277,10 @@ static uint64_t currentTimestampUs() {
 /** Print one frame in candump format: `(sec.usec) can0 ID#DATA`. */
 static void printCandump(const struct can_frame& rx) {
     uint64_t ts = currentTimestampUs();
-    Serial.printf("(%lu.%06lu) can0 %X#", (uint32_t)(ts / 1000000ULL),
-                  (uint32_t)(ts % 1000000ULL), (unsigned)(rx.can_id & 0x1FFFFFFF));
+    const bool ext = (rx.can_id & CAN_EFF_FLAG) != 0;   // candump: 8 hex digits for 29-bit
+    Serial.printf("(%lu.%06lu) can0 %0*X#", (uint32_t)(ts / 1000000ULL),
+                  (uint32_t)(ts % 1000000ULL), ext ? 8 : 3,
+                  (unsigned)(rx.can_id & CAN_EFF_MASK));
     for (uint8_t i = 0; i < rx.can_dlc; ++i) Serial.printf("%02X", rx.data[i]);
     Serial.println();
 }
@@ -271,6 +300,14 @@ static void printCandump(const struct can_frame& rx) {
 // NRC 0x78 (responsePending) is handled internally: the timeout is restarted and
 // we keep waiting for the real answer instead of reporting it as negative.
 // ---------------------------------------------------------------------------
+/** Extract the 11-bit id of a standard data frame. False for 29-bit and RTR frames,
+ *  which a plain 0x7FF mask would alias onto an unrelated 11-bit id. */
+static bool isStdFrame(const struct can_frame& m, uint16_t& id) {
+    if (m.can_id & (CAN_EFF_FLAG | CAN_RTR_FLAG)) return false;
+    id = (uint16_t)(m.can_id & CAN_SFF_MASK);
+    return true;
+}
+
 /** True when a frame looks like a diagnostic reply (positive or negative) to `service`. */
 static bool isDiagReply(const struct can_frame& m, uint8_t service) {
     uint8_t pci = m.data[0] & 0xF0;
@@ -314,7 +351,8 @@ static int isotpTransceive(uint16_t req_id, const uint8_t* payload, uint8_t plen
     while (millis() - start < timeout_ms) {
         struct can_frame m;
         if (mcp2515.readMessage(&m) != MCP2515::ERROR_OK) { delayMicroseconds(200); continue; }
-        uint16_t id = m.can_id & 0x7FF;
+        uint16_t id;
+        if (!isStdFrame(m, id)) continue;
         if (resp_id == KWP21_RESP_AUTO) {           // lock onto the first plausible responder
             if (id == req_id || id == 0x7DF || isBusBroadcastId(id) || !isDiagReply(m, service)) continue;
             resp_id = id;
@@ -436,7 +474,8 @@ static bool obd01(uint8_t pid, uint8_t& a, uint8_t& b, uint32_t timeout_ms = 60)
     while (millis() - start < timeout_ms) {
         struct can_frame m;
         if (mcp2515.readMessage(&m) != MCP2515::ERROR_OK) { delayMicroseconds(200); continue; }
-        if ((m.can_id & 0x7FF) != 0x7E8) continue;
+        uint16_t fid;
+        if (!isStdFrame(m, fid) || fid != 0x7E8) continue;
         if (m.data[1] == 0x41 && m.data[2] == pid) { a = m.data[3]; b = m.data[4]; return true; }
     }
     return false;
@@ -458,7 +497,8 @@ static int udsServiceSF(uint16_t req_id, const uint8_t* payload, uint8_t n,
     while (millis() - start < timeout_ms) {
         struct can_frame m;
         if (mcp2515.readMessage(&m) != MCP2515::ERROR_OK) { delayMicroseconds(200); continue; }
-        if ((m.can_id & 0x7FF) != resp_id) continue;
+        uint16_t fid;
+        if (!isStdFrame(m, fid) || fid != resp_id) continue;
         if ((m.data[0] & 0xF0) != 0x00) continue;       // only single-frame replies here
         if (m.data[1] == sid_pos) return 1;
         if (m.data[1] == 0x7F) {
@@ -494,7 +534,8 @@ static int obd01n(uint8_t pid, uint8_t* d, uint32_t timeout_ms = 80) {
     while (millis() - start < timeout_ms) {
         struct can_frame m;
         if (mcp2515.readMessage(&m) != MCP2515::ERROR_OK) { delayMicroseconds(200); continue; }
-        if ((m.can_id & 0x7FF) != 0x7E8) continue;
+        uint16_t fid;
+        if (!isStdFrame(m, fid) || fid != 0x7E8) continue;
         if (m.data[1] == 0x41 && m.data[2] == pid) {
             for (int i = 0; i < 4; ++i) d[i] = m.data[3 + i];
             return 1;
@@ -796,8 +837,9 @@ static void printBroadcast(uint16_t id, const uint8_t* d, uint8_t dlc, uint64_t 
 static void watchTick() {
     struct can_frame m;
     if (mcp2515.readMessage(&m) != MCP2515::ERROR_OK) return;
-    uint16_t id = m.can_id & 0x7FF;
     if (g_dump) printCandump(m);   // keep the full stream for the bus monitor
+    uint16_t id;
+    if (!isStdFrame(m, id)) return;   // 29-bit frames are dumped, never decoded
     for (uint8_t i = 0; i < g_watch_n; ++i) {
         if (g_watch[i].id != id) continue;
         int32_t  v   = decodeBroadcast(id, m.data, m.can_dlc);
@@ -833,7 +875,8 @@ static void diffTick() {
 
     struct can_frame m;
     if (mcp2515.readMessage(&m) != MCP2515::ERROR_OK) return;
-    if ((m.can_id & 0x7FF) != g_diff_id) return;
+    uint16_t fid;
+    if (!isStdFrame(m, fid) || fid != g_diff_id) return;
 
     uint8_t dlc = m.can_dlc;
     if (!g_diff_have) { memcpy(g_diff_last, m.data, 8); g_diff_dlc = dlc; g_diff_have = true; return; }
@@ -873,7 +916,8 @@ static void adiffTick() {
 
     struct can_frame m;
     if (mcp2515.readMessage(&m) != MCP2515::ERROR_OK) return;
-    uint16_t id  = m.can_id & 0x7FF;
+    uint16_t id;
+    if (!isStdFrame(m, id)) return;
     uint8_t  dlc = m.can_dlc;
 
     int s = adiffSlot(id, m.data, dlc);
@@ -905,7 +949,8 @@ static void adiffTick() {
 static void fuelLogTick() {
     struct can_frame m;
     while (mcp2515.readMessage(&m) == MCP2515::ERROR_OK) {   // drain & cache latest
-        uint16_t id = m.can_id & 0x7FF;
+        uint16_t id;
+        if (!isStdFrame(m, id)) continue;
         if (id == BCAST_FUEL && m.can_dlc >= 7) {
             g_fl_fuel = (m.data[5] << 8) | m.data[6];
             g_fl_fuel_d0 = m.data[0];
@@ -1023,6 +1068,126 @@ static void ecuSweep(uint16_t start, uint16_t end, uint8_t lid, bool sess) {
         delay(10);
     }
     Serial.printf("# ECUS done: %u responders\n", found);
+}
+
+// ---------------------------------------------------------------------------
+// ECUS29 — ECU discovery on 29-bit CAN (ISO 15765-4 normal fixed addressing).
+// ECUS only sweeps 11-bit ids, so an ECU that answers only on 29-bit headers is
+// invisible to it. A generic ELM327 left on ATSP0 probes both, which is one way
+// an app can read a value this tool reported as absent.
+//
+// Addressing: physical request 0x18DA<TA>F1, reply 0x18DAF1<TA>; functional
+// request 0x18DB33F1. 0xF1 is the tester address, so no id built here collides
+// with a live broadcast frame.
+//
+// Discovery only: single frames. A multi-frame reply (PCI 0x10) counts as a
+// responder and is printed truncated, with no flow control sent.
+// ---------------------------------------------------------------------------
+
+/** One 29-bit ISO-TP single-frame request. 1 = positive, 0 = negative (0x7F),
+ *  -1 = no answer. resp_id 0 accepts any 0x18DAF1xx reply and reports it in rx_id. */
+static int isotp29Single(uint32_t req_id, const uint8_t* payload, uint8_t plen,
+                         uint8_t* out, uint8_t& out_len, uint32_t timeout_ms,
+                         uint32_t resp_id, uint32_t* rx_id) {
+    const uint8_t service = plen > 0 ? payload[0] : 0x00;
+    drainRx();
+
+    struct can_frame req = {};
+    req.can_id  = (req_id & CAN_EFF_MASK) | CAN_EFF_FLAG;
+    req.can_dlc = 8;
+    req.data[0] = plen & 0x0F;     // ISO-TP single frame, length = plen
+    for (uint8_t i = 0; i < plen && i < 7; ++i) req.data[1 + i] = payload[i];
+    if (mcp2515.sendMessage(&req) != MCP2515::ERROR_OK) return -1;
+
+    uint32_t start = millis();
+    while (millis() - start < timeout_ms) {
+        struct can_frame m;
+        if (mcp2515.readMessage(&m) != MCP2515::ERROR_OK) { delayMicroseconds(200); continue; }
+        if (!(m.can_id & CAN_EFF_FLAG) || (m.can_id & CAN_RTR_FLAG)) continue;
+        uint32_t id = m.can_id & CAN_EFF_MASK;
+        if (id == (req_id & CAN_EFF_MASK)) continue;              // our own frame
+        if (resp_id == 0) {                                       // lock onto any tester-addressed reply
+            if ((id & 0xFFFFFF00UL) != ISOTP29_RESP_BASE) continue;
+            if (!isDiagReply(m, service)) continue;
+            resp_id = id;
+        } else if (id != resp_id) {
+            continue;
+        }
+        if (rx_id) *rx_id = id;
+
+        uint8_t pci = m.data[0] & 0xF0;
+        if (pci != 0x00 && pci != 0x10) continue;
+        uint8_t off = (pci == 0x00) ? 1 : 2;                      // first frame: length spans data[0..1]
+        uint8_t len = (pci == 0x00) ? (uint8_t)(m.data[0] & 0x0F) : m.data[1];
+        uint8_t n   = 0;
+        for (uint8_t k = off; k < 8 && n < len; ++k) out[n++] = m.data[k];
+        out_len = n;
+        if (n >= 1 && out[0] == 0x7F) {
+            uint8_t nrc = n >= 3 ? out[2] : 0xFF;
+            if (nrc == 0x78) { start = millis(); continue; }      // responsePending: keep waiting
+            return 0;
+        }
+        return 1;
+    }
+    return -1;
+}
+
+/** Functional 0x18DB33F1 request (Mode 01 PID 00); logs every distinct responder
+ *  within the window, since more than one ECU may answer. Returns the count. */
+static uint16_t funcProbe29(uint32_t window_ms) {
+    drainRx();
+    struct can_frame req = {};
+    req.can_id  = ISOTP29_FUNC_REQ | CAN_EFF_FLAG;
+    req.can_dlc = 8;
+    req.data[0] = 0x02; req.data[1] = 0x01; req.data[2] = 0x00;
+    if (mcp2515.sendMessage(&req) != MCP2515::ERROR_OK) {
+        Serial.println("# ECUS29 functional probe: TX failed");
+        return 0;
+    }
+    uint32_t seen[8]; uint8_t n_seen = 0;
+    uint32_t start = millis();
+    while (millis() - start < window_ms) {
+        struct can_frame m;
+        if (mcp2515.readMessage(&m) != MCP2515::ERROR_OK) { delayMicroseconds(200); continue; }
+        if (!(m.can_id & CAN_EFF_FLAG)) continue;
+        uint32_t id = m.can_id & CAN_EFF_MASK;
+        if (id == ISOTP29_FUNC_REQ) continue;
+        bool dup = false;
+        for (uint8_t i = 0; i < n_seen; ++i) if (seen[i] == id) dup = true;
+        if (dup) continue;
+        if (n_seen < 8) seen[n_seen++] = id;
+        Serial.printf("ECU29 func rx=0x%08lX data=", (unsigned long)id);
+        for (uint8_t i = 0; i < m.can_dlc; ++i) Serial.printf("%02X ", m.data[i]);
+        Serial.println();
+    }
+    return n_seen;
+}
+
+/** Functional probe, then a physical sweep of target addresses [start_ta, end_ta].
+ *  sess probes with session request 10 92 instead of 21 lid. Any reply, positive
+ *  or negative, proves an ECU sits at that address. */
+static void ecuSweep29(uint8_t start_ta, uint8_t end_ta, uint8_t lid, bool sess) {
+    const uint8_t probe[2] = { (uint8_t)(sess ? 0x10 : 0x21), (uint8_t)(sess ? 0x92 : lid) };
+    Serial.printf("# ECUS29 TA=0x%02X..0x%02X req=18DA<TA>F1 probe=%02X %02X\n",
+                  start_ta, end_ta, probe[0], probe[1]);
+    uint16_t found = funcProbe29(300);
+
+    for (uint32_t ta = start_ta; ta <= end_ta; ++ta) {
+        if (Serial.available()) { Serial.println("# ECUS29 aborted by serial"); break; }
+        if (ta == 0xF1) continue;                                 // the tester's own address
+        const uint32_t req = ISOTP29_REQ_BASE | (ta << 8);
+        uint8_t buf[64]; uint8_t len = 0; uint32_t rx = 0;
+        int r = isotp29Single(req, probe, 2, buf, len, 80, 0, &rx);
+        if (r < 0) continue;
+        ++found;
+        Serial.printf("ECU29 req=0x%08lX rx=0x%08lX %s",
+                      (unsigned long)req, (unsigned long)rx, r == 1 ? "POS" : "NEG");
+        if (r == 1) { Serial.print(" resp="); for (uint8_t i = 0; i < len; ++i) Serial.printf("%02X ", buf[i]); }
+        else        Serial.printf(" nrc=0x%02X", len >= 3 ? buf[2] : 0xFF);
+        Serial.println();
+        delay(10);
+    }
+    Serial.printf("# ECUS29 done: %u responders\n", found);
 }
 
 // ---------------------------------------------------------------------------
@@ -1230,6 +1395,18 @@ static void handleSerial() {
         return;
     }
 
+    if (cmd.startsWith("ECUS29")) {
+        // ECUS29 [lidHex [startTA endTA]] [SESS] — defaults: LID 01, TA 00..FF.
+        long lid = 0x01, s0 = 0x00, e0 = 0xFF;
+        int n = sscanf(line.c_str() + 6, " %lx %lx %lx", &lid, &s0, &e0);
+        if (n == 2) e0 = s0;                        // a single target address
+        Mode prev = g_mode;
+        enterActive();
+        ecuSweep29((uint8_t)s0, (uint8_t)e0, (uint8_t)lid, kwp_sess);
+        resumeListen(prev);
+        return;
+    }
+
     if (cmd.startsWith("ECUS")) {
         // ECUS [lidHex [startHex endHex]] [SESS] — defaults: LID 01, 600..7FF.
         long lid = 0x01, s0 = 0x600, e0 = 0x7FF;
@@ -1354,7 +1531,8 @@ void setup() {
     enterPassive();
     Serial.println("# sniffer ready (quiet) — commands: T<unix> | DUMP | WATCH [id..] | DIFF [id] | "
                    "ADIFF | OBD | VERIFY [m01|m22|all] | SCAN [eng|tcm] [s e] [sess] | SIG <req> <did> | "
-                   "FUELLOG | RDLI <req> <lid> [resp] | ECUS [lid [s e]] | LIDS <req> [s e] [resp] | "
+                   "FUELLOG | RDLI <req> <lid> [resp] | ECUS [lid [s e]] | ECUS29 [lid [s e]] | "
+                   "LIDS <req> [s e] [resp] | "
                    "KWATCH <req> <lid> [resp] | IDENT <req> [resp] | STOP  (SESS suffix = KWP session 10 92)");
 }
 
